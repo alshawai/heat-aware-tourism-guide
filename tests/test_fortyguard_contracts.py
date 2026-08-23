@@ -27,6 +27,19 @@ def test_heatmap_request_requires_threshold_and_direction_for_exceedance() -> No
         )
 
 
+def test_heatmap_request_rejects_non_finite_thresholds() -> None:
+    with pytest.raises(ValueError, match="threshold"):
+        HeatmapRequest(
+            AnalyticType.EXCEEDANCE,
+            29.4241,
+            -98.4936,
+            date(2026, 8, 23),
+            forecast=False,
+            threshold_celsius=float("inf"),
+            direction="above",
+        )
+
+
 def test_heatmap_request_rejects_unknown_analytic_type() -> None:
     with pytest.raises(ValueError, match="analytic type"):
         HeatmapRequest(
@@ -155,6 +168,30 @@ def test_live_failure_replays_matching_cache_as_stale_data() -> None:
     assert result.provenance.source == "cache"
     assert result.provenance.stale is True
     assert result.provenance.data_date == "2026-08-20"
+
+
+def test_live_result_preserves_activity_id_and_malformed_payload_uses_cache() -> None:
+    from app.cache import CacheService
+    from app.execution import HeatmapExecution, LiveHeatmapPayload
+
+    cache = CacheService()
+    request = HeatmapRequest(AnalyticType.TCM, 29.4241, -98.4936, date(2026, 8, 23), forecast=False)
+    payload = json.loads((Path("fixtures") / "heatmap-historical.json").read_text())
+    cache.put(
+        "/v1/heatmap", "v1", {"analytic_type": "tcm", "latitude": 29.4241, "longitude": -98.4936, "start_date": "2026-08-23", "forecast": False, "threshold_celsius": None, "direction": None}, payload,
+        retrieved_at=datetime(2026, 8, 20, tzinfo=timezone.utc), data_date="2026-08-20", activity_id="cached",
+    )
+    live = HeatmapExecution(
+        fixture_path=Path("fixtures") / "heatmap-historical.json",
+        live_loader=lambda _: LiveHeatmapPayload(payload, "live-1"),
+    ).run(request, live=True)
+    assert live.provenance.activity_id == "live-1"
+    replayed = HeatmapExecution(
+        fixture_path=Path("fixtures") / "heatmap-historical.json",
+        live_loader=lambda _: {"features": [{"geometry": {}, "properties": {}}]},
+        cache=cache,
+    ).run(request, live=True)
+    assert replayed.provenance.source == "cache"
 
 
 def test_live_failure_without_matching_cache_is_not_silently_successful() -> None:

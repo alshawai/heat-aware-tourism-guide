@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from enum import Enum
+import math
 import re
 import json
 from time import sleep as default_sleep
@@ -41,7 +42,11 @@ class HeatmapRequest:
         if self.forecast and not date.today() <= self.start_date <= date.today() + timedelta(days=1):
             raise ValueError("forecast start date must be today or tomorrow")
         if self.analytic_type in (AnalyticType.EXCEEDANCE, AnalyticType.PERSISTENCE):
-            if self.threshold_celsius is None:
+            if (
+                isinstance(self.threshold_celsius, bool)
+                or not isinstance(self.threshold_celsius, (int, float))
+                or not math.isfinite(self.threshold_celsius)
+            ):
                 raise ValueError("threshold is required for this analytic type")
             if self.direction not in ("above", "below"):
                 raise ValueError("direction must be above or below")

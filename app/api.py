@@ -99,12 +99,13 @@ def _trip_result(body: dict[str, object]) -> dict[str, object]:
         raise ValueError("trip analysis requires hotels, routes, and shade data")
     candidates = tuple(HotelCandidate(item["identity"], item["components"]) for item in hotels)
     route_candidates = tuple(RouteCandidate(item["identity"], item["distance_m"], item["duration_s"]) for item in routes)
+    building_coverage = float(body.get("building_coverage", 0))
     route_result = RouteComparator().compare(
         lambda: route_candidates,
         heat_value=float(body["heat_value"]),
         heat_threshold=float(body["heat_threshold"]),
         shade=lambda route: float(shade[route.identity]),
-        building_coverage=float(body.get("building_coverage", 0)),
+        building_coverage=building_coverage,
     )
     return {
         "hotels": [asdict(hotel) for hotel in HotelRanker().rank(candidates)],
@@ -113,8 +114,8 @@ def _trip_result(body: dict[str, object]) -> dict[str, object]:
             "routes": [asdict(route) for route in route_candidates],
             "heat_metric": body.get("heat_metric", "tcm"),
             "heat_status": "elevated" if route_result.corridor_heat_value > float(body["heat_threshold"]) else "not_elevated",
-            "coverage": float(body.get("building_coverage", 0)),
-            "confidence": "sufficient" if float(body.get("building_coverage", 0)) >= 0.7 else "insufficient",
+            "coverage": building_coverage,
+            "confidence": "sufficient" if building_coverage >= 0.7 else "insufficient",
             "comparison_scope": "returned alternatives",
         },
         "provenance": body.get("provenance", {"source": "fixture", "stale": False}),

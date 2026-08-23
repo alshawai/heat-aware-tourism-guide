@@ -6,10 +6,17 @@ from datetime import datetime
 import json
 from pathlib import Path
 from typing import Callable, Mapping
+from dataclasses import dataclass
 
 from app.cache import CacheService
 from app.domain import CacheKey
 from app.fortyguard import HeatmapRequest, HeatmapResult, ProviderError, normalize_heatmap_response
+
+
+@dataclass(frozen=True)
+class LiveHeatmapPayload:
+    payload: Mapping[str, object]
+    activity_id: str | None = None
 
 
 class HeatmapExecution:
@@ -17,7 +24,7 @@ class HeatmapExecution:
         self,
         *,
         fixture_path: Path,
-        live_loader: Callable[[HeatmapRequest], Mapping[str, object]] | None = None,
+        live_loader: Callable[[HeatmapRequest], Mapping[str, object] | LiveHeatmapPayload] | None = None,
         cache: CacheService | None = None,
         endpoint: str = "/v1/heatmap",
         schema_version: str = "v1",
@@ -34,8 +41,17 @@ class HeatmapExecution:
                 raise RuntimeError("live execution is not configured")
             request_payload = _request_payload(request)
             try:
-                payload = self.live_loader(request)
-            except (ConnectionError, OSError, ProviderError, TimeoutError):
+                loaded = self.live_loader(request)
+                payload = loaded.payload if isinstance(loaded, LiveHeatmapPayload) else loaded
+                activity_id = loaded.activity_id if isinstance(loaded, LiveHeatmapPayload) else None
+                result = normalize_heatmap_response(
+                    payload,
+                    request=request,
+                    retrieved_at=datetime.now().astimezone(),
+                    activity_id=activity_id,
+                    source="provider",
+                )
+            except (ConnectionError, OSError, ProviderError, TimeoutError, ValueError):
                 if self.cache is None:
                     raise
                 cached = self.cache.get(CacheKey.create(self.endpoint, self.schema_version, request_payload))
@@ -49,9 +65,6 @@ class HeatmapExecution:
                     source="cache",
                     data_date=cached.provenance.data_date,
                 )
-            result = normalize_heatmap_response(
-                payload, request=request, retrieved_at=datetime.now().astimezone(), source="provider"
-            )
             if self.cache is not None:
                 self.cache.put(
                     self.endpoint,
@@ -77,7 +90,11 @@ class HeatmapExecution:
             if any(fixture_request.get(key) != expected_request.get(key) for key in expected_request):
                 raise ValueError("fixture request does not match requested scenario")
         return normalize_heatmap_response(
-            payload, request=request, retrieved_at=datetime.now().astimezone(), source="fixture"
+            payload,
+            request=request,
+            retrieved_at=datetime.now().astimezone(),
+            source="fixture",
+            data_date=_fixture_data_date(payload),
         )
 
 
@@ -91,3 +108,15 @@ def _request_payload(request: HeatmapRequest) -> dict[str, object]:
         "threshold_celsius": request.threshold_celsius,
         "direction": request.direction,
     }
+
+
+def _fixture_data_date(payload: Mapping[str, object]) -> str:
+    data_date = payload.get("data_date")
+    if isinstance(data_date, str):
+        return data_date
+    features = payload.get("features")
+    if isinstance(features, list) and features and isinstance(features[0], Mapping):
+        properties = features[0].get("properties")
+        if isinstance(properties, Mapping) and isinstance(properties.get("valid_time"), str):
+            return properties["valid_time"][:10]
+    raise ValueError("fixture is missing data date freshness metadata")
