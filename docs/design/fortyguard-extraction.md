@@ -26,7 +26,13 @@ flow does not depend on optional enrichment: `EnrichmentPlanner` bounds selectio
 by top-N and available credits, and readiness reason codes are deterministic local
 logic.
 
-The current repository intentionally does not include live acquisition scripts or
-geospatial dependencies. Live calls are metered manual operations; projected
-geometry implementation belongs in the application adapter once the dependency
-and fixture contract is selected.
+The repository intentionally does not include live acquisition scripts. Live calls
+are metered manual operations. Polygon joins and AOI construction use pinned
+Shapely and pyproj dependencies, select a local UTM projected CRS, reject invalid
+geometry, and expose coverage or point-match quality.
+
+The fixture-backed HTTP boundary is `POST /api/heatmap`. It accepts an analytic
+type, US coordinates, start date, forecast flag, and optional threshold/direction,
+then returns the same normalized tile and provenance shape used by the execution
+layer. Invalid requests and unavailable fixtures return an explicit `unavailable`
+error; provider credentials never cross this boundary.
