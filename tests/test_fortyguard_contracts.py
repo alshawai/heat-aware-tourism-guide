@@ -290,3 +290,21 @@ def test_client_emits_sanitized_structured_activity_events() -> None:
     assert events[0]["request"] == {"analytic_type": "tcm", "api_key": "[redacted]"}
     assert "must-not-appear" not in repr(events)
     assert metadata.status_transitions == ("Completed",)
+
+
+def test_client_records_provider_reported_credits_in_ledger() -> None:
+    from app.ledger import CreditLedger
+
+    class Transport:
+        def post(self, endpoint: str, payload: object, api_key: str) -> dict[str, object]:
+            return {"activity_id": "activity-1"}
+
+        def get(self, endpoint: str, api_key: str) -> dict[str, object]:
+            return {"status": "Completed", "credits_used": 4, "result": {"ok": True}}
+
+    ledger = CreditLedger(5)
+    FortyGuardClient(
+        Transport(), "secret", clock=lambda: datetime(2026, 8, 23, tzinfo=timezone.utc), ledger=ledger
+    ).submit_and_poll("/v1/heatmap", {}, sleep=lambda _: None)
+    assert ledger.total_used == 4
+    assert ledger.records[0].endpoint == "/v1/heatmap"

@@ -13,6 +13,7 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from app.domain import Provenance
+from app.ledger import CreditLedger, UsageRecord
 
 
 class AnalyticType(str, Enum):
@@ -230,6 +231,7 @@ class FortyGuardClient:
         *,
         clock: Callable[[], datetime],
         event_sink: Callable[[Mapping[str, object]], None] | None = None,
+        ledger: CreditLedger | None = None,
     ) -> None:
         if not api_key:
             raise ValueError("an API key is required")
@@ -237,6 +239,7 @@ class FortyGuardClient:
         self._api_key = api_key
         self._clock = clock
         self._event_sink = event_sink
+        self._ledger = ledger
 
     def submit_and_poll(
         self,
@@ -279,6 +282,9 @@ class FortyGuardClient:
             tuple(transitions),
             _response_metadata(result),
         )
+        credits_used = result.get("credits_used")
+        if self._ledger is not None and isinstance(credits_used, int) and not isinstance(credits_used, bool):
+            self._ledger.record(UsageRecord(activity_id, endpoint, credits_used, self._clock(), "completed"))
         self._emit("fortyguard.completed", {"activity_id": activity_id, **_response_metadata(result)})
         return result, metadata
 
@@ -331,7 +337,11 @@ def poll_activity(
             result = response.get("result")
             if not isinstance(result, Mapping):
                 raise ProviderError(ProviderErrorKind.MALFORMED_RESPONSE, detail="missing task result")
-            return result
+            completed = dict(result)
+            for key in ("credits_used", "request_id"):
+                if key in response:
+                    completed[key] = response[key]
+            return completed
         if status == "Failed":
             raise ProviderError(ProviderErrorKind.TASK_FAILURE, detail="provider task failed")
         if status_code not in (None, 200, 202, 404):

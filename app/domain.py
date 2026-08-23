@@ -8,6 +8,8 @@ import hashlib
 import json
 from typing import Any, Callable, Sequence
 
+from app.ledger import CreditLedger
+
 
 @dataclass(frozen=True)
 class CacheKey:
@@ -87,11 +89,14 @@ class EnrichmentPlanner:
         candidates: Sequence[str],
         request: EnrichmentRequest,
         loader: Callable[[str], Any],
+        ledger: CreditLedger | None = None,
     ) -> EnrichmentResult:
         plan = self.plan(candidates, request)
         enriched: dict[str, Any] = {}
         failures: dict[str, str] = {}
         for candidate in plan.selected:
+            if ledger is not None:
+                ledger.plan_optional(candidate, request.credits_per_item)
             try:
                 enriched[candidate] = loader(candidate)
             except Exception as error:
