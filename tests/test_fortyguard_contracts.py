@@ -380,6 +380,13 @@ def test_polling_retries_transient_status_transport_without_resubmission() -> No
     assert transitions == ["rate_limited", "server_error", "Completed"]
 
 
+def test_polling_retries_status_timeout_within_bound() -> None:
+    responses: Iterator[dict[str, object]] = iter(
+        [{"status_code": 408}, {"status_code": 200, "status": "Completed", "result": {"ok": True}}]
+    )
+    assert poll_activity("activity-1", get_status=lambda _: next(responses), sleep=lambda _: None, max_polls=2) == {"ok": True}
+
+
 def test_client_emits_sanitized_structured_activity_events() -> None:
     class Transport:
         def post(self, endpoint: str, payload: object, api_key: str) -> dict[str, object]:

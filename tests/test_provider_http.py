@@ -1,5 +1,7 @@
 from datetime import date
 import json
+import socket
+from urllib.error import URLError
 
 import pytest
 
@@ -172,3 +174,12 @@ def test_status_transport_returns_transient_status_for_bounded_poller() -> None:
 
 def test_http_408_is_classified_as_timeout() -> None:
     assert classify_provider_error(408).kind is ProviderErrorKind.TIMEOUT
+
+
+def test_wrapped_socket_timeout_is_classified_as_timeout() -> None:
+    def opener(request: object, timeout: float) -> object:
+        raise URLError(socket.timeout("timed out"))
+
+    with pytest.raises(Exception) as error:
+        HttpFortyGuardTransport("https://api.example.test", opener=opener).get("/v1/status/a1", "secret")
+    assert error.value.kind is ProviderErrorKind.TIMEOUT

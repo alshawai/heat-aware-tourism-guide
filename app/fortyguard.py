@@ -11,6 +11,7 @@ import json
 from time import sleep as default_sleep
 from typing import Callable, Mapping, Protocol, Sequence
 from urllib.error import HTTPError, URLError
+import socket
 from urllib.request import Request, urlopen
 from shapely.geometry import shape
 
@@ -248,7 +249,8 @@ class HttpFortyGuardTransport:
                 return {"status_code": error.code}
             raise classify_provider_error(error.code, "provider HTTP request failed") from None
         except (TimeoutError, URLError, OSError) as error:
-            kind = ProviderErrorKind.TIMEOUT if isinstance(error, TimeoutError) else ProviderErrorKind.SERVER
+            wrapped_timeout = isinstance(error, URLError) and isinstance(error.reason, socket.timeout)
+            kind = ProviderErrorKind.TIMEOUT if isinstance(error, (TimeoutError, socket.timeout)) or wrapped_timeout else ProviderErrorKind.SERVER
             raise ProviderError(kind, detail=type(error).__name__) from None
         except (json.JSONDecodeError, UnicodeDecodeError):
             raise ProviderError(ProviderErrorKind.MALFORMED_RESPONSE, detail="invalid JSON response") from None
@@ -357,11 +359,11 @@ def poll_activity(
     for poll_number in range(1, max_polls + 1):
         response = get_status(activity_id)
         status_code = response.get("status_code")
-        if status_code == 429:
+        if status_code in (408, 429):
             if on_transition is not None:
-                on_transition("rate_limited")
+                on_transition("timed_out" if status_code == 408 else "rate_limited")
             if on_event is not None:
-                on_event("fortyguard.status_transition", {"activity_id": activity_id, "status": "rate_limited"})
+                on_event("fortyguard.status_transition", {"activity_id": activity_id, "status": "timed_out" if status_code == 408 else "rate_limited"})
             if poll_number < max_polls:
                 sleep(interval_seconds)
                 continue
