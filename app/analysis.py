@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import math
 from typing import Mapping, Sequence
 
 from pyproj import CRS, Transformer
@@ -39,7 +40,7 @@ def extract_exposure(
     valid_from = payload.get("valid_from")
     valid_to = payload.get("valid_to")
     fresh_at = payload.get("fresh_at")
-    if not isinstance(value, (int, float)) or not isinstance(valid_from, str) or not isinstance(valid_to, str):
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or not isinstance(valid_from, str) or not isinstance(valid_to, str):
         raise ValueError("exposure response is missing value or date window")
     if not isinstance(fresh_at, str):
         raise ValueError("exposure response is missing freshness")

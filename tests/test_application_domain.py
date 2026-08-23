@@ -133,6 +133,14 @@ def test_exposure_rejects_forecast_and_missing_freshness() -> None:
         extract_exposure({**payload, "fresh_at": "fresh"}, metric="persistence", threshold_celsius=35, direction="above", source="fortyguard", forecast=True)
 
 
+def test_exposure_rejects_boolean_and_non_finite_values() -> None:
+    base = {"unit": "hours", "valid_from": "start", "valid_to": "end", "fresh_at": "fresh"}
+    with pytest.raises(ValueError, match="value"):
+        extract_exposure({**base, "value": True}, metric="exceedance", threshold_celsius=35, direction="above", source="fortyguard", forecast=False)
+    with pytest.raises(ValueError, match="value"):
+        extract_exposure({**base, "value": float("nan")}, metric="persistence", threshold_celsius=35, direction="above", source="fortyguard", forecast=False)
+
+
 def test_readiness_returns_deterministic_reason_codes() -> None:
     result = readiness(
         ReadinessInput(heat_celsius=38, threshold_celsius=35, coverage=0.9, forecast=True)
