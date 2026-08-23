@@ -21,3 +21,12 @@ def test_ledger_separates_planned_optional_usage_from_actual_usage() -> None:
     assert ledger.planned_optional == {"hotel-a": 3}
     assert ledger.total_used == 2
     assert ledger.records[0].activity_id == "activity-1"
+
+
+def test_ledger_does_not_double_count_replayed_activity_completion() -> None:
+    ledger = CreditLedger(budget=5)
+    usage = UsageRecord("activity-1", "/v1/heatmap", 4, datetime.now(timezone.utc), "completed")
+    ledger.record(usage)
+    ledger.record(usage)
+    assert ledger.total_used == 4
+    assert len(ledger.records) == 1

@@ -78,6 +78,16 @@ def test_normalizer_rejects_boolean_metric_values() -> None:
         )
 
 
+def test_normalizer_rejects_non_finite_metric_values() -> None:
+    request = HeatmapRequest(AnalyticType.TCM, 29.4241, -98.4936, date.today())
+    with pytest.raises(ValueError, match="units"):
+        normalize_heatmap_response(
+            {"features": [{"geometry": {"type": "Point", "coordinates": [-98.49, 29.42]}, "properties": {"value": float("nan"), "unit": "C", "valid_time": "2026-08-23T15:00:00+00:00"}}]},
+            request=request,
+            retrieved_at=datetime.now(timezone.utc),
+        )
+
+
 @pytest.mark.parametrize(
     ("fixture_name", "analytic_type", "forecast", "value"),
     [

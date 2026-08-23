@@ -74,6 +74,7 @@ def test_trip_analysis_endpoint_returns_ranked_hotels_and_route_decision() -> No
             {
                 "heat_value": 38,
                 "heat_threshold": 35,
+                "corridor_heat_values": [34, 38],
                 "building_coverage": 0.9,
                 "hotels": [
                     {"identity": "cooler", "components": {"night": 30, "hot_hours": 5, "persistence": 2, "day": 32}},

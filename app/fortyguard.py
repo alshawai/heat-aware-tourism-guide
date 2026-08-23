@@ -457,7 +457,12 @@ def normalize_heatmap_response(
         value = properties.get("value")
         unit = properties.get("unit")
         expected_unit = "C" if request.analytic_type is AnalyticType.TCM else "hours"
-        if isinstance(value, bool) or not isinstance(value, (int, float)) or unit != expected_unit:
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, (int, float))
+            or not math.isfinite(value)
+            or unit != expected_unit
+        ):
             raise ValueError("mixed or unsupported units")
         valid_time = _parse_datetime(properties.get("valid_time"))
         units.add(unit)

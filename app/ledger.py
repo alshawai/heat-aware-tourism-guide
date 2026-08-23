@@ -37,6 +37,8 @@ class CreditLedger:
         self.planned_optional[subject] = credits
 
     def record(self, usage: UsageRecord) -> None:
+        if any(record.activity_id == usage.activity_id for record in self.records):
+            return
         if usage.credits_used < 0:
             raise ValueError("actual credits must be non-negative")
         if usage.credits_used > self.remaining:

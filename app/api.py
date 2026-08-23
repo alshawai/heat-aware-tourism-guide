@@ -103,6 +103,7 @@ def _trip_result(body: dict[str, object]) -> dict[str, object]:
     route_result = RouteComparator().compare(
         lambda: route_candidates,
         heat_value=float(body["heat_value"]),
+        heat_values=tuple(float(value) for value in body.get("corridor_heat_values", [])),
         heat_threshold=float(body["heat_threshold"]),
         shade=lambda route: float(shade[route.identity]),
         building_coverage=building_coverage,
