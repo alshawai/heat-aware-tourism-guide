@@ -30,12 +30,13 @@ class CacheService:
         retrieved_at: datetime,
         data_date: str,
         activity_id: str | None = None,
+        forecast: bool = False,
     ) -> CacheKey:
         key = CacheKey.create(endpoint, schema_version, request_payload)
         sanitized = _sanitize(response_payload)
         self._entries[key.value] = CacheEntry(
             sanitized,
-            Provenance("provider", retrieved_at, data_date, False, False, activity_id, sanitized),
+            Provenance("provider", retrieved_at, data_date, False, forecast, activity_id, sanitized),
         )
         return key
 

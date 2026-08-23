@@ -269,6 +269,7 @@ def normalize_heatmap_response(
     retrieved_at: datetime,
     activity_id: str | None = None,
     source: str = "provider",
+    data_date: str | None = None,
 ) -> HeatmapResult:
     features = payload.get("features")
     if not isinstance(features, Sequence) or isinstance(features, (str, bytes)) or not features:
@@ -308,7 +309,7 @@ def normalize_heatmap_response(
         Provenance(
             source,
             retrieved_at,
-            request.start_date.isoformat(),
+            data_date or request.start_date.isoformat(),
             source == "cache",
             request.forecast,
             activity_id,

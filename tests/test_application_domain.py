@@ -40,6 +40,23 @@ def test_cache_hit_is_marked_as_replayed_and_cache_miss_is_none() -> None:
     assert service.get(CacheKey.create("heatmap", "v1", {"metric": "other"})) is None
 
 
+def test_cache_preserves_forecast_and_data_date_metadata() -> None:
+    service = CacheService()
+    key = service.put(
+        "heatmap",
+        "v1",
+        {"metric": "tcm"},
+        {"value": 35},
+        retrieved_at=datetime(2026, 8, 23, tzinfo=timezone.utc),
+        data_date="2026-08-23",
+        forecast=True,
+    )
+    entry = service.get(key)
+    assert entry is not None
+    assert entry.provenance.forecast is True
+    assert entry.provenance.data_date == "2026-08-23"
+
+
 def test_enrichment_is_top_n_and_budgeted_without_blocking_core_flow() -> None:
     plan = EnrichmentPlanner(credits=3).plan(
         ["hotel-a", "hotel-b", "hotel-c", "hotel-d"],
