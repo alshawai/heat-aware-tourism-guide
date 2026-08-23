@@ -37,6 +37,8 @@ class HeatmapRequest:
     def __post_init__(self) -> None:
         if not isinstance(self.analytic_type, AnalyticType):
             raise ValueError("unknown analytic type")
+        if not isinstance(self.forecast, bool):
+            raise ValueError("forecast must be a boolean")
         _validate_us_coordinates(self.latitude, self.longitude)
         if self.forecast and not date.today() <= self.start_date <= date.today() + timedelta(days=1):
             raise ValueError("forecast start date must be today or tomorrow")
@@ -512,6 +514,7 @@ def _valid_geometry_coordinates(geometry: Mapping[str, object]) -> bool:
         return (
             isinstance(ring, list)
             and len(ring) >= 4
+            and ring[0] == ring[-1]
             and all(
                 isinstance(position, list)
                 and len(position) >= 2

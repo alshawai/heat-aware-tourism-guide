@@ -1,4 +1,5 @@
 {
+  "mode": "forecast",
   "features": [
     {
       "type": "Feature",

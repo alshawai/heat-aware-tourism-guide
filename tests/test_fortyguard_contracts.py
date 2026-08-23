@@ -89,6 +89,11 @@ def test_heatmap_request_rejects_unknown_analytic_type() -> None:
         )
 
 
+def test_heatmap_request_rejects_non_boolean_forecast() -> None:
+    with pytest.raises(ValueError, match="forecast"):
+        HeatmapRequest(AnalyticType.TCM, 29.4241, -98.4936, date.today(), forecast="false")  # type: ignore[arg-type]
+
+
 def test_normalizer_preserves_forecast_provenance_and_units() -> None:
     request = HeatmapRequest(
         analytic_type=AnalyticType.TCM,
