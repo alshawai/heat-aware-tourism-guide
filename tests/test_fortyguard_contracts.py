@@ -128,3 +128,61 @@ def test_client_classifies_submit_errors_before_activity_lookup() -> None:
 
     with pytest.raises(Exception, match="rate_limit"):
         FortyGuardClient(Transport(), "secret", clock=lambda: datetime.now(timezone.utc)).submit_and_poll("/v1/heatmap", {})
+
+
+def test_polling_retries_transient_status_transport_without_resubmission() -> None:
+    responses: Iterator[dict[str, object]] = iter(
+        [
+            {"status_code": 429},
+            {"status_code": 503},
+            {"status_code": 200, "status": "Completed", "result": {"ok": True}},
+        ]
+    )
+    transitions: list[str] = []
+
+    result = poll_activity(
+        "activity-1",
+        get_status=lambda _: next(responses),
+        sleep=lambda _: None,
+        max_polls=3,
+        on_transition=transitions.append,
+    )
+
+    assert result == {"ok": True}
+    assert transitions == (  # type: ignore[comparison-overlap]
+        ["rate_limited", "server_error", "Completed"]
+    )
+
+
+def test_client_emits_sanitized_structured_activity_events() -> None:
+    class Transport:
+        def post(self, endpoint: str, payload: object, api_key: str) -> dict[str, object]:
+            return {"activity_id": "activity-1"}
+
+        def get(self, endpoint: str, api_key: str) -> dict[str, object]:
+            return {
+                "status": "Completed",
+                "result": {"features": []},
+                "credits_used": 4,
+            }
+
+    events: list[dict[str, object]] = []
+    _, metadata = FortyGuardClient(
+        Transport(),
+        "secret",
+        clock=lambda: datetime(2026, 8, 23, tzinfo=timezone.utc),
+        event_sink=events.append,
+    ).submit_and_poll(
+        "/v1/heatmap",
+        {"analytic_type": "tcm", "api_key": "must-not-appear"},
+        sleep=lambda _: None,
+    )
+
+    assert [event["event"] for event in events] == [
+        "fortyguard.submitted",
+        "fortyguard.status_transition",
+        "fortyguard.completed",
+    ]
+    assert events[0]["request"] == {"analytic_type": "tcm", "api_key": "[redacted]"}
+    assert "must-not-appear" not in repr(events)
+    assert metadata.status_transitions == ("Completed",)

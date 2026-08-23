@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from enum import Enum
 import re
@@ -93,17 +93,27 @@ class ActivityMetadata:
     submitted_at: datetime
     endpoint: str
     request_fields: tuple[str, ...]
+    status_transitions: tuple[str, ...] = ()
+    response_metadata: Mapping[str, object] = field(default_factory=dict)
 
 
 class FortyGuardClient:
     """Authenticated submit/poll boundary; billable work is submitted exactly once."""
 
-    def __init__(self, transport: FortyGuardTransport, api_key: str, *, clock: Callable[[], datetime]) -> None:
+    def __init__(
+        self,
+        transport: FortyGuardTransport,
+        api_key: str,
+        *,
+        clock: Callable[[], datetime],
+        event_sink: Callable[[Mapping[str, object]], None] | None = None,
+    ) -> None:
         if not api_key:
             raise ValueError("an API key is required")
         self._transport = transport
         self._api_key = api_key
         self._clock = clock
+        self._event_sink = event_sink
 
     def submit_and_poll(
         self,
@@ -120,12 +130,38 @@ class FortyGuardClient:
         activity_id = response.get("activity_id")
         if not isinstance(activity_id, str) or not activity_id:
             raise ProviderError(ProviderErrorKind.MALFORMED_RESPONSE, detail="missing activity id")
-        metadata = ActivityMetadata(activity_id, self._clock(), endpoint, tuple(sorted(payload)))
+        submitted_at = self._clock()
+        self._emit(
+            "fortyguard.submitted",
+            {"activity_id": activity_id, "endpoint": endpoint, "request": _sanitize_payload(payload)},
+        )
+        transitions: list[str] = []
 
         def get_status(_: str) -> Mapping[str, object]:
             return self._transport.get(f"/v1/status/{activity_id}", self._api_key)
 
-        return poll_activity(activity_id, get_status=get_status, sleep=sleep, max_polls=max_polls), metadata
+        result = poll_activity(
+            activity_id,
+            get_status=get_status,
+            sleep=sleep,
+            max_polls=max_polls,
+            on_transition=transitions.append,
+            on_event=self._emit,
+        )
+        metadata = ActivityMetadata(
+            activity_id,
+            submitted_at,
+            endpoint,
+            tuple(sorted(payload)),
+            tuple(transitions),
+            _response_metadata(result),
+        )
+        self._emit("fortyguard.completed", {"activity_id": activity_id, **_response_metadata(result)})
+        return result, metadata
+
+    def _emit(self, event: str, fields: Mapping[str, object]) -> None:
+        if self._event_sink is not None:
+            self._event_sink({"event": event, "at": self._clock().isoformat(), **fields})
 
 
 def poll_activity(
@@ -135,17 +171,39 @@ def poll_activity(
     sleep: Callable[[float], None] = default_sleep,
     max_polls: int = 12,
     interval_seconds: float = 1.0,
+    on_transition: Callable[[str], None] | None = None,
+    on_event: Callable[[str, Mapping[str, object]], None] | None = None,
 ) -> Mapping[str, object]:
     """Poll one already-submitted billable activity with bounded status checks."""
     saw_submission_404 = False
     for poll_number in range(1, max_polls + 1):
         response = get_status(activity_id)
         status_code = response.get("status_code")
+        if status_code == 429:
+            if on_transition is not None:
+                on_transition("rate_limited")
+            if on_event is not None:
+                on_event("fortyguard.status_transition", {"activity_id": activity_id, "status": "rate_limited"})
+            if poll_number < max_polls:
+                sleep(interval_seconds)
+                continue
+        if isinstance(status_code, int) and status_code >= 500:
+            if on_transition is not None:
+                on_transition("server_error")
+            if on_event is not None:
+                on_event("fortyguard.status_transition", {"activity_id": activity_id, "status": "server_error"})
+            if poll_number < max_polls:
+                sleep(interval_seconds)
+                continue
         if status_code == 404 and not saw_submission_404:
             saw_submission_404 = True
         elif status_code == 404:
             raise classify_provider_error(404, "activity not found")
         status = response.get("status")
+        if isinstance(status, str) and on_transition is not None:
+            on_transition(status)
+        if isinstance(status, str) and on_event is not None:
+            on_event("fortyguard.status_transition", {"activity_id": activity_id, "status": status})
         if status == "Completed":
             result = response.get("result")
             if not isinstance(result, Mapping):
@@ -160,6 +218,10 @@ def poll_activity(
         if poll_number < max_polls:
             sleep(interval_seconds)
     raise ProviderError(ProviderErrorKind.TIMEOUT, detail="activity polling timed out")
+
+
+def _response_metadata(result: Mapping[str, object]) -> dict[str, object]:
+    return {key: result[key] for key in ("credits_used", "request_id") if key in result}
 
 
 @dataclass(frozen=True)
