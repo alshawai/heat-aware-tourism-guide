@@ -63,3 +63,41 @@ def test_invalid_boolean_and_missing_fixture_return_unavailable() -> None:
         server.shutdown()
         server.server_close()
         thread.join(timeout=2)
+
+
+def test_trip_analysis_endpoint_returns_ranked_hotels_and_route_decision() -> None:
+    server = create_fixture_server(Path("fixtures/heatmap-historical.json"))
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        body = json.dumps(
+            {
+                "heat_value": 38,
+                "heat_threshold": 35,
+                "building_coverage": 0.9,
+                "hotels": [
+                    {"identity": "cooler", "components": {"night": 30, "hot_hours": 5, "persistence": 2, "day": 32}},
+                    {"identity": "hotter", "components": {"night": 36, "hot_hours": 9, "persistence": 5, "day": 38}},
+                ],
+                "routes": [
+                    {"identity": "short", "distance_m": 1000, "duration_s": 600},
+                    {"identity": "shady", "distance_m": 1200, "duration_s": 700},
+                ],
+                "shade": {"short": 20, "shady": 80},
+            }
+        ).encode()
+        response = urlopen(
+            Request(
+                f"http://127.0.0.1:{server.server_port}/api/trip/analyze",
+                data=body,
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+        )
+        result = json.load(response)
+        assert result["hotels"][0]["identity"] == "cooler"
+        assert result["route"]["recommended_id"] == "shady"
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)

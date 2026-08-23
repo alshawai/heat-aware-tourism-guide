@@ -14,6 +14,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from app.execution import HeatmapExecution
 from app.fortyguard import AnalyticType, HeatmapRequest
+from app.trip import HotelCandidate, HotelRanker, RouteCandidate, RouteComparator
 
 
 def _result_json(result: Any) -> dict[str, object]:
@@ -36,12 +37,21 @@ def create_fixture_server(fixture_path: Path) -> ThreadingHTTPServer:
 
     class Handler(BaseHTTPRequestHandler):
         def do_POST(self) -> None:
-            if urlparse(self.path).path != "/api/heatmap":
+            path = urlparse(self.path).path
+            if path not in {"/api/heatmap", "/api/trip/analyze"}:
                 self.send_error(404)
                 return
             try:
                 length = int(self.headers.get("Content-Length", "0"))
                 body = json.loads(self.rfile.read(length))
+                if path == "/api/trip/analyze":
+                    response = json.dumps(_trip_result(body), default=_json_default).encode()
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Content-Length", str(len(response)))
+                    self.end_headers()
+                    self.wfile.write(response)
+                    return
                 request = HeatmapRequest(
                     AnalyticType(body["analytic_type"]),
                     float(body["latitude"]),
@@ -72,3 +82,24 @@ def _required_bool(body: dict[str, object], field: str, *, default: bool) -> boo
     if not isinstance(value, bool):
         raise ValueError(f"{field} must be a boolean")
     return value
+
+
+def _trip_result(body: dict[str, object]) -> dict[str, object]:
+    hotels = body.get("hotels")
+    routes = body.get("routes")
+    shade = body.get("shade")
+    if not isinstance(hotels, list) or not isinstance(routes, list) or not isinstance(shade, dict):
+        raise ValueError("trip analysis requires hotels, routes, and shade data")
+    candidates = tuple(HotelCandidate(item["identity"], item["components"]) for item in hotels)
+    route_candidates = tuple(RouteCandidate(item["identity"], item["distance_m"], item["duration_s"]) for item in routes)
+    route_result = RouteComparator().compare(
+        lambda: route_candidates,
+        heat_value=float(body["heat_value"]),
+        heat_threshold=float(body["heat_threshold"]),
+        shade=lambda route: float(shade[route.identity]),
+        building_coverage=float(body.get("building_coverage", 0)),
+    )
+    return {
+        "hotels": [asdict(hotel) for hotel in HotelRanker().rank(candidates)],
+        "route": asdict(route_result),
+    }

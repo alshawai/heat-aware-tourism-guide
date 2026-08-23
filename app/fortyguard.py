@@ -86,6 +86,34 @@ class EnvParamsRequest:
 
 
 @dataclass(frozen=True)
+class AreaHeatmapRequest:
+    geometry: Mapping[str, object]
+    analytic_types: tuple[AnalyticType, ...]
+    context: str
+    unit: str
+    unit_source: str
+
+    def __post_init__(self) -> None:
+        if self.geometry.get("type") not in {"Polygon", "MultiPolygon"} or not self.geometry.get("coordinates"):
+            raise ValueError("area heatmap requires polygon geometry")
+        if not self.analytic_types:
+            raise ValueError("at least one analytic type is required")
+        if self.context not in {"district", "corridor"}:
+            raise ValueError("area context must be district or corridor")
+        if self.unit != "C" or self.unit_source not in {"explicit", "inferred"}:
+            raise ValueError("area request requires Celsius with explicit or inferred unit source")
+
+    def to_payload(self) -> dict[str, object]:
+        return {
+            "geometry": self.geometry,
+            "analytic_types": [analytic_type.value for analytic_type in self.analytic_types],
+            "context": self.context,
+            "unit": self.unit,
+            "unit_source": self.unit_source,
+        }
+
+
+@dataclass(frozen=True)
 class EnvParamsResult:
     heat_index_celsius: float | None
     humidity_percent: float | None
