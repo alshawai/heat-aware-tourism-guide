@@ -55,6 +55,30 @@ def test_normalizer_rejects_malformed_point_coordinates() -> None:
         )
 
 
+def test_normalizer_accepts_valid_multipolygon_geometry() -> None:
+    request = HeatmapRequest(AnalyticType.TCM, 29.4241, -98.4936, date.today())
+    result = normalize_heatmap_response(
+        {
+            "features": [
+                {
+                    "geometry": {
+                        "type": "MultiPolygon",
+                        "coordinates": [[[[1, 1], [2, 1], [2, 2], [1, 1]]]],
+                    },
+                    "properties": {
+                        "value": 35,
+                        "unit": "C",
+                        "valid_time": "2026-08-23T15:00:00+00:00",
+                    },
+                }
+            ]
+        },
+        request=request,
+        retrieved_at=datetime.now(timezone.utc),
+    )
+    assert result.tiles[0].geometry["type"] == "MultiPolygon"
+
+
 def test_heatmap_request_rejects_unknown_analytic_type() -> None:
     with pytest.raises(ValueError, match="analytic type"):
         HeatmapRequest(

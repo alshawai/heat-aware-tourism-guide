@@ -37,8 +37,7 @@ class HeatmapRequest:
     def __post_init__(self) -> None:
         if not isinstance(self.analytic_type, AnalyticType):
             raise ValueError("unknown analytic type")
-        if not math.isfinite(self.latitude) or not math.isfinite(self.longitude) or not 24 <= self.latitude <= 50 or not -125 <= self.longitude <= -66:
-            raise ValueError("coordinates must be within the supported US extent")
+        _validate_us_coordinates(self.latitude, self.longitude)
         if self.forecast and not date.today() <= self.start_date <= date.today() + timedelta(days=1):
             raise ValueError("forecast start date must be today or tomorrow")
         if self.analytic_type in (AnalyticType.EXCEEDANCE, AnalyticType.PERSISTENCE):
@@ -75,8 +74,7 @@ class EnvParamsRequest:
     is_real_forecast: bool = False
 
     def __post_init__(self) -> None:
-        if not math.isfinite(self.latitude) or not math.isfinite(self.longitude) or not 24 <= self.latitude <= 50 or not -125 <= self.longitude <= -66:
-            raise ValueError("coordinates must be within the supported US extent")
+        _validate_us_coordinates(self.latitude, self.longitude)
         if self.temperature_anchor_celsius is None or isinstance(self.temperature_anchor_celsius, bool) or not isinstance(self.temperature_anchor_celsius, (int, float)) or not math.isfinite(self.temperature_anchor_celsius):
             raise ValueError("caller-supplied temperature anchor is required")
         if self.is_real_forecast:
@@ -102,7 +100,7 @@ class AreaHeatmapRequest:
     unit_source: str
 
     def __post_init__(self) -> None:
-        if self.geometry.get("type") not in {"Polygon", "MultiPolygon"} or not self.geometry.get("coordinates"):
+        if self.geometry.get("type") not in {"Polygon", "MultiPolygon"} or not _valid_geometry_coordinates(self.geometry):
             raise ValueError("area heatmap requires polygon geometry")
         if not self.analytic_types:
             raise ValueError("at least one analytic type is required")
@@ -509,4 +507,29 @@ def _valid_geometry_coordinates(geometry: Mapping[str, object]) -> bool:
         )
     if not isinstance(coordinates, list) or not coordinates:
         return False
-    return all(isinstance(ring, list) and len(ring) >= 4 for ring in coordinates)
+
+    def valid_ring(ring: object) -> bool:
+        return (
+            isinstance(ring, list)
+            and len(ring) >= 4
+            and all(
+                isinstance(position, list)
+                and len(position) >= 2
+                and all(
+                    isinstance(value, (int, float))
+                    and not isinstance(value, bool)
+                    and math.isfinite(value)
+                    for value in position[:2]
+                )
+                for position in ring
+            )
+        )
+
+    if geometry.get("type") == "Polygon":
+        return all(valid_ring(ring) for ring in coordinates)
+    return all(isinstance(polygon, list) and polygon and all(valid_ring(ring) for ring in polygon) for polygon in coordinates)
+
+
+def _validate_us_coordinates(latitude: float, longitude: float) -> None:
+    if not math.isfinite(latitude) or not math.isfinite(longitude) or not 24 <= latitude <= 50 or not -125 <= longitude <= -66:
+        raise ValueError("coordinates must be within the supported US extent")

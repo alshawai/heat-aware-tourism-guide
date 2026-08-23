@@ -68,6 +68,32 @@ def test_area_request_rejects_unknown_analytic_members() -> None:
         )
 
 
+def test_area_request_rejects_malformed_polygon_coordinates() -> None:
+    from app.fortyguard import AreaHeatmapRequest
+
+    with pytest.raises(ValueError, match="polygon geometry"):
+        AreaHeatmapRequest(
+            {"type": "Polygon", "coordinates": [[[1, 1], [2, 1]]]},
+            (AnalyticType.TCM,),
+            "district",
+            "C",
+            "explicit",
+        )
+
+
+def test_area_request_accepts_valid_multipolygon_coordinates() -> None:
+    from app.fortyguard import AreaHeatmapRequest
+
+    request = AreaHeatmapRequest(
+        {"type": "MultiPolygon", "coordinates": [[[[1, 1], [2, 1], [2, 2], [1, 1]]]]},
+        (AnalyticType.TCM,),
+        "district",
+        "C",
+        "explicit",
+    )
+    assert request.to_payload()["context"] == "district"
+
+
 def test_http_transport_sends_auth_json_and_classifies_http_errors() -> None:
     calls: list[tuple[str, dict[str, object], dict[str, str]]] = []
 

@@ -37,6 +37,7 @@ def create_fixture_server(
     fixture_path: Path,
     *,
     execution: HeatmapExecution | None = None,
+    allow_live: bool = False,
 ) -> ThreadingHTTPServer:
     configured_execution: HeatmapExecution = execution or HeatmapExecution(fixture_path=fixture_path)
 
@@ -71,6 +72,8 @@ def create_fixture_server(
                 live = body.get("execution_mode", "fixture") == "live"
                 if body.get("execution_mode", "fixture") not in {"fixture", "live"}:
                     raise ValueError("execution_mode must be fixture or live")
+                if live and not allow_live:
+                    raise ValueError("live execution is not enabled for this server")
                 response = json.dumps(_result_json(configured_execution.run(request, live=live)), default=_json_default).encode()
                 self.send_response(200)
             except (KeyError, TypeError, ValueError, OSError, RuntimeError, ProviderError, json.JSONDecodeError) as error:
