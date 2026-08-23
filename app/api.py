@@ -37,7 +37,7 @@ def create_fixture_server(
     *,
     execution: HeatmapExecution | None = None,
 ) -> ThreadingHTTPServer:
-    execution = execution or HeatmapExecution(fixture_path=fixture_path)
+    configured_execution: HeatmapExecution = execution or HeatmapExecution(fixture_path=fixture_path)
 
     class Handler(BaseHTTPRequestHandler):
         def do_POST(self) -> None:
@@ -68,9 +68,9 @@ def create_fixture_server(
                 live = body.get("execution_mode", "fixture") == "live"
                 if body.get("execution_mode", "fixture") not in {"fixture", "live"}:
                     raise ValueError("execution_mode must be fixture or live")
-                response = json.dumps(_result_json(execution.run(request, live=live)), default=_json_default).encode()
+                response = json.dumps(_result_json(configured_execution.run(request, live=live)), default=_json_default).encode()
                 self.send_response(200)
-            except (KeyError, TypeError, ValueError, OSError, json.JSONDecodeError) as error:
+            except (KeyError, TypeError, ValueError, OSError, RuntimeError, json.JSONDecodeError) as error:
                 response = json.dumps({"error": str(error), "status": "unavailable"}).encode()
                 self.send_response(400)
             self.send_header("Content-Type", "application/json")
@@ -99,12 +99,30 @@ def _trip_result(body: dict[str, object]) -> dict[str, object]:
         raise ValueError("trip analysis requires hotels, routes, and shade data")
     candidates = tuple(HotelCandidate(item["identity"], item["components"]) for item in hotels)
     route_candidates = tuple(RouteCandidate(item["identity"], item["distance_m"], item["duration_s"]) for item in routes)
-    building_coverage = float(body.get("building_coverage", 0))
+    heat_metric = body.get("heat_metric", "tcm")
+    if heat_metric != "tcm":
+        raise ValueError("trip analysis currently accepts the tcm provider metric only")
+    building_coverage_value = body.get("building_coverage", 0)
+    heat_value = body.get("heat_value")
+    heat_threshold = body.get("heat_threshold")
+    corridor_values = body.get("corridor_heat_values", [])
+    if (
+        isinstance(building_coverage_value, bool)
+        or not isinstance(building_coverage_value, (int, float))
+        or isinstance(heat_value, bool)
+        or not isinstance(heat_value, (int, float))
+        or isinstance(heat_threshold, bool)
+        or not isinstance(heat_threshold, (int, float))
+        or not isinstance(corridor_values, list)
+        or any(isinstance(value, bool) or not isinstance(value, (int, float)) for value in corridor_values)
+    ):
+        raise ValueError("trip heat and coverage values must be numeric")
+    building_coverage = float(building_coverage_value)
     route_result = RouteComparator().compare(
         lambda: route_candidates,
-        heat_value=float(body["heat_value"]),
-        heat_values=tuple(float(value) for value in body.get("corridor_heat_values", [])),
-        heat_threshold=float(body["heat_threshold"]),
+        heat_value=float(heat_value),
+        heat_values=tuple(float(value) for value in corridor_values),
+        heat_threshold=float(heat_threshold),
         shade=lambda route: float(shade[route.identity]),
         building_coverage=building_coverage,
     )
@@ -113,11 +131,11 @@ def _trip_result(body: dict[str, object]) -> dict[str, object]:
         "route": {
             **asdict(route_result),
             "routes": [asdict(route) for route in route_candidates],
-            "heat_metric": body.get("heat_metric", "tcm"),
-            "heat_status": "elevated" if route_result.corridor_heat_value > float(body["heat_threshold"]) else "not_elevated",
+            "heat_metric": heat_metric,
+            "heat_status": "elevated" if route_result.corridor_heat_value > float(heat_threshold) else "not_elevated",
             "coverage": building_coverage,
             "confidence": "sufficient" if building_coverage >= 0.7 else "insufficient",
             "comparison_scope": "returned alternatives",
         },
-        "provenance": body.get("provenance", {"source": "fixture", "stale": False}),
+        "provenance": {"source": "fixture", "stale": False},
     }

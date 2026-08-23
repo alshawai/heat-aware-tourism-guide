@@ -118,5 +118,7 @@ def _fixture_data_date(payload: Mapping[str, object]) -> str:
     if isinstance(features, list) and features and isinstance(features[0], Mapping):
         properties = features[0].get("properties")
         if isinstance(properties, Mapping) and isinstance(properties.get("valid_time"), str):
-            return properties["valid_time"][:10]
+            valid_time = properties["valid_time"]
+            if isinstance(valid_time, str):
+                return valid_time[:10]
     raise ValueError("fixture is missing data date freshness metadata")

@@ -88,7 +88,17 @@ def test_normalizer_rejects_non_finite_metric_values() -> None:
         )
 
 
-@pytest.mark.parametrize(
+def test_normalizer_rejects_provider_mode_mismatch() -> None:
+    request = HeatmapRequest(AnalyticType.TCM, 29.4241, -98.4936, date.today())
+    with pytest.raises(ValueError, match="mode"):
+        normalize_heatmap_response(
+            {"mode": "historical", "features": [{"geometry": {"type": "Point", "coordinates": [-98.49, 29.42]}, "properties": {"value": 35, "unit": "C", "valid_time": "2026-08-23T15:00:00+00:00"}}]},
+            request=request,
+            retrieved_at=datetime.now(timezone.utc),
+        )
+
+
+@pytest.mark.parametrize(  # type: ignore[untyped-decorator]
     ("fixture_name", "analytic_type", "forecast", "value"),
     [
         ("heatmap-forecast.json", AnalyticType.TCM, True, 35.5),
@@ -312,9 +322,7 @@ def test_polling_retries_transient_status_transport_without_resubmission() -> No
     )
 
     assert result == {"ok": True}
-    assert transitions == (  # type: ignore[comparison-overlap]
-        ["rate_limited", "server_error", "Completed"]
-    )
+    assert transitions == ["rate_limited", "server_error", "Completed"]
 
 
 def test_client_emits_sanitized_structured_activity_events() -> None:
@@ -334,7 +342,7 @@ def test_client_emits_sanitized_structured_activity_events() -> None:
         Transport(),
         "secret",
         clock=lambda: datetime(2026, 8, 23, tzinfo=timezone.utc),
-        event_sink=events.append,
+        event_sink=lambda event: events.append(dict(event)),
     ).submit_and_poll(
         "/v1/heatmap",
         {"analytic_type": "tcm", "api_key": "must-not-appear"},

@@ -207,7 +207,7 @@ class HttpFortyGuardTransport:
         base_url: str,
         *,
         timeout_seconds: float = 15,
-        opener: Callable[[Request, float], object] = urlopen,
+        opener: Callable[..., object] = urlopen,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.timeout_seconds = timeout_seconds
@@ -436,6 +436,11 @@ def normalize_heatmap_response(
     features = payload.get("features")
     if not isinstance(features, Sequence) or isinstance(features, (str, bytes)) or not features:
         raise ValueError("heatmap response contains no features")
+    payload_mode = payload.get("mode")
+    if payload_mode is not None:
+        expected_mode = "forecast" if request.forecast else "historical"
+        if payload_mode != expected_mode:
+            raise ValueError("provider forecast/historical mode does not match request")
     tiles: list[Tile] = []
     units: set[str] = set()
     for index, feature in enumerate(features):

@@ -102,3 +102,20 @@ def test_trip_analysis_endpoint_returns_ranked_hotels_and_route_decision() -> No
         server.shutdown()
         server.server_close()
         thread.join(timeout=2)
+
+
+def test_trip_analysis_rejects_untrusted_metric_and_provenance_fields() -> None:
+    server = create_fixture_server(Path("fixtures/heatmap-historical.json"))
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        body = json.dumps({"heat_metric": "heat_index_celsius"}).encode()
+        try:
+            urlopen(Request(f"http://127.0.0.1:{server.server_port}/api/trip/analyze", data=body, method="POST"))
+        except HTTPError as error:
+            assert error.code == 400
+            assert json.load(error)["status"] == "unavailable"
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
