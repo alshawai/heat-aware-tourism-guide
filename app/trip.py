@@ -77,7 +77,10 @@ class RouteComparator:
         if not routes:
             raise ValueError("at least one route is required")
         shortest = min(routes, key=lambda route: route.distance_m)
-        corridor_heat = max(heat_values) if heat_values else heat_value
+        if shortest.distance_m > self.representative_threshold_m:
+            corridor_heat = max(heat_values) if heat_values else None
+        else:
+            corridor_heat = heat_value
         if corridor_heat is None:
             raise ValueError("heat value is required")
         if corridor_heat <= heat_threshold:

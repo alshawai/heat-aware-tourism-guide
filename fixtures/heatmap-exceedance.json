@@ -8,7 +8,7 @@
         "id": "exceedance-1",
         "metric": "exceedance",
         "value": 6,
-        "unit": "C",
+        "unit": "hours",
         "valid_time": "2026-08-20T00:00:00+00:00"
       }
     }

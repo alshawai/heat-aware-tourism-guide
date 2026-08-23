@@ -8,7 +8,7 @@
         "id": "persistence-1",
         "metric": "persistence",
         "value": 4,
-        "unit": "C",
+        "unit": "hours",
         "valid_time": "2026-08-20T00:00:00+00:00"
       }
     }

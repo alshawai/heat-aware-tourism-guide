@@ -1,5 +1,14 @@
 {
   "mode": "historical",
+  "request": {
+    "analytic_type": "tcm",
+    "latitude": 29.4241,
+    "longitude": -98.4936,
+    "start_date": "2026-08-23",
+    "forecast": false,
+    "threshold_celsius": null,
+    "direction": null
+  },
   "features": [
     {
       "type": "Feature",

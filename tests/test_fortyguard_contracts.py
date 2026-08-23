@@ -89,7 +89,11 @@ def test_committed_fixtures_normalize_to_the_same_tile_schema(
         direction="above" if analytic_type is not AnalyticType.TCM else None,
     )
     result = HeatmapExecution(fixture_path=Path("fixtures") / fixture_name).run(request)
-    assert result.tiles[0].value_celsius == value
+    if analytic_type is AnalyticType.TCM:
+        assert result.tiles[0].value_celsius == value
+    else:
+        assert result.tiles[0].value_celsius is None
+    assert result.tiles[0].metric_value == value
     assert result.tiles[0].metric is analytic_type
     assert result.tiles[0].source == "fixture"
     assert result.provenance.forecast is forecast
@@ -109,6 +113,14 @@ def test_fixture_mode_must_match_forecast_or_historical_request() -> None:
 
     request = HeatmapRequest(AnalyticType.TCM, 29.4241, -98.4936, date.today(), forecast=True)
     with pytest.raises(ValueError, match="mode"):
+        HeatmapExecution(fixture_path=Path("fixtures") / "heatmap-historical.json").run(request)
+
+
+def test_fixture_request_identity_must_match_scenario() -> None:
+    from app.execution import HeatmapExecution
+
+    request = HeatmapRequest(AnalyticType.TCM, 30.2672, -97.7431, date(2026, 8, 23), forecast=False)
+    with pytest.raises(ValueError, match="scenario"):
         HeatmapExecution(fixture_path=Path("fixtures") / "heatmap-historical.json").run(request)
 
 

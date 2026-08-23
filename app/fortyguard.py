@@ -227,8 +227,12 @@ class HttpFortyGuardTransport:
                 parsed = json.loads(response.read())
         except self.HttpError as error:
             status = getattr(error.response, "status", None)
+            if payload is None and (status in (404, 429) or isinstance(status, int) and status >= 500):
+                return {"status_code": status}
             raise classify_provider_error(status, "provider HTTP request failed") from None
         except HTTPError as error:
+            if payload is None and (error.code in (404, 429) or error.code >= 500):
+                return {"status_code": error.code}
             raise classify_provider_error(error.code, "provider HTTP request failed") from None
         except (TimeoutError, URLError, OSError) as error:
             raise ProviderError(ProviderErrorKind.SERVER, detail=type(error).__name__) from None
@@ -390,7 +394,8 @@ class Tile:
     identity: str
     geometry: Mapping[str, object]
     metric: AnalyticType
-    value_celsius: float
+    value_celsius: float | None
+    metric_value: float
     unit: str
     source: str
     valid_time: datetime
@@ -455,11 +460,13 @@ def normalize_heatmap_response(
             raise ValueError("unknown or mismatched metric")
         value = properties.get("value")
         unit = properties.get("unit")
-        if isinstance(value, bool) or not isinstance(value, (int, float)) or unit != "C":
+        expected_unit = "C" if request.analytic_type is AnalyticType.TCM else "hours"
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or unit != expected_unit:
             raise ValueError("mixed or unsupported units")
         valid_time = _parse_datetime(properties.get("valid_time"))
         units.add(unit)
-        tiles.append(Tile(str(properties.get("id", index)), geometry, request.analytic_type, float(value), unit, source, valid_time, request.forecast, request.threshold_celsius, request.direction, activity_id))
+        numeric_value = float(value)
+        tiles.append(Tile(str(properties.get("id", index)), geometry, request.analytic_type, numeric_value if request.analytic_type is AnalyticType.TCM else None, numeric_value, unit, source, valid_time, request.forecast, request.threshold_celsius, request.direction, activity_id))
     if len(units) != 1:
         raise ValueError("mixed or unsupported units")
     sanitized_payload = _sanitize_payload(payload)

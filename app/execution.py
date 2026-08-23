@@ -71,6 +71,11 @@ class HeatmapExecution:
         expected_mode = "forecast" if request.forecast else "historical"
         if payload.get("mode") != expected_mode:
             raise ValueError("fixture forecast/historical mode does not match request")
+        fixture_request = payload.get("request")
+        if isinstance(fixture_request, Mapping):
+            expected_request = _request_payload(request)
+            if any(fixture_request.get(key) != expected_request.get(key) for key in expected_request):
+                raise ValueError("fixture request does not match requested scenario")
         return normalize_heatmap_response(
             payload, request=request, retrieved_at=datetime.now().astimezone(), source="fixture"
         )

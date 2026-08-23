@@ -40,6 +40,7 @@ def test_route_comparator_fetches_routes_once_and_uses_shortest_when_heat_is_low
 def test_route_comparator_uses_maximum_heat_and_weak_coverage_shortest_fallback() -> None:
     result = RouteComparator().compare(
         lambda: [RouteCandidate("short", 1000, 600), RouteCandidate("shady", 1200, 700)],
+        heat_value=38,
         heat_values=[34, 38],
         heat_threshold=35,
         shade=lambda route: 80 if route.identity == "shady" else 20,
@@ -49,6 +50,28 @@ def test_route_comparator_uses_maximum_heat_and_weak_coverage_shortest_fallback(
     assert result.recommended_id == "short"
     assert result.reason == "insufficient shade coverage"
     assert result.shade_was_computed is True
+
+
+def test_route_comparator_uses_landmark_heat_for_short_and_corridor_max_for_long() -> None:
+    comparator = RouteComparator(representative_threshold_m=1500)
+    short = comparator.compare(
+        lambda: [RouteCandidate("short", 1000, 600)],
+        heat_value=30,
+        heat_values=[40],
+        heat_threshold=35,
+        shade=lambda route: 50,
+    )
+    long = comparator.compare(
+        lambda: [RouteCandidate("long", 1600, 900)],
+        heat_value=30,
+        heat_values=[34, 40],
+        heat_threshold=35,
+        shade=lambda route: 50,
+    )
+    assert short.corridor_heat_value == 30
+    assert short.shade_was_computed is False
+    assert long.corridor_heat_value == 40
+    assert long.shade_was_computed is True
 
 
 def test_area_request_supports_district_and_corridor_properties_without_sample_geometry() -> None:

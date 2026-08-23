@@ -8,7 +8,6 @@ from app.fortyguard import (
     EnvParamsRequest,
     HeatmapRequest,
     HttpFortyGuardTransport,
-    ProviderErrorKind,
     normalize_env_params_response,
 )
 
@@ -86,6 +85,15 @@ def test_http_transport_sends_auth_json_and_classifies_http_errors() -> None:
         raise HttpFortyGuardTransport.HttpError(ErrorResponse())
 
     failing = HttpFortyGuardTransport("https://api.example.test", opener=error_opener)
-    with pytest.raises(Exception) as error:
-        failing.get("/v1/status/a1", "secret")
-    assert error.value.kind is ProviderErrorKind.RATE_LIMIT
+    assert failing.get("/v1/status/a1", "secret") == {"status_code": 429}
+
+
+def test_status_transport_returns_transient_status_for_bounded_poller() -> None:
+    class ErrorResponse:
+        status = 404
+
+    def opener(request: object, timeout: float) -> object:
+        raise HttpFortyGuardTransport.HttpError(ErrorResponse())
+
+    transport = HttpFortyGuardTransport("https://api.example.test", opener=opener)
+    assert transport.get("/v1/status/a1", "secret") == {"status_code": 404}
