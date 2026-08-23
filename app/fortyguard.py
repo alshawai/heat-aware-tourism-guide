@@ -37,7 +37,7 @@ class HeatmapRequest:
     def __post_init__(self) -> None:
         if not isinstance(self.analytic_type, AnalyticType):
             raise ValueError("unknown analytic type")
-        if not 24 <= self.latitude <= 50 or not -125 <= self.longitude <= -66:
+        if not math.isfinite(self.latitude) or not math.isfinite(self.longitude) or not 24 <= self.latitude <= 50 or not -125 <= self.longitude <= -66:
             raise ValueError("coordinates must be within the supported US extent")
         if self.forecast and not date.today() <= self.start_date <= date.today() + timedelta(days=1):
             raise ValueError("forecast start date must be today or tomorrow")
@@ -75,9 +75,9 @@ class EnvParamsRequest:
     is_real_forecast: bool = False
 
     def __post_init__(self) -> None:
-        if not 24 <= self.latitude <= 50 or not -125 <= self.longitude <= -66:
+        if not math.isfinite(self.latitude) or not math.isfinite(self.longitude) or not 24 <= self.latitude <= 50 or not -125 <= self.longitude <= -66:
             raise ValueError("coordinates must be within the supported US extent")
-        if self.temperature_anchor_celsius is None:
+        if self.temperature_anchor_celsius is None or isinstance(self.temperature_anchor_celsius, bool) or not isinstance(self.temperature_anchor_celsius, (int, float)) or not math.isfinite(self.temperature_anchor_celsius):
             raise ValueError("caller-supplied temperature anchor is required")
         if self.is_real_forecast:
             raise ValueError("fixed-anchor env_params cannot be a real forecast")
@@ -136,9 +136,9 @@ def normalize_env_params_response(
     heat_index = payload.get("heat_index_celsius")
     humidity = payload.get("humidity_percent")
     valid_time = payload.get("valid_time")
-    if isinstance(heat_index, bool) or (heat_index is not None and not isinstance(heat_index, (int, float))):
+    if isinstance(heat_index, bool) or (heat_index is not None and (not isinstance(heat_index, (int, float)) or not math.isfinite(heat_index))):
         raise ValueError("invalid heat index")
-    if isinstance(humidity, bool) or (humidity is not None and not isinstance(humidity, (int, float))):
+    if isinstance(humidity, bool) or (humidity is not None and (not isinstance(humidity, (int, float)) or not math.isfinite(humidity))):
         raise ValueError("invalid humidity")
     if not isinstance(valid_time, str):
         raise ValueError("missing freshness metadata")

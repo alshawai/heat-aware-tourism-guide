@@ -40,6 +40,11 @@ def test_heatmap_request_rejects_non_finite_thresholds() -> None:
         )
 
 
+def test_heatmap_request_rejects_non_finite_coordinates() -> None:
+    with pytest.raises(ValueError, match="coordinates"):
+        HeatmapRequest(AnalyticType.TCM, float("nan"), -98.4936, date.today())
+
+
 def test_heatmap_request_rejects_unknown_analytic_type() -> None:
     with pytest.raises(ValueError, match="analytic type"):
         HeatmapRequest(

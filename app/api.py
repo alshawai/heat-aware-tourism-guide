@@ -6,6 +6,7 @@ from dataclasses import asdict
 from datetime import date
 from datetime import datetime
 from enum import Enum
+import math
 import json
 from pathlib import Path
 from typing import Any
@@ -116,7 +117,11 @@ def _trip_result(body: dict[str, object]) -> dict[str, object]:
         or isinstance(heat_threshold, bool)
         or not isinstance(heat_threshold, (int, float))
         or not isinstance(corridor_values, list)
-        or any(isinstance(value, bool) or not isinstance(value, (int, float)) for value in corridor_values)
+        or any(isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) for value in corridor_values)
+        or not math.isfinite(float(building_coverage_value))
+        or not 0 <= float(building_coverage_value) <= 1
+        or not math.isfinite(float(heat_value))
+        or not math.isfinite(float(heat_threshold))
     ):
         raise ValueError("trip heat and coverage values must be numeric")
     building_coverage = float(building_coverage_value)
@@ -125,7 +130,7 @@ def _trip_result(body: dict[str, object]) -> dict[str, object]:
         heat_value=float(heat_value),
         heat_values=tuple(float(value) for value in corridor_values),
         heat_threshold=float(heat_threshold),
-        shade=lambda route: float(shade[route.identity]),
+        shade=lambda route: _finite_number(shade[route.identity], "shade"),
         building_coverage=building_coverage,
     )
     return {
@@ -141,3 +146,9 @@ def _trip_result(body: dict[str, object]) -> dict[str, object]:
         },
         "provenance": {"source": "fixture", "stale": False},
     }
+
+
+def _finite_number(value: object, field: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+        raise ValueError(f"{field} must be finite numeric")
+    return float(value)
