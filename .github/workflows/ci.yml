@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  repository-quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install repository tooling
+        run: npm ci
+
+      - name: Check formatting
+        run: npm run format:check
+
+      - name: Audit repository tooling
+        run: npm audit --audit-level=high
+
+  # Python and frontend lint, type, test, build, and fixture-startup jobs are
+  # added with their application scaffolds. CI must remain offline: provider
+  # smoke tests belong to explicit fixture-acquisition workflows, not PR checks.
