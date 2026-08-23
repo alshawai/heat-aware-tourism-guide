@@ -47,13 +47,13 @@ def create_fixture_server(fixture_path: Path) -> ThreadingHTTPServer:
                     float(body["latitude"]),
                     float(body["longitude"]),
                     date.fromisoformat(body["start_date"]),
-                    bool(body.get("forecast", True)),
+                    _required_bool(body, "forecast", default=True),
                     body.get("threshold_celsius"),
                     body.get("direction"),
                 )
                 response = json.dumps(_result_json(execution.run(request)), default=_json_default).encode()
                 self.send_response(200)
-            except (KeyError, TypeError, ValueError, json.JSONDecodeError) as error:
+            except (KeyError, TypeError, ValueError, OSError, json.JSONDecodeError) as error:
                 response = json.dumps({"error": str(error), "status": "unavailable"}).encode()
                 self.send_response(400)
             self.send_header("Content-Type", "application/json")
@@ -65,3 +65,10 @@ def create_fixture_server(fixture_path: Path) -> ThreadingHTTPServer:
             return
 
     return ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+
+
+def _required_bool(body: dict[str, object], field: str, *, default: bool) -> bool:
+    value = body.get(field, default)
+    if not isinstance(value, bool):
+        raise ValueError(f"{field} must be a boolean")
+    return value

@@ -4,6 +4,10 @@ version = "0.1.0"
 requires-python = ">=3.11"
 dependencies = ["pyproj==3.7.2", "shapely==2.1.2"]
 
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 
@@ -13,3 +17,4 @@ line-length = 100
 [tool.mypy]
 python_version = "3.11"
 strict = true
+ignore_missing_imports = true

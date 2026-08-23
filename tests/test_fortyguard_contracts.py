@@ -54,6 +54,16 @@ def test_normalizer_preserves_forecast_provenance_and_units() -> None:
     assert result.provenance.activity_id == "activity-1"
 
 
+def test_normalizer_rejects_boolean_metric_values() -> None:
+    request = HeatmapRequest(AnalyticType.TCM, 29.4241, -98.4936, date(2026, 8, 23))
+    with pytest.raises(ValueError, match="units"):
+        normalize_heatmap_response(
+            {"features": [{"geometry": {"type": "Point", "coordinates": [-98.49, 29.42]}, "properties": {"value": True, "unit": "C", "valid_time": "2026-08-23T15:00:00+00:00"}}]},
+            request=request,
+            retrieved_at=datetime(2026, 8, 23, 12, tzinfo=timezone.utc),
+        )
+
+
 @pytest.mark.parametrize(
     ("fixture_name", "analytic_type", "forecast", "value"),
     [
@@ -126,7 +136,7 @@ def test_live_failure_replays_matching_cache_as_stale_data() -> None:
     )
 
     def failed(_: HeatmapRequest) -> dict[str, object]:
-        raise RuntimeError("provider unavailable")
+        raise ConnectionError("provider unavailable")
 
     result = HeatmapExecution(fixture_path=Path("fixtures") / "heatmap-historical.json", live_loader=failed, cache=cache).run(request, live=True)
     assert result.provenance.source == "cache"
@@ -139,10 +149,10 @@ def test_live_failure_without_matching_cache_is_not_silently_successful() -> Non
     from app.execution import HeatmapExecution
 
     request = HeatmapRequest(AnalyticType.TCM, 29.4241, -98.4936, date(2026, 8, 23), forecast=False)
-    with pytest.raises(RuntimeError, match="provider unavailable"):
+    with pytest.raises(ConnectionError, match="provider unavailable"):
         HeatmapExecution(
             fixture_path=Path("fixtures") / "heatmap-historical.json",
-            live_loader=lambda _: (_ for _ in ()).throw(RuntimeError("provider unavailable")),
+            live_loader=lambda _: (_ for _ in ()).throw(ConnectionError("provider unavailable")),
             cache=CacheService(),
         ).run(request, live=True)
 

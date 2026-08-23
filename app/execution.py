@@ -9,7 +9,7 @@ from typing import Callable, Mapping
 
 from app.cache import CacheService
 from app.domain import CacheKey
-from app.fortyguard import HeatmapRequest, HeatmapResult, normalize_heatmap_response
+from app.fortyguard import HeatmapRequest, HeatmapResult, ProviderError, normalize_heatmap_response
 
 
 class HeatmapExecution:
@@ -35,7 +35,7 @@ class HeatmapExecution:
             request_payload = _request_payload(request)
             try:
                 payload = self.live_loader(request)
-            except Exception:
+            except (ConnectionError, OSError, ProviderError, TimeoutError):
                 if self.cache is None:
                     raise
                 cached = self.cache.get(CacheKey.create(self.endpoint, self.schema_version, request_payload))

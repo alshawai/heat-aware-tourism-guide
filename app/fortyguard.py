@@ -294,7 +294,7 @@ def normalize_heatmap_response(
             raise ValueError("unknown or mismatched metric")
         value = properties.get("value")
         unit = properties.get("unit")
-        if not isinstance(value, (int, float)) or unit != "C":
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or unit != "C":
             raise ValueError("mixed or unsupported units")
         valid_time = _parse_datetime(properties.get("valid_time"))
         units.add(unit)
