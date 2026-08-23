@@ -26,14 +26,17 @@ application scaffold lands.
 
 ## Repository Checks
 
-Node tooling currently provides formatting and dependency audit checks:
+Repository tooling provides offline Python tests, lint/type checks, formatting,
+and dependency audit checks:
 
 ```bash
 npm install
 npm run format:check
+npm run python:lint
+npm run python:typecheck
+npm run python:test
 npm audit --audit-level=high
 ```
 
-Python and frontend lint, type, test, build, and fixture-startup checks will be
-added with the application scaffold. Live FortyGuard and Overpass calls are
-never required by CI.
+Live FortyGuard and Overpass calls are never required by CI. Frontend checks will
+be added with the React/Vite scaffold.

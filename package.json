@@ -4,6 +4,9 @@
   "scripts": {
     "format": "prettier --write .",
     "format:check": "prettier --check .",
+    "python:lint": "python -m ruff check app tests",
+    "python:test": "python -m pytest -q",
+    "python:typecheck": "python -m mypy app tests",
     "prepare": "husky"
   },
   "devDependencies": {
