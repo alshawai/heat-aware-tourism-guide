@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import math
 from typing import Callable, Mapping, Sequence
 
 
@@ -30,6 +31,23 @@ class HotelRanker:
         selected_weights = dict(weights or self.default_weights)
         if abs(sum(selected_weights.values()) - 1) > 0.001:
             raise ValueError("hotel weights must sum to one")
+        required = set(self.default_weights)
+        if set(selected_weights) != required or any(
+            isinstance(weight, bool) or not isinstance(weight, (int, float)) or not math.isfinite(weight) or weight < 0
+            for weight in selected_weights.values()
+        ):
+            raise ValueError("hotel weights must be finite, non-negative, and complete")
+        if any(
+            set(candidate.components) != required
+            or any(
+                isinstance(value, bool)
+                or not isinstance(value, (int, float))
+                or not math.isfinite(value)
+                for value in candidate.components.values()
+            )
+            for candidate in candidates
+        ):
+            raise ValueError("hotel components must be finite and complete")
         scores = [
             sum(candidate.components[name] * weight for name, weight in selected_weights.items())
             for candidate in candidates

@@ -13,6 +13,8 @@ from typing import Any
 from urllib.parse import urlparse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+from fastapi import FastAPI, HTTPException
+
 from app.execution import HeatmapExecution
 from app.fortyguard import AnalyticType, HeatmapRequest, ProviderError
 from app.trip import HotelCandidate, HotelRanker, RouteCandidate, RouteComparator
@@ -90,11 +92,65 @@ def create_fixture_server(
     return ThreadingHTTPServer(("127.0.0.1", 0), Handler)
 
 
+def create_app(
+    fixture_path: Path,
+    *,
+    execution: HeatmapExecution | None = None,
+    allow_live: bool = False,
+) -> FastAPI:
+    """Create the server-owned product API used by deployment."""
+    configured_execution: HeatmapExecution = execution or HeatmapExecution(fixture_path=fixture_path)
+    app = FastAPI(title="Heat-Aware Tourism Guide")
+
+    @app.post("/api/heatmap")
+    def heatmap(body: dict[str, object]) -> dict[str, object]:
+        try:
+            request = _heatmap_request(body)
+            mode = body.get("execution_mode", "fixture")
+            if mode not in {"fixture", "live"} or mode == "live" and not allow_live:
+                raise ValueError("requested execution mode is unavailable")
+            return _result_json(configured_execution.run(request, live=mode == "live"))
+        except (KeyError, TypeError, ValueError, OSError, RuntimeError, ProviderError) as error:
+            raise HTTPException(status_code=400, detail={"status": "unavailable", "error": str(error)}) from error
+
+    @app.post("/api/trip/analyze")
+    def trip_analyze(body: dict[str, object]) -> dict[str, object]:
+        try:
+            return _trip_result(body)
+        except (KeyError, TypeError, ValueError) as error:
+            raise HTTPException(status_code=400, detail={"status": "unavailable", "error": str(error)}) from error
+
+    return app
+
+
 def _required_bool(body: dict[str, object], field: str, *, default: bool) -> bool:
     value = body.get(field, default)
     if not isinstance(value, bool):
         raise ValueError(f"{field} must be a boolean")
     return value
+
+
+def _heatmap_request(body: dict[str, object]) -> HeatmapRequest:
+    latitude = _finite_number(body.get("latitude"), "latitude")
+    longitude = _finite_number(body.get("longitude"), "longitude")
+    start_date = body.get("start_date")
+    if not isinstance(start_date, str):
+        raise ValueError("start_date must be a date string")
+    threshold = body.get("threshold_celsius")
+    if threshold is not None:
+        threshold = _finite_number(threshold, "threshold_celsius")
+    direction = body.get("direction")
+    if direction is not None and not isinstance(direction, str):
+        raise ValueError("direction must be a string")
+    return HeatmapRequest(
+        AnalyticType(body["analytic_type"]),
+        latitude,
+        longitude,
+        date.fromisoformat(start_date),
+        _required_bool(body, "forecast", default=True),
+        threshold,
+        direction,
+    )
 
 
 def _trip_result(body: dict[str, object]) -> dict[str, object]:

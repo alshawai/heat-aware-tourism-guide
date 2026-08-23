@@ -4,6 +4,7 @@ from app.trip import (
     RouteCandidate,
     RouteComparator,
 )
+import pytest
 from app.fortyguard import AnalyticType, AreaHeatmapRequest
 
 
@@ -19,6 +20,17 @@ def test_hotel_ranker_exposes_components_percentiles_and_ties() -> None:
     assert ranked[0].tie_group == ranked[1].tie_group
     assert ranked[0].percentile == ranked[1].percentile
     assert ranked[0].components["night"] == 30
+
+
+def test_hotel_ranker_rejects_invalid_weights_and_components() -> None:
+    candidate = HotelCandidate("a", {"night": 30, "hot_hours": 5, "persistence": 2, "day": float("nan")})
+    with pytest.raises(ValueError, match="components"):
+        HotelRanker().rank([candidate])
+    with pytest.raises(ValueError, match="weights"):
+        HotelRanker().rank(
+            [HotelCandidate("a", {"night": 30, "hot_hours": 5, "persistence": 2, "day": 32})],
+            {"night": -0.35, "hot_hours": 0.25, "persistence": 0.2, "day": 0.9},
+        )
 
 
 def test_route_comparator_fetches_routes_once_and_uses_shortest_when_heat_is_low() -> None:

@@ -2,7 +2,7 @@
 name = "heat-aware-tourism-guide"
 version = "0.1.0"
 requires-python = ">=3.11"
-dependencies = ["pyproj==3.7.2", "shapely==2.1.2"]
+dependencies = ["fastapi==0.141.1", "pyproj==3.7.2", "shapely==2.1.2"]
 
 [build-system]
 requires = ["setuptools>=68"]
@@ -22,4 +22,8 @@ follow_imports = "skip"
 
 [[tool.mypy.overrides]]
 module = "tests.*"
+disable_error_code = ["untyped-decorator"]
+
+[[tool.mypy.overrides]]
+module = "app.api"
 disable_error_code = ["untyped-decorator"]
