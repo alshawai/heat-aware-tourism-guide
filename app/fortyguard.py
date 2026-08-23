@@ -6,8 +6,11 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from enum import Enum
 import re
+import json
 from time import sleep as default_sleep
 from typing import Callable, Mapping, Protocol, Sequence
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
 
 from app.domain import Provenance
 
@@ -40,6 +43,78 @@ class HeatmapRequest:
                 raise ValueError("threshold is required for this analytic type")
             if self.direction not in ("above", "below"):
                 raise ValueError("direction must be above or below")
+
+    def to_payload(self) -> dict[str, object]:
+        payload: dict[str, object] = {
+            "analytic_type": self.analytic_type.value,
+            "latitude": self.latitude,
+            "longitude": self.longitude,
+            "start_date": self.start_date.isoformat(),
+            "forecast": self.forecast,
+        }
+        if self.threshold_celsius is not None:
+            payload["threshold_celsius"] = self.threshold_celsius
+        if self.direction is not None:
+            payload["direction"] = self.direction
+        return payload
+
+
+@dataclass(frozen=True)
+class EnvParamsRequest:
+    latitude: float
+    longitude: float
+    start_date: date
+    temperature_anchor_celsius: float | None
+    is_real_forecast: bool = False
+
+    def __post_init__(self) -> None:
+        if not 24 <= self.latitude <= 50 or not -125 <= self.longitude <= -66:
+            raise ValueError("coordinates must be within the supported US extent")
+        if self.temperature_anchor_celsius is None:
+            raise ValueError("caller-supplied temperature anchor is required")
+
+    def to_payload(self) -> dict[str, object]:
+        return {
+            "latitude": self.latitude,
+            "longitude": self.longitude,
+            "start_date": self.start_date.isoformat(),
+            "temperature_anchor_celsius": self.temperature_anchor_celsius,
+            "forecast": False,
+            "warning": "fixed temperature anchor; not a real 24-hour forecast",
+        }
+
+
+@dataclass(frozen=True)
+class EnvParamsResult:
+    heat_index_celsius: float | None
+    humidity_percent: float | None
+    valid_time: datetime
+    forecast: bool
+    warning: str
+
+
+def normalize_env_params_response(
+    payload: Mapping[str, object], *, request: EnvParamsRequest
+) -> EnvParamsResult:
+    heat_index = payload.get("heat_index_celsius")
+    humidity = payload.get("humidity_percent")
+    valid_time = payload.get("valid_time")
+    if isinstance(heat_index, bool) or (heat_index is not None and not isinstance(heat_index, (int, float))):
+        raise ValueError("invalid heat index")
+    if isinstance(humidity, bool) or (humidity is not None and not isinstance(humidity, (int, float))):
+        raise ValueError("invalid humidity")
+    if not isinstance(valid_time, str):
+        raise ValueError("missing freshness metadata")
+    parsed_time = _parse_datetime(valid_time)
+    if payload.get("forecast") is True:
+        raise ValueError("fixed-anchor env_params response cannot be a real forecast")
+    return EnvParamsResult(
+        float(heat_index) if heat_index is not None else None,
+        float(humidity) if humidity is not None else None,
+        parsed_time,
+        False,
+        "caller-supplied temperature anchor; not a real 24-hour forecast",
+    )
 
 
 class ProviderErrorKind(str, Enum):
@@ -85,6 +160,54 @@ class FortyGuardTransport(Protocol):
     def post(self, endpoint: str, payload: Mapping[str, object], api_key: str) -> Mapping[str, object]: ...
 
     def get(self, endpoint: str, api_key: str) -> Mapping[str, object]: ...
+
+
+class HttpFortyGuardTransport:
+    class HttpError(Exception):
+        def __init__(self, response: object) -> None:
+            self.response = response
+
+    def __init__(
+        self,
+        base_url: str,
+        *,
+        timeout_seconds: float = 15,
+        opener: Callable[[Request, float], object] = urlopen,
+    ) -> None:
+        self.base_url = base_url.rstrip("/")
+        self.timeout_seconds = timeout_seconds
+        self._opener = opener
+
+    def post(self, endpoint: str, payload: Mapping[str, object], api_key: str) -> Mapping[str, object]:
+        return self._request(endpoint, api_key, payload)
+
+    def get(self, endpoint: str, api_key: str) -> Mapping[str, object]:
+        return self._request(endpoint, api_key)
+
+    def _request(
+        self, endpoint: str, api_key: str, payload: Mapping[str, object] | None = None
+    ) -> Mapping[str, object]:
+        request = Request(
+            f"{self.base_url}/{endpoint.lstrip('/')}",
+            data=json.dumps(payload).encode() if payload is not None else None,
+            headers={"X-API-Key": api_key, "Content-Type": "application/json"},
+            method="POST" if payload is not None else "GET",
+        )
+        try:
+            with self._opener(request, self.timeout_seconds) as response:  # type: ignore[attr-defined]
+                parsed = json.loads(response.read())
+        except self.HttpError as error:
+            status = getattr(error.response, "status", None)
+            raise classify_provider_error(status, "provider HTTP request failed") from None
+        except HTTPError as error:
+            raise classify_provider_error(error.code, "provider HTTP request failed") from None
+        except (TimeoutError, URLError, OSError) as error:
+            raise ProviderError(ProviderErrorKind.SERVER, detail=type(error).__name__) from None
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            raise ProviderError(ProviderErrorKind.MALFORMED_RESPONSE, detail="invalid JSON response") from None
+        if not isinstance(parsed, Mapping):
+            raise ProviderError(ProviderErrorKind.MALFORMED_RESPONSE, detail="response must be an object")
+        return parsed
 
 
 @dataclass(frozen=True)

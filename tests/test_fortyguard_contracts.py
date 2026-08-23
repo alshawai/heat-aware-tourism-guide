@@ -23,6 +23,7 @@ def test_heatmap_request_requires_threshold_and_direction_for_exceedance() -> No
             latitude=29.4241,
             longitude=-98.4936,
             start_date=date(2026, 8, 23),
+            forecast=False,
         )
 
 
@@ -41,7 +42,7 @@ def test_normalizer_preserves_forecast_provenance_and_units() -> None:
         analytic_type=AnalyticType.TCM,
         latitude=29.4241,
         longitude=-98.4936,
-        start_date=date(2026, 8, 23),
+        start_date=date.today(),
     )
     result = normalize_heatmap_response(
         {"features": [{"geometry": {"type": "Point", "coordinates": [-98.49, 29.42]}, "properties": {"value": 35.5, "unit": "C", "valid_time": "2026-08-23T15:00:00+00:00"}}]},
@@ -55,7 +56,7 @@ def test_normalizer_preserves_forecast_provenance_and_units() -> None:
 
 
 def test_normalizer_rejects_boolean_metric_values() -> None:
-    request = HeatmapRequest(AnalyticType.TCM, 29.4241, -98.4936, date(2026, 8, 23))
+    request = HeatmapRequest(AnalyticType.TCM, 29.4241, -98.4936, date.today())
     with pytest.raises(ValueError, match="units"):
         normalize_heatmap_response(
             {"features": [{"geometry": {"type": "Point", "coordinates": [-98.49, 29.42]}, "properties": {"value": True, "unit": "C", "valid_time": "2026-08-23T15:00:00+00:00"}}]},
@@ -82,7 +83,7 @@ def test_committed_fixtures_normalize_to_the_same_tile_schema(
         analytic_type,
         29.4241,
         -98.4936,
-        date(2026, 8, 23),
+        date.today() if forecast else date(2026, 8, 23),
         forecast=forecast,
         threshold_celsius=35 if analytic_type is not AnalyticType.TCM else None,
         direction="above" if analytic_type is not AnalyticType.TCM else None,
@@ -106,7 +107,7 @@ def test_empty_failed_and_malformed_fixtures_are_rejected() -> None:
 def test_fixture_mode_must_match_forecast_or_historical_request() -> None:
     from app.execution import HeatmapExecution
 
-    request = HeatmapRequest(AnalyticType.TCM, 29.4241, -98.4936, date(2026, 8, 23), forecast=True)
+    request = HeatmapRequest(AnalyticType.TCM, 29.4241, -98.4936, date.today(), forecast=True)
     with pytest.raises(ValueError, match="mode"):
         HeatmapExecution(fixture_path=Path("fixtures") / "heatmap-historical.json").run(request)
 

@@ -1,0 +1,7 @@
+{
+  "temperature_anchor_celsius": 35.0,
+  "heat_index_celsius": 38.1,
+  "humidity_percent": 55,
+  "valid_time": "2026-08-23T15:00:00+00:00",
+  "forecast": false
+}
