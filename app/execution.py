@@ -32,6 +32,9 @@ class HeatmapExecution:
             payload = json.load(fixture)
         if not isinstance(payload, Mapping):
             raise ValueError("fixture must contain a JSON object")
+        expected_mode = "forecast" if request.forecast else "historical"
+        if payload.get("mode") != expected_mode:
+            raise ValueError("fixture forecast/historical mode does not match request")
         return normalize_heatmap_response(
             payload, request=request, retrieved_at=datetime.now().astimezone(), source="fixture"
         )

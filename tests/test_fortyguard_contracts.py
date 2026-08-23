@@ -54,11 +54,58 @@ def test_normalizer_preserves_forecast_provenance_and_units() -> None:
     assert result.provenance.activity_id == "activity-1"
 
 
+@pytest.mark.parametrize(
+    ("fixture_name", "analytic_type", "forecast", "value"),
+    [
+        ("heatmap-forecast.json", AnalyticType.TCM, True, 35.5),
+        ("heatmap-historical.json", AnalyticType.TCM, False, 33.2),
+        ("heatmap-exceedance.json", AnalyticType.EXCEEDANCE, False, 6.0),
+        ("heatmap-persistence.json", AnalyticType.PERSISTENCE, False, 4.0),
+    ],
+)
+def test_committed_fixtures_normalize_to_the_same_tile_schema(
+    fixture_name: str, analytic_type: AnalyticType, forecast: bool, value: float
+) -> None:
+    from app.execution import HeatmapExecution
+
+    request = HeatmapRequest(
+        analytic_type,
+        29.4241,
+        -98.4936,
+        date(2026, 8, 23),
+        forecast=forecast,
+        threshold_celsius=35 if analytic_type is not AnalyticType.TCM else None,
+        direction="above" if analytic_type is not AnalyticType.TCM else None,
+    )
+    result = HeatmapExecution(fixture_path=Path("fixtures") / fixture_name).run(request)
+    assert result.tiles[0].value_celsius == value
+    assert result.tiles[0].metric is analytic_type
+    assert result.tiles[0].source == "fixture"
+    assert result.provenance.forecast is forecast
+
+
+def test_empty_failed_and_malformed_fixtures_are_rejected() -> None:
+    from app.execution import HeatmapExecution
+
+    request = HeatmapRequest(AnalyticType.TCM, 29.4241, -98.4936, date(2026, 8, 23), forecast=False)
+    for name in ("heatmap-empty.json", "heatmap-failed.json", "heatmap-malformed.json"):
+        with pytest.raises(ValueError):
+            HeatmapExecution(fixture_path=Path("fixtures") / name).run(request)
+
+
+def test_fixture_mode_must_match_forecast_or_historical_request() -> None:
+    from app.execution import HeatmapExecution
+
+    request = HeatmapRequest(AnalyticType.TCM, 29.4241, -98.4936, date(2026, 8, 23), forecast=True)
+    with pytest.raises(ValueError, match="mode"):
+        HeatmapExecution(fixture_path=Path("fixtures") / "heatmap-historical.json").run(request)
+
+
 def test_fixture_and_live_execution_share_normalized_schema(tmp_path: Path) -> None:
     from app.execution import HeatmapExecution
 
     fixture = tmp_path / "heatmap.json"
-    fixture.write_text('{"features": [{"geometry": {"type": "Point", "coordinates": [1, 1]}, "properties": {"value": 35.5, "unit": "C", "valid_time": "2026-08-23T15:00:00+00:00"}}]}')
+    fixture.write_text('{"mode": "historical", "features": [{"geometry": {"type": "Point", "coordinates": [1, 1]}, "properties": {"value": 35.5, "unit": "C", "valid_time": "2026-08-23T15:00:00+00:00"}}]}')
     request = HeatmapRequest(AnalyticType.TCM, 29.4241, -98.4936, date(2026, 8, 23), forecast=False)
     execution = HeatmapExecution(fixture_path=fixture, live_loader=lambda _: json.loads(fixture.read_text()))
     fixture_result = execution.run(request)

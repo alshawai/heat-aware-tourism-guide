@@ -1,0 +1,16 @@
+{
+  "mode": "historical",
+  "features": [
+    {
+      "type": "Feature",
+      "geometry": { "type": "Point", "coordinates": [-98.4936, 29.4241] },
+      "properties": {
+        "id": "exceedance-1",
+        "metric": "exceedance",
+        "value": 6,
+        "unit": "C",
+        "valid_time": "2026-08-20T00:00:00+00:00"
+      }
+    }
+  ]
+}

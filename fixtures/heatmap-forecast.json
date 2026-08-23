@@ -1,0 +1,16 @@
+{
+  "mode": "forecast",
+  "features": [
+    {
+      "type": "Feature",
+      "geometry": { "type": "Point", "coordinates": [-98.4936, 29.4241] },
+      "properties": {
+        "id": "forecast-1",
+        "metric": "tcm",
+        "value": 35.5,
+        "unit": "C",
+        "valid_time": "2026-08-23T15:00:00+00:00"
+      }
+    }
+  ]
+}

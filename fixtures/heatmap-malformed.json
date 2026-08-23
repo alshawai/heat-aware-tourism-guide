@@ -1,0 +1,10 @@
+{
+  "mode": "forecast",
+  "features": [
+    {
+      "type": "Feature",
+      "geometry": { "type": "Point" },
+      "properties": { "metric": "unknown", "value": 35.5, "unit": "F" }
+    }
+  ]
+}
