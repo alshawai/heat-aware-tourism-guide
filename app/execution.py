@@ -50,6 +50,7 @@ class HeatmapExecution:
                     retrieved_at=datetime.now().astimezone(),
                     activity_id=activity_id,
                     source="provider",
+                    data_date=_fixture_data_date(payload),
                 )
             except (ConnectionError, OSError, ProviderError, TimeoutError, ValueError):
                 if self.cache is None:

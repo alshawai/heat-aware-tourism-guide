@@ -39,6 +39,8 @@ def test_env_params_requires_temperature_anchor_and_marks_anchor_series() -> Non
     assert request.is_real_forecast is False
     with pytest.raises(ValueError, match="temperature anchor"):
         EnvParamsRequest(29.4241, -98.4936, date(2026, 8, 23), temperature_anchor_celsius=None)
+    with pytest.raises(ValueError, match="real forecast"):
+        EnvParamsRequest(29.4241, -98.4936, date(2026, 8, 23), 35, is_real_forecast=True)
 
 
 def test_env_params_fixture_preserves_anchor_warning_and_heat_index_metric() -> None:

@@ -79,6 +79,8 @@ class EnvParamsRequest:
             raise ValueError("coordinates must be within the supported US extent")
         if self.temperature_anchor_celsius is None:
             raise ValueError("caller-supplied temperature anchor is required")
+        if self.is_real_forecast:
+            raise ValueError("fixed-anchor env_params cannot be a real forecast")
 
     def to_payload(self) -> dict[str, object]:
         return {

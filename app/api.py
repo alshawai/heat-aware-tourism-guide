@@ -48,6 +48,8 @@ def create_fixture_server(
             try:
                 length = int(self.headers.get("Content-Length", "0"))
                 body = json.loads(self.rfile.read(length))
+                if not isinstance(body, dict):
+                    raise ValueError("request body must be a JSON object")
                 if path == "/api/trip/analyze":
                     response = json.dumps(_trip_result(body), default=_json_default).encode()
                     self.send_response(200)

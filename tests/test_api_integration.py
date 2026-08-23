@@ -65,6 +65,22 @@ def test_invalid_boolean_and_missing_fixture_return_unavailable() -> None:
         thread.join(timeout=2)
 
 
+def test_non_object_json_body_returns_unavailable() -> None:
+    server = create_fixture_server(Path("fixtures/heatmap-historical.json"))
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        try:
+            urlopen(Request(f"http://127.0.0.1:{server.server_port}/api/heatmap", data=b"[]", method="POST"))
+        except HTTPError as error:
+            assert error.code == 400
+            assert json.load(error)["status"] == "unavailable"
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+
 def test_trip_analysis_endpoint_returns_ranked_hotels_and_route_decision() -> None:
     server = create_fixture_server(Path("fixtures/heatmap-historical.json"))
     thread = Thread(target=server.serve_forever, daemon=True)

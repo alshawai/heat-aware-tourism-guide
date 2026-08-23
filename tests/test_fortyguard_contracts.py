@@ -214,6 +214,17 @@ def test_live_result_preserves_activity_id_and_malformed_payload_uses_cache() ->
     assert replayed.provenance.source == "cache"
 
 
+def test_live_provenance_uses_provider_freshness_date() -> None:
+    from app.execution import HeatmapExecution, LiveHeatmapPayload
+
+    payload = json.loads((Path("fixtures") / "heatmap-historical.json").read_text())
+    result = HeatmapExecution(
+        fixture_path=Path("fixtures") / "heatmap-historical.json",
+        live_loader=lambda _: LiveHeatmapPayload(payload, "live-1"),
+    ).run(HeatmapRequest(AnalyticType.TCM, 29.4241, -98.4936, date(2026, 8, 23), forecast=False), live=True)
+    assert result.provenance.data_date == "2026-08-20"
+
+
 def test_live_failure_without_matching_cache_is_not_silently_successful() -> None:
     from app.cache import CacheService
     from app.execution import HeatmapExecution
