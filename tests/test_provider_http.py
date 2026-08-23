@@ -94,6 +94,19 @@ def test_area_request_rejects_unclosed_polygon_ring() -> None:
         )
 
 
+def test_area_request_rejects_self_intersecting_polygon() -> None:
+    from app.fortyguard import AreaHeatmapRequest
+
+    with pytest.raises(ValueError, match="polygon geometry"):
+        AreaHeatmapRequest(
+            {"type": "Polygon", "coordinates": [[[1, 1], [2, 2], [2, 1], [1, 2], [1, 1]]]},
+            (AnalyticType.TCM,),
+            "district",
+            "C",
+            "explicit",
+        )
+
+
 def test_area_request_accepts_valid_multipolygon_coordinates() -> None:
     from app.fortyguard import AreaHeatmapRequest
 

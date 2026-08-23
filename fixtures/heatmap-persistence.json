@@ -1,5 +1,14 @@
 {
   "mode": "historical",
+  "request": {
+    "analytic_type": "persistence",
+    "latitude": 29.4241,
+    "longitude": -98.4936,
+    "start_date": "2026-08-23",
+    "forecast": false,
+    "threshold_celsius": 35,
+    "direction": "above"
+  },
   "features": [
     {
       "type": "Feature",

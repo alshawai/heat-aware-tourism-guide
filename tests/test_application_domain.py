@@ -8,6 +8,7 @@ from app.domain import (
     Provenance,
     ReadinessInput,
     readiness,
+    EnrichmentOutcome,
 )
 from app.cache import CacheService
 from app.analysis import extract_exposure, point_join_contract, polygon_join_contract
@@ -86,6 +87,21 @@ def test_enrichment_execution_preserves_ranked_output_after_partial_failure() ->
     assert result.failures == {"hotel-b": "optional provider failed"}
     assert result.remaining_credits == 0
     assert planner.credits == 0
+
+
+def test_enrichment_execution_records_actual_provider_usage() -> None:
+    from app.ledger import CreditLedger
+
+    ledger = CreditLedger(5)
+    result = EnrichmentPlanner(5).execute(
+        ["hotel-a"],
+        EnrichmentRequest(top_n=1, credits_per_item=2),
+        lambda _: EnrichmentOutcome({"canopy": 42}, "activity-1", 2, "/v1/satellite"),
+        ledger=ledger,
+    )
+    assert result.enriched["hotel-a"] == {"canopy": 42}
+    assert ledger.total_used == 2
+    assert ledger.records[0].activity_id == "activity-1"
 
 
 def test_historical_exposure_is_explicit_supporting_context() -> None:

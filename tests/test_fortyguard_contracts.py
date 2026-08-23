@@ -286,7 +286,7 @@ def test_fixture_and_live_execution_share_normalized_schema(tmp_path: Path) -> N
     from app.execution import HeatmapExecution
 
     fixture = tmp_path / "heatmap.json"
-    fixture.write_text('{"mode": "historical", "features": [{"geometry": {"type": "Point", "coordinates": [1, 1]}, "properties": {"value": 35.5, "unit": "C", "valid_time": "2026-08-23T15:00:00+00:00"}}]}')
+    fixture.write_text('{"mode": "historical", "request": {"analytic_type": "tcm", "latitude": 29.4241, "longitude": -98.4936, "start_date": "2026-08-23", "forecast": false, "threshold_celsius": null, "direction": null}, "features": [{"geometry": {"type": "Point", "coordinates": [1, 1]}, "properties": {"value": 35.5, "unit": "C", "valid_time": "2026-08-23T15:00:00+00:00"}}]}')
     request = HeatmapRequest(AnalyticType.TCM, 29.4241, -98.4936, date(2026, 8, 23), forecast=False)
     execution = HeatmapExecution(fixture_path=fixture, live_loader=lambda _: json.loads(fixture.read_text()))
     fixture_result = execution.run(request)

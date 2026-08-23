@@ -12,6 +12,7 @@ from time import sleep as default_sleep
 from typing import Callable, Mapping, Protocol, Sequence
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
+from shapely.geometry import shape
 
 from app.domain import Provenance
 from app.ledger import CreditLedger, UsageRecord
@@ -528,9 +529,17 @@ def _valid_geometry_coordinates(geometry: Mapping[str, object]) -> bool:
             )
         )
 
-    if geometry.get("type") == "Polygon":
-        return all(valid_ring(ring) for ring in coordinates)
-    return all(isinstance(polygon, list) and polygon and all(valid_ring(ring) for ring in polygon) for polygon in coordinates)
+    structurally_valid = (
+        all(valid_ring(ring) for ring in coordinates)
+        if geometry.get("type") == "Polygon"
+        else all(isinstance(polygon, list) and polygon and all(valid_ring(ring) for ring in polygon) for polygon in coordinates)
+    )
+    if not structurally_valid:
+        return False
+    try:
+        return bool(shape(dict(geometry)).is_valid)
+    except (TypeError, ValueError):
+        return False
 
 
 def _validate_us_coordinates(latitude: float, longitude: float) -> None:

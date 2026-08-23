@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 import hashlib
 import json
 from typing import Any, Callable, Sequence
 
-from app.ledger import CreditLedger
+from app.ledger import CreditLedger, UsageRecord
 
 
 @dataclass(frozen=True)
@@ -70,6 +70,14 @@ class EnrichmentResult:
     remaining_credits: int
 
 
+@dataclass(frozen=True)
+class EnrichmentOutcome:
+    payload: Any
+    activity_id: str
+    credits_used: int
+    endpoint: str
+
+
 class EnrichmentPlanner:
     def __init__(self, credits: int) -> None:
         self.credits = max(0, credits)
@@ -98,7 +106,21 @@ class EnrichmentPlanner:
             if ledger is not None:
                 ledger.plan_optional(candidate, request.credits_per_item)
             try:
-                enriched[candidate] = loader(candidate)
+                outcome = loader(candidate)
+                if isinstance(outcome, EnrichmentOutcome):
+                    enriched[candidate] = outcome.payload
+                    if ledger is not None:
+                        ledger.record(
+                            UsageRecord(
+                                outcome.activity_id,
+                                outcome.endpoint,
+                                outcome.credits_used,
+                                datetime.now(timezone.utc),
+                                "completed",
+                            )
+                        )
+                else:
+                    enriched[candidate] = outcome
             except Exception as error:
                 failures[candidate] = str(error)
         self.credits = plan.remaining_credits
