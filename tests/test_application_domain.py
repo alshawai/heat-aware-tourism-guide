@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+import pytest
 
 from app.domain import (
     CacheKey,
@@ -9,7 +10,7 @@ from app.domain import (
     readiness,
 )
 from app.cache import CacheService
-from app.analysis import point_join_contract, polygon_join_contract
+from app.analysis import extract_exposure, point_join_contract, polygon_join_contract
 
 
 def test_cache_key_separates_endpoint_and_schema_for_same_payload() -> None:
@@ -65,6 +66,55 @@ def test_enrichment_is_top_n_and_budgeted_without_blocking_core_flow() -> None:
     assert plan.selected == ("hotel-a",)
     assert plan.remaining_credits == 1
     assert plan.base_result_preserved is True
+
+
+def test_enrichment_execution_preserves_ranked_output_after_partial_failure() -> None:
+    planner = EnrichmentPlanner(credits=4)
+
+    def enrich(candidate: str) -> dict[str, str]:
+        if candidate == "hotel-b":
+            raise RuntimeError("optional provider failed")
+        return {"candidate": candidate}
+
+    result = planner.execute(
+        ["hotel-a", "hotel-b", "hotel-c"],
+        EnrichmentRequest(top_n=2, credits_per_item=2),
+        enrich,
+    )
+    assert result.base_ranking == ("hotel-a", "hotel-b", "hotel-c")
+    assert result.enriched == {"hotel-a": {"candidate": "hotel-a"}}
+    assert result.failures == {"hotel-b": "optional provider failed"}
+    assert result.remaining_credits == 0
+    assert planner.credits == 0
+
+
+def test_historical_exposure_is_explicit_supporting_context() -> None:
+    summary = extract_exposure(
+        {
+            "value": 6,
+            "unit": "C",
+            "valid_from": "2026-08-20T00:00:00+00:00",
+            "valid_to": "2026-08-20T23:00:00+00:00",
+            "fresh_at": "2026-08-21T00:00:00+00:00",
+        },
+        metric="exceedance",
+        threshold_celsius=35,
+        direction="above",
+        source="fortyguard",
+        forecast=False,
+    )
+    assert summary.role == "supporting_context"
+    assert summary.forecast is False
+    assert summary.threshold_celsius == 35
+    assert summary.fresh_at == "2026-08-21T00:00:00+00:00"
+
+
+def test_exposure_rejects_forecast_and_missing_freshness() -> None:
+    payload = {"value": 6, "unit": "C", "valid_from": "start", "valid_to": "end"}
+    with pytest.raises(ValueError, match="freshness"):
+        extract_exposure(payload, metric="exceedance", threshold_celsius=35, direction="above", source="fortyguard", forecast=False)
+    with pytest.raises(ValueError, match="historical"):
+        extract_exposure({**payload, "fresh_at": "fresh"}, metric="persistence", threshold_celsius=35, direction="above", source="fortyguard", forecast=True)
 
 
 def test_readiness_returns_deterministic_reason_codes() -> None:

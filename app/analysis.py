@@ -22,6 +22,8 @@ class ExposureSummary:
     forecast: bool
     valid_from: str
     valid_to: str
+    fresh_at: str
+    role: str = "supporting_context"
 
 
 def extract_exposure(
@@ -36,11 +38,16 @@ def extract_exposure(
     value = payload.get("value")
     valid_from = payload.get("valid_from")
     valid_to = payload.get("valid_to")
+    fresh_at = payload.get("fresh_at")
     if not isinstance(value, (int, float)) or not isinstance(valid_from, str) or not isinstance(valid_to, str):
         raise ValueError("exposure response is missing value or date window")
+    if not isinstance(fresh_at, str):
+        raise ValueError("exposure response is missing freshness")
+    if forecast:
+        raise ValueError("historical exposure context cannot be forecast")
     if payload.get("unit") != "C":
         raise ValueError("exposure must use Celsius")
-    return ExposureSummary(metric, float(value), "C", threshold_celsius, direction, source, forecast, valid_from, valid_to)
+    return ExposureSummary(metric, float(value), "C", threshold_celsius, direction, source, forecast, valid_from, valid_to, fresh_at)
 
 
 @dataclass(frozen=True)

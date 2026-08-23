@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime
 import hashlib
 import json
-from typing import Any, Sequence
+from typing import Any, Callable, Sequence
 
 
 @dataclass(frozen=True)
@@ -60,6 +60,14 @@ class EnrichmentPlan:
     base_result_preserved: bool
 
 
+@dataclass(frozen=True)
+class EnrichmentResult:
+    base_ranking: tuple[str, ...]
+    enriched: dict[str, Any]
+    failures: dict[str, str]
+    remaining_credits: int
+
+
 class EnrichmentPlanner:
     def __init__(self, credits: int) -> None:
         self.credits = max(0, credits)
@@ -73,6 +81,23 @@ class EnrichmentPlanner:
             count = min(request.top_n, len(candidates), self.credits // request.credits_per_item)
         used = count * request.credits_per_item
         return EnrichmentPlan(tuple(candidates[:count]), self.credits - used, True)
+
+    def execute(
+        self,
+        candidates: Sequence[str],
+        request: EnrichmentRequest,
+        loader: Callable[[str], Any],
+    ) -> EnrichmentResult:
+        plan = self.plan(candidates, request)
+        enriched: dict[str, Any] = {}
+        failures: dict[str, str] = {}
+        for candidate in plan.selected:
+            try:
+                enriched[candidate] = loader(candidate)
+            except Exception as error:
+                failures[candidate] = str(error)
+        self.credits = plan.remaining_credits
+        return EnrichmentResult(tuple(candidates), enriched, failures, self.credits)
 
 
 @dataclass(frozen=True)
