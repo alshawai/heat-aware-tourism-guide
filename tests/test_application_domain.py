@@ -92,7 +92,7 @@ def test_historical_exposure_is_explicit_supporting_context() -> None:
     summary = extract_exposure(
         {
             "value": 6,
-            "unit": "C",
+            "unit": "hours",
             "valid_from": "2026-08-20T00:00:00+00:00",
             "valid_to": "2026-08-20T23:00:00+00:00",
             "fresh_at": "2026-08-21T00:00:00+00:00",

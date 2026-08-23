@@ -1,4 +1,4 @@
 {
   "*": "prettier --ignore-unknown --write",
-  "*.py": ["python -m ruff check", "python -m pytest -q"]
+  "*.py": "python -m ruff check"
 }

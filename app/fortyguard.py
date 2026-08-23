@@ -14,6 +14,7 @@ from urllib.request import Request, urlopen
 
 from app.domain import Provenance
 from app.ledger import CreditLedger, UsageRecord
+from app.security import sanitize_payload
 
 
 class AnalyticType(str, Enum):
@@ -235,7 +236,8 @@ class HttpFortyGuardTransport:
                 return {"status_code": error.code}
             raise classify_provider_error(error.code, "provider HTTP request failed") from None
         except (TimeoutError, URLError, OSError) as error:
-            raise ProviderError(ProviderErrorKind.SERVER, detail=type(error).__name__) from None
+            kind = ProviderErrorKind.TIMEOUT if isinstance(error, TimeoutError) else ProviderErrorKind.SERVER
+            raise ProviderError(kind, detail=type(error).__name__) from None
         except (json.JSONDecodeError, UnicodeDecodeError):
             raise ProviderError(ProviderErrorKind.MALFORMED_RESPONSE, detail="invalid JSON response") from None
         if not isinstance(parsed, Mapping):
@@ -291,7 +293,7 @@ class FortyGuardClient:
         submitted_at = self._clock()
         self._emit(
             "fortyguard.submitted",
-            {"activity_id": activity_id, "endpoint": endpoint, "request": _sanitize_payload(payload)},
+            {"activity_id": activity_id, "endpoint": endpoint, "request": sanitize_payload(payload)},
         )
         transitions: list[str] = []
 
@@ -417,17 +419,6 @@ def _parse_datetime(value: object) -> datetime:
     return datetime.fromisoformat(value.replace("Z", "+00:00"))
 
 
-def _sanitize_payload(value: object) -> object:
-    if isinstance(value, Mapping):
-        return {
-            str(key): "[redacted]" if re.search(r"(?i)(api[_ -]?key|authorization|token)", str(key)) else _sanitize_payload(item)
-            for key, item in value.items()
-        }
-    if isinstance(value, list):
-        return [_sanitize_payload(item) for item in value]
-    return value
-
-
 def normalize_heatmap_response(
     payload: Mapping[str, object],
     *,
@@ -469,7 +460,7 @@ def normalize_heatmap_response(
         tiles.append(Tile(str(properties.get("id", index)), geometry, request.analytic_type, numeric_value if request.analytic_type is AnalyticType.TCM else None, numeric_value, unit, source, valid_time, request.forecast, request.threshold_celsius, request.direction, activity_id))
     if len(units) != 1:
         raise ValueError("mixed or unsupported units")
-    sanitized_payload = _sanitize_payload(payload)
+    sanitized_payload = sanitize_payload(payload)
     if not isinstance(sanitized_payload, dict):
         raise ValueError("malformed heatmap payload")
     return HeatmapResult(

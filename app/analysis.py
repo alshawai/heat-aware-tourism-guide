@@ -45,9 +45,10 @@ def extract_exposure(
         raise ValueError("exposure response is missing freshness")
     if forecast:
         raise ValueError("historical exposure context cannot be forecast")
-    if payload.get("unit") != "C":
-        raise ValueError("exposure must use Celsius")
-    return ExposureSummary(metric, float(value), "C", threshold_celsius, direction, source, forecast, valid_from, valid_to, fresh_at)
+    expected_unit = "C" if metric == "tcm" else "hours"
+    if payload.get("unit") != expected_unit:
+        raise ValueError(f"{metric} exposure must use {expected_unit}")
+    return ExposureSummary(metric, float(value), expected_unit, threshold_celsius, direction, source, forecast, valid_from, valid_to, fresh_at)
 
 
 @dataclass(frozen=True)

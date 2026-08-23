@@ -5,9 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Mapping
-import re
 
 from app.domain import CacheKey, Provenance
+from app.security import sanitize_payload
 
 
 @dataclass(frozen=True)
@@ -33,7 +33,7 @@ class CacheService:
         forecast: bool = False,
     ) -> CacheKey:
         key = CacheKey.create(endpoint, schema_version, request_payload)
-        sanitized = _sanitize(response_payload)
+        sanitized = sanitize_payload(response_payload)
         self._entries[key.value] = CacheEntry(
             sanitized,
             Provenance("provider", retrieved_at, data_date, False, forecast, activity_id, sanitized),
@@ -51,16 +51,3 @@ class CacheService:
             raw_payload=entry.provenance.raw_payload,
             forecast=entry.provenance.forecast,
         ))
-
-
-def _sanitize(value: object) -> Any:
-    if isinstance(value, Mapping):
-        return {
-            str(key): "[redacted]" if re.search(r"(?i)(api[_ -]?key|authorization|token)", str(key)) else _sanitize(item)
-            for key, item in value.items()
-        }
-    if isinstance(value, list):
-        return [_sanitize(item) for item in value]
-    if not isinstance(value, (str, int, float, bool, type(None))):
-        raise ValueError("cached response must be an object")
-    return value

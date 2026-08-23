@@ -32,8 +32,12 @@ def _json_default(value: object) -> object:
     raise TypeError(f"cannot serialize {type(value).__name__}")
 
 
-def create_fixture_server(fixture_path: Path) -> ThreadingHTTPServer:
-    execution = HeatmapExecution(fixture_path=fixture_path)
+def create_fixture_server(
+    fixture_path: Path,
+    *,
+    execution: HeatmapExecution | None = None,
+) -> ThreadingHTTPServer:
+    execution = execution or HeatmapExecution(fixture_path=fixture_path)
 
     class Handler(BaseHTTPRequestHandler):
         def do_POST(self) -> None:
@@ -61,7 +65,10 @@ def create_fixture_server(fixture_path: Path) -> ThreadingHTTPServer:
                     body.get("threshold_celsius"),
                     body.get("direction"),
                 )
-                response = json.dumps(_result_json(execution.run(request)), default=_json_default).encode()
+                live = body.get("execution_mode", "fixture") == "live"
+                if body.get("execution_mode", "fixture") not in {"fixture", "live"}:
+                    raise ValueError("execution_mode must be fixture or live")
+                response = json.dumps(_result_json(execution.run(request, live=live)), default=_json_default).encode()
                 self.send_response(200)
             except (KeyError, TypeError, ValueError, OSError, json.JSONDecodeError) as error:
                 response = json.dumps({"error": str(error), "status": "unavailable"}).encode()
@@ -101,5 +108,14 @@ def _trip_result(body: dict[str, object]) -> dict[str, object]:
     )
     return {
         "hotels": [asdict(hotel) for hotel in HotelRanker().rank(candidates)],
-        "route": asdict(route_result),
+        "route": {
+            **asdict(route_result),
+            "routes": [asdict(route) for route in route_candidates],
+            "heat_metric": body.get("heat_metric", "tcm"),
+            "heat_status": "elevated" if route_result.corridor_heat_value > float(body["heat_threshold"]) else "not_elevated",
+            "coverage": float(body.get("building_coverage", 0)),
+            "confidence": "sufficient" if float(body.get("building_coverage", 0)) >= 0.7 else "insufficient",
+            "comparison_scope": "returned alternatives",
+        },
+        "provenance": body.get("provenance", {"source": "fixture", "stale": False}),
     }
