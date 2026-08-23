@@ -62,15 +62,7 @@ def create_fixture_server(
                     self.end_headers()
                     self.wfile.write(response)
                     return
-                request = HeatmapRequest(
-                    AnalyticType(body["analytic_type"]),
-                    float(body["latitude"]),
-                    float(body["longitude"]),
-                    date.fromisoformat(body["start_date"]),
-                    _required_bool(body, "forecast", default=True),
-                    body.get("threshold_celsius"),
-                    body.get("direction"),
-                )
+                request = _heatmap_request(body)
                 live = body.get("execution_mode", "fixture") == "live"
                 if body.get("execution_mode", "fixture") not in {"fixture", "live"}:
                     raise ValueError("execution_mode must be fixture or live")

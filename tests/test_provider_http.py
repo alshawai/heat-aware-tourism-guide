@@ -8,6 +8,8 @@ from app.fortyguard import (
     EnvParamsRequest,
     HeatmapRequest,
     HttpFortyGuardTransport,
+    ProviderErrorKind,
+    classify_provider_error,
     normalize_env_params_response,
 )
 
@@ -166,3 +168,7 @@ def test_status_transport_returns_transient_status_for_bounded_poller() -> None:
 
     transport = HttpFortyGuardTransport("https://api.example.test", opener=opener)
     assert transport.get("/v1/status/a1", "secret") == {"status_code": 404}
+
+
+def test_http_408_is_classified_as_timeout() -> None:
+    assert classify_provider_error(408).kind is ProviderErrorKind.TIMEOUT

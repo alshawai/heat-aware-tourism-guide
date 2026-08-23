@@ -183,7 +183,9 @@ def _sanitize_detail(detail: str) -> str:
 
 
 def classify_provider_error(status_code: int | None, detail: str = "") -> ProviderError:
-    if status_code in (401, 403):
+    if status_code == 408:
+        kind = ProviderErrorKind.TIMEOUT
+    elif status_code in (401, 403):
         kind = ProviderErrorKind.AUTHENTICATION
     elif status_code in (400, 404, 422):
         kind = ProviderErrorKind.VALIDATION
@@ -238,11 +240,11 @@ class HttpFortyGuardTransport:
                 parsed = json.loads(response.read())
         except self.HttpError as error:
             status = getattr(error.response, "status", None)
-            if payload is None and (status in (404, 429) or isinstance(status, int) and status >= 500):
+            if payload is None and (status in (404, 408, 429) or isinstance(status, int) and status >= 500):
                 return {"status_code": status}
             raise classify_provider_error(status, "provider HTTP request failed") from None
         except HTTPError as error:
-            if payload is None and (error.code in (404, 429) or error.code >= 500):
+            if payload is None and (error.code in (404, 408, 429) or error.code >= 500):
                 return {"status_code": error.code}
             raise classify_provider_error(error.code, "provider HTTP request failed") from None
         except (TimeoutError, URLError, OSError) as error:
