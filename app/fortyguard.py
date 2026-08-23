@@ -106,6 +106,8 @@ class AreaHeatmapRequest:
             raise ValueError("area heatmap requires polygon geometry")
         if not self.analytic_types:
             raise ValueError("at least one analytic type is required")
+        if any(not isinstance(analytic_type, AnalyticType) for analytic_type in self.analytic_types):
+            raise ValueError("area analytic types must be known")
         if self.context not in {"district", "corridor"}:
             raise ValueError("area context must be district or corridor")
         if self.unit != "C" or self.unit_source not in {"explicit", "inferred"}:
@@ -324,8 +326,11 @@ class FortyGuardClient:
             _response_metadata(result),
         )
         credits_used = result.get("credits_used")
-        if self._ledger is not None and isinstance(credits_used, int) and not isinstance(credits_used, bool):
-            self._ledger.record(UsageRecord(activity_id, endpoint, credits_used, self._clock(), "completed"))
+        if credits_used is not None:
+            if isinstance(credits_used, bool) or not isinstance(credits_used, int) or credits_used < 0:
+                raise ProviderError(ProviderErrorKind.MALFORMED_RESPONSE, detail="invalid credit usage metadata")
+            if self._ledger is not None:
+                self._ledger.record(UsageRecord(activity_id, endpoint, credits_used, self._clock(), "completed"))
         self._emit("fortyguard.completed", {"activity_id": activity_id, **_response_metadata(result)})
         return result, metadata
 
@@ -454,6 +459,7 @@ def normalize_heatmap_response(
             not isinstance(geometry, Mapping)
             or geometry.get("type") not in {"Point", "Polygon", "MultiPolygon"}
             or not geometry.get("coordinates")
+            or not _valid_geometry_coordinates(geometry)
         ):
             raise ValueError("missing geometry")
         if not isinstance(properties, Mapping):
@@ -492,3 +498,15 @@ def normalize_heatmap_response(
             sanitized_payload,
         ),
     )
+
+
+def _valid_geometry_coordinates(geometry: Mapping[str, object]) -> bool:
+    coordinates = geometry.get("coordinates")
+    if geometry.get("type") == "Point":
+        return isinstance(coordinates, list) and len(coordinates) == 2 and all(
+            isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
+            for value in coordinates
+        )
+    if not isinstance(coordinates, list) or not coordinates:
+        return False
+    return all(isinstance(ring, list) and len(ring) >= 4 for ring in coordinates)

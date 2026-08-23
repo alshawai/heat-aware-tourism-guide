@@ -55,6 +55,19 @@ def test_env_params_fixture_preserves_anchor_warning_and_heat_index_metric() -> 
     assert "not a real 24-hour forecast" in result.warning
 
 
+def test_area_request_rejects_unknown_analytic_members() -> None:
+    with pytest.raises(ValueError, match="analytic types"):
+        from app.fortyguard import AreaHeatmapRequest
+
+        AreaHeatmapRequest(
+            {"type": "Polygon", "coordinates": [[[1, 1], [2, 1], [2, 2], [1, 1]]]},
+            ("unknown",),  # type: ignore[arg-type]
+            "district",
+            "C",
+            "explicit",
+        )
+
+
 def test_http_transport_sends_auth_json_and_classifies_http_errors() -> None:
     calls: list[tuple[str, dict[str, object], dict[str, str]]] = []
 

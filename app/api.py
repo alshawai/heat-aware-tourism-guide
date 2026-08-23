@@ -14,7 +14,7 @@ from urllib.parse import urlparse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from app.execution import HeatmapExecution
-from app.fortyguard import AnalyticType, HeatmapRequest
+from app.fortyguard import AnalyticType, HeatmapRequest, ProviderError
 from app.trip import HotelCandidate, HotelRanker, RouteCandidate, RouteComparator
 
 
@@ -73,7 +73,7 @@ def create_fixture_server(
                     raise ValueError("execution_mode must be fixture or live")
                 response = json.dumps(_result_json(configured_execution.run(request, live=live)), default=_json_default).encode()
                 self.send_response(200)
-            except (KeyError, TypeError, ValueError, OSError, RuntimeError, json.JSONDecodeError) as error:
+            except (KeyError, TypeError, ValueError, OSError, RuntimeError, ProviderError, json.JSONDecodeError) as error:
                 response = json.dumps({"error": str(error), "status": "unavailable"}).encode()
                 self.send_response(400)
             self.send_header("Content-Type", "application/json")

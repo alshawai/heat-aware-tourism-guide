@@ -45,6 +45,16 @@ def test_heatmap_request_rejects_non_finite_coordinates() -> None:
         HeatmapRequest(AnalyticType.TCM, float("nan"), -98.4936, date.today())
 
 
+def test_normalizer_rejects_malformed_point_coordinates() -> None:
+    request = HeatmapRequest(AnalyticType.TCM, 29.4241, -98.4936, date.today())
+    with pytest.raises(ValueError, match="geometry"):
+        normalize_heatmap_response(
+            {"features": [{"geometry": {"type": "Point", "coordinates": [1]}, "properties": {"value": 35, "unit": "C", "valid_time": "2026-08-23T15:00:00+00:00"}}]},
+            request=request,
+            retrieved_at=datetime.now(timezone.utc),
+        )
+
+
 def test_heatmap_request_rejects_unknown_analytic_type() -> None:
     with pytest.raises(ValueError, match="analytic type"):
         HeatmapRequest(
@@ -391,3 +401,17 @@ def test_client_records_provider_reported_credits_in_ledger() -> None:
     ).submit_and_poll("/v1/heatmap", {}, sleep=lambda _: None)
     assert ledger.total_used == 4
     assert ledger.records[0].endpoint == "/v1/heatmap"
+
+
+def test_client_rejects_invalid_provider_credit_metadata() -> None:
+    class Transport:
+        def post(self, endpoint: str, payload: object, api_key: str) -> dict[str, object]:
+            return {"activity_id": "activity-1"}
+
+        def get(self, endpoint: str, api_key: str) -> dict[str, object]:
+            return {"status": "Completed", "credits_used": 1.5, "result": {"ok": True}}
+
+    with pytest.raises(Exception, match="invalid credit"):
+        FortyGuardClient(Transport(), "secret", clock=lambda: datetime.now(timezone.utc)).submit_and_poll(
+            "/v1/heatmap", {}, sleep=lambda _: None
+        )
