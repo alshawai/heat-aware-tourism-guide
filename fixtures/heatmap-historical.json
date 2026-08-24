@@ -1,0 +1,25 @@
+{
+  "mode": "historical",
+  "request": {
+    "analytic_type": "tcm",
+    "latitude": 29.4241,
+    "longitude": -98.4936,
+    "start_date": "2026-08-23",
+    "forecast": false,
+    "threshold_celsius": null,
+    "direction": null
+  },
+  "features": [
+    {
+      "type": "Feature",
+      "geometry": { "type": "Point", "coordinates": [-98.4936, 29.4241] },
+      "properties": {
+        "id": "historical-1",
+        "metric": "tcm",
+        "value": 33.2,
+        "unit": "C",
+        "valid_time": "2026-08-20T15:00:00+00:00"
+      }
+    }
+  ]
+}

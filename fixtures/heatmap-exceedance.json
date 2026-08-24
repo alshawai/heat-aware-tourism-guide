@@ -1,0 +1,25 @@
+{
+  "mode": "historical",
+  "request": {
+    "analytic_type": "exceedance",
+    "latitude": 29.4241,
+    "longitude": -98.4936,
+    "start_date": "2026-08-23",
+    "forecast": false,
+    "threshold_celsius": 35,
+    "direction": "above"
+  },
+  "features": [
+    {
+      "type": "Feature",
+      "geometry": { "type": "Point", "coordinates": [-98.4936, 29.4241] },
+      "properties": {
+        "id": "exceedance-1",
+        "metric": "exceedance",
+        "value": 6,
+        "unit": "hours",
+        "valid_time": "2026-08-20T00:00:00+00:00"
+      }
+    }
+  ]
+}

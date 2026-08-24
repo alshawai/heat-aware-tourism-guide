@@ -28,6 +28,24 @@ jobs:
       - name: Audit repository tooling
         run: npm audit --audit-level=high
 
-  # Python and frontend lint, type, test, build, and fixture-startup jobs are
-  # added with their application scaffolds. CI must remain offline: provider
-  # smoke tests belong to explicit fixture-acquisition workflows, not PR checks.
+  python-quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install Python quality tooling
+        run: python -m pip install ".[test]" mypy==1.20.2 pytest==9.0.3 ruff==0.15.12
+
+      - name: Lint Python
+        run: python -m ruff check app tests
+
+      - name: Type-check Python
+        run: python -m mypy app tests
+
+      - name: Test Python
+        run: python -m pytest -q
