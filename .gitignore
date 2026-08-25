@@ -9,3 +9,5 @@ coverage/
 .ruff_cache/
 .mypy_cache/
 data/lidar-prototype/
+settings.json
+opencode.json
