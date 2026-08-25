@@ -40,3 +40,52 @@ npm audit --audit-level=high
 
 Live FortyGuard and Overpass calls are never required by CI. Frontend checks will
 be added with the React/Vite scaffold.
+
+## Live Credit Usage
+
+The salvaged quickstart account-usage endpoint is available as a credential-safe
+terminal command. Load `FORTYGUARD_API_KEY` into the process environment without
+printing it, then run:
+
+```bash
+python scripts/fortyguard_usage.py
+python scripts/fortyguard_usage.py --start 2026-08-01 --end 2026-08-24
+```
+
+The command reports the selected window, total credits, and provider activity
+breakdown. It never prints the API key. The source is the quickstart's
+`POST /v1/system/fetch-api-key-custom-usage` utility; the original
+`notebooks/00_setup.ipynb` remains the reference walkthrough.
+
+## Lidar Corridor Prototype
+
+The official USGS National Map coverage probe records classified lidar
+products intersecting the bounded Austin and San Antonio route corridors:
+
+```bash
+python scripts/lidar_corridor_probe.py
+```
+
+This writes local, gitignored metadata to `data/lidar-prototype/coverage.json`.
+It does not download point-cloud binaries. Review the tile metadata and source
+dates before adding an opt-in download/derivation workflow.
+
+The local research environment can inspect a downloaded LAZ tile with
+`laspy[lazrs]` (the package is not an application dependency):
+
+```bash
+python scripts/derive_lidar_corridor_stats.py \
+  data/lidar-prototype/laz/USGS_LPC_TX_Central_B2_2017_stratmap17_50cm_2998373a1_LAS_2019.laz
+```
+
+For the canonical San Antonio corridor, the bounded OpenStreetMap XML extract
+and classified LAZ tile can be compared at building-footprint level with:
+
+```bash
+python scripts/validate_building_lidar_heights.py \
+  /path/to/san-antonio.osm \
+  data/lidar-prototype/laz/USGS_LPC_TX_Central_B2_2017_stratmap17_50cm_2998373a1_LAS_2019.laz
+```
+
+Pass the saved OSRM response with `--route-json` to use the full walking route
+instead of the endpoint chord.

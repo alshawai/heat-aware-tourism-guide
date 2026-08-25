@@ -65,6 +65,20 @@ endpoint, completion time, and status. Planned optional enrichment is recorded
 separately and does not count as actual spend. Budget enforcement occurs before
 an actual usage record is accepted.
 
+The quickstart account-usage utility is also salvaged as
+`app.fortyguard_usage.fetch_custom_usage` and `scripts/fortyguard_usage.py`.
+It calls `POST /v1/system/fetch-api-key-custom-usage` for a date window and is
+intended for manual balance checks. The API key is supplied in-process and never
+printed. This account-level report complements, but does not replace, the
+per-activity ledger because provider activity responses may omit credit fields.
+
+The quickstart's asynchronous heatmap, environmental-parameter, cache, polling,
+and normalization patterns are represented by the existing application modules
+and fixtures. Its satellite segmentation, street-view segmentation,
+heat-intelligence PDF, notebook plotting, and parcel/real-estate workflows
+remain out of scope for this tourism guide; they are not copied merely because
+the account usage report lists their historical spend.
+
 `POST /api/trip/analyze` is the product-level decision boundary. Hotel ranking
 uses the documented provisional component weights, retains components, and
 reports ties and candidate-set percentiles rather than an absolute grade. Route

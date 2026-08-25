@@ -4,7 +4,7 @@
     "analytic_type": "tcm",
     "latitude": 29.4241,
     "longitude": -98.4936,
-    "start_date": "2026-08-24",
+    "start_date": "2026-08-25",
     "forecast": true,
     "threshold_celsius": null,
     "direction": null
@@ -18,7 +18,7 @@
         "metric": "tcm",
         "value": 35.5,
         "unit": "C",
-        "valid_time": "2026-08-23T15:00:00+00:00"
+        "valid_time": "2026-08-25T15:00:00+00:00"
       }
     }
   ]
