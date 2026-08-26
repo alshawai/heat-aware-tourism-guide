@@ -7,11 +7,17 @@
     "python:lint": "python -m ruff check app tests",
     "python:test": "python -m pytest -q",
     "python:typecheck": "python -m mypy app tests",
+    "backend:dev": "uvicorn app.main:app --reload",
+    "frontend:dev": "npm --prefix frontend run dev",
+    "frontend:build": "npm --prefix frontend run build",
     "prepare": "husky"
   },
   "devDependencies": {
     "husky": "^9.1.7",
     "lint-staged": "^17.3.0",
     "prettier": "^3.6.2"
+  },
+  "dependencies": {
+    "npml": "^0.1.0"
   }
 }

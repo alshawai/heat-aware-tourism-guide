@@ -3,17 +3,18 @@
 from __future__ import annotations
 
 from dataclasses import asdict
-from datetime import date
-from datetime import datetime
+from datetime import date, datetime
 from enum import Enum
-import math
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
+import math
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from app.execution import HeatmapExecution
 from app.fortyguard import AnalyticType, HeatmapRequest, ProviderError
@@ -89,10 +90,15 @@ def create_app(
     *,
     execution: HeatmapExecution | None = None,
     allow_live: bool = False,
+    frontend_dist: Path | None = None,
 ) -> FastAPI:
-    """Create the server-owned product API used by deployment."""
+    """Create the server-owned product API used by local runs and deployment."""
     configured_execution: HeatmapExecution = execution or HeatmapExecution(fixture_path=fixture_path)
     app = FastAPI(title="Heat-Aware Tourism Guide")
+
+    @app.get("/health")
+    def health() -> dict[str, str]:
+        return {"status": "ok", "mode": "live" if allow_live else "fixture"}
 
     @app.post("/api/heatmap")
     def heatmap(body: dict[str, object]) -> dict[str, object]:
@@ -111,6 +117,14 @@ def create_app(
             return _trip_result(body)
         except (KeyError, TypeError, ValueError) as error:
             raise HTTPException(status_code=400, detail={"status": "unavailable", "error": str(error)}) from error
+
+    if frontend_dist is not None and frontend_dist.is_dir():
+        app.mount("/assets", StaticFiles(directory=frontend_dist / "assets"), name="assets")
+
+        @app.get("/{path:path}")
+        def frontend(path: str) -> FileResponse:
+            requested = frontend_dist / path
+            return FileResponse(requested if requested.is_file() else frontend_dist / "index.html")
 
     return app
 

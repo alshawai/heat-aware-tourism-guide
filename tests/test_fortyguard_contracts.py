@@ -152,20 +152,32 @@ def test_normalizer_rejects_provider_mode_mismatch() -> None:
     ],
 )
 def test_committed_fixtures_normalize_to_the_same_tile_schema(
-    fixture_name: str, analytic_type: AnalyticType, forecast: bool, value: float
+    fixture_name: str,
+    analytic_type: AnalyticType,
+    forecast: bool,
+    value: float,
+    tmp_path: Path,
 ) -> None:
     from app.execution import HeatmapExecution
+
+    fixture_path = Path("fixtures") / fixture_name
+    request_date = date.today() if forecast else date(2026, 8, 23)
+    if forecast:
+        fixture_payload = json.loads(fixture_path.read_text(encoding="utf-8"))
+        fixture_payload["request"]["start_date"] = request_date.isoformat()
+        fixture_path = tmp_path / fixture_name
+        fixture_path.write_text(json.dumps(fixture_payload), encoding="utf-8")
 
     request = HeatmapRequest(
         analytic_type,
         29.4241,
         -98.4936,
-        date.today() if forecast else date(2026, 8, 23),
+        request_date,
         forecast=forecast,
         threshold_celsius=35 if analytic_type is not AnalyticType.TCM else None,
         direction="above" if analytic_type is not AnalyticType.TCM else None,
     )
-    result = HeatmapExecution(fixture_path=Path("fixtures") / fixture_name).run(request)
+    result = HeatmapExecution(fixture_path=fixture_path).run(request)
     if analytic_type is AnalyticType.TCM:
         assert result.tiles[0].value_celsius == value
     else:
