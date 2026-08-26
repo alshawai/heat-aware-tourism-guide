@@ -1,0 +1,21 @@
+"""Run the fixture-backed Heat-Aware Tourism Guide API."""
+
+import os
+from pathlib import Path
+
+import uvicorn
+
+from app.api import create_app
+
+
+ROOT = Path(__file__).resolve().parent.parent
+
+app = create_app(
+    ROOT / "fixtures/heatmap-historical.json",
+    allow_live=os.getenv("ALLOW_LIVE", "false").lower() == "true",
+    frontend_dist=ROOT / "frontend/dist",
+)
+
+
+if __name__ == "__main__":
+    uvicorn.run("app.main:app", host="127.0.0.1", port=8000, reload=True)
