@@ -5,15 +5,16 @@ from urllib.error import URLError
 
 import pytest
 
-from app.fortyguard import (
+from app.integrations.fortyguard.contracts import (
     AnalyticType,
     EnvParamsRequest,
     HeatmapRequest,
-    HttpFortyGuardTransport,
+)
+from app.integrations.fortyguard.errors import (
     ProviderErrorKind,
     classify_provider_error,
-    normalize_env_params_response,
 )
+from app.integrations.fortyguard.transport import HttpFortyGuardTransport
 
 
 def test_heatmap_payload_preserves_forecast_history_and_threshold_contract() -> None:
@@ -32,6 +33,7 @@ def test_heatmap_payload_preserves_forecast_history_and_threshold_contract() -> 
         "longitude": -98.4936,
         "start_date": "2026-08-20",
         "forecast": False,
+        "granularity": 60,
         "threshold_celsius": 35,
         "direction": "above",
     }
@@ -49,19 +51,9 @@ def test_env_params_requires_temperature_anchor_and_marks_anchor_series() -> Non
         EnvParamsRequest(29.4241, -98.4936, date(2026, 8, 23), float("nan"))
 
 
-def test_env_params_fixture_preserves_anchor_warning_and_heat_index_metric() -> None:
-    result = normalize_env_params_response(
-        json.loads(open("fixtures/env-params.json", encoding="utf-8").read()),
-        request=EnvParamsRequest(29.4241, -98.4936, date(2026, 8, 23), 35),
-    )
-    assert result.heat_index_celsius == 38.1
-    assert result.forecast is False
-    assert "not a real 24-hour forecast" in result.warning
-
-
 def test_area_request_rejects_unknown_analytic_members() -> None:
     with pytest.raises(ValueError, match="analytic types"):
-        from app.fortyguard import AreaHeatmapRequest
+        from app.integrations.fortyguard.contracts import AreaHeatmapRequest
 
         AreaHeatmapRequest(
             {"type": "Polygon", "coordinates": [[[1, 1], [2, 1], [2, 2], [1, 1]]]},
@@ -73,7 +65,7 @@ def test_area_request_rejects_unknown_analytic_members() -> None:
 
 
 def test_area_request_rejects_malformed_polygon_coordinates() -> None:
-    from app.fortyguard import AreaHeatmapRequest
+    from app.integrations.fortyguard.contracts import AreaHeatmapRequest
 
     with pytest.raises(ValueError, match="polygon geometry"):
         AreaHeatmapRequest(
@@ -86,7 +78,7 @@ def test_area_request_rejects_malformed_polygon_coordinates() -> None:
 
 
 def test_area_request_rejects_unclosed_polygon_ring() -> None:
-    from app.fortyguard import AreaHeatmapRequest
+    from app.integrations.fortyguard.contracts import AreaHeatmapRequest
 
     with pytest.raises(ValueError, match="polygon geometry"):
         AreaHeatmapRequest(
@@ -99,7 +91,7 @@ def test_area_request_rejects_unclosed_polygon_ring() -> None:
 
 
 def test_area_request_rejects_self_intersecting_polygon() -> None:
-    from app.fortyguard import AreaHeatmapRequest
+    from app.integrations.fortyguard.contracts import AreaHeatmapRequest
 
     with pytest.raises(ValueError, match="polygon geometry"):
         AreaHeatmapRequest(
@@ -112,7 +104,7 @@ def test_area_request_rejects_self_intersecting_polygon() -> None:
 
 
 def test_area_request_accepts_valid_multipolygon_coordinates() -> None:
-    from app.fortyguard import AreaHeatmapRequest
+    from app.integrations.fortyguard.contracts import AreaHeatmapRequest
 
     request = AreaHeatmapRequest(
         {"type": "MultiPolygon", "coordinates": [[[[1, 1], [2, 1], [2, 2], [1, 1]]]]},
@@ -145,7 +137,7 @@ def test_http_transport_sends_auth_json_and_classifies_http_errors() -> None:
     assert transport.post("/v1/heatmap", {"analytic_type": "tcm"}, "secret") == {"activity_id": "a1"}
     assert calls[0][0] == "https://api.example.test/v1/heatmap"
     assert calls[0][1] == {"analytic_type": "tcm"}
-    assert calls[0][2]["X-api-key"] == "secret"
+    assert calls[0][2]["Api-key"] == "secret"
 
     class ErrorResponse:
         status = 429

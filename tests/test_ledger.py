@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from app.ledger import CreditLedger, UsageRecord
+from app.domain.ledger import CreditLedger, UsageRecord
 
 
 def test_ledger_records_actual_provider_usage_and_rejects_overspend() -> None:

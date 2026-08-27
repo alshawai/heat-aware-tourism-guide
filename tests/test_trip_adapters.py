@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from app.contracts import (
+from app.domain.contracts import (
     Confidence,
     Coordinates,
     ExecutionMode,
@@ -13,7 +13,7 @@ from app.contracts import (
     TripAnalysisRequest,
     TripMode,
 )
-from app.trip_adapters import (
+from app.services.trip_adapters import (
     FixtureTripAnalysisAdapter,
     LiveTripAnalysisAdapter,
     normalize_trip_analysis,

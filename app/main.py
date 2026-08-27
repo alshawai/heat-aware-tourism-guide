@@ -1,29 +1,16 @@
-"""Run the fixture-backed Heat-Aware Tourism Guide API."""
+"""Production entry point: settings load and live-stack composition at import."""
 
-import os
+from __future__ import annotations
+
 from pathlib import Path
 
 import uvicorn
 
-from app.api import create_app
-from app.trip_adapters import (
-    FixtureTripAnalysisAdapter,
-    LiveTripAnalysisAdapter,
-    ModeDispatchTripAnalysisAdapter,
-)
+from app.wiring import create_production_app
 
+ROOT = Path(__file__).resolve().parents[1]
 
-ROOT = Path(__file__).resolve().parent.parent
-
-app = create_app(
-    ROOT / "fixtures/heatmap-historical.json",
-    allow_live=os.getenv("ALLOW_LIVE", "false").lower() == "true",
-    frontend_dist=ROOT / "frontend/dist",
-    trip_adapter=ModeDispatchTripAnalysisAdapter(
-        FixtureTripAnalysisAdapter(ROOT / "fixtures/trip-analysis.json"),
-        LiveTripAnalysisAdapter(lambda request: {"unavailable": "live trip adapter is not configured"}),
-    ),
-)
+app = create_production_app(frontend_dist=ROOT / "frontend" / "dist")
 
 
 if __name__ == "__main__":

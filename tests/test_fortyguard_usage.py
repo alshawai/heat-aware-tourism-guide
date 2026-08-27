@@ -5,7 +5,7 @@ from urllib.request import Request
 
 import pytest
 
-from app.fortyguard_usage import default_usage_window, fetch_custom_usage
+from app.integrations.fortyguard.usage import default_usage_window, fetch_custom_usage
 
 
 def test_default_usage_window_is_thirty_days() -> None:
@@ -30,7 +30,7 @@ def test_fetch_custom_usage_sends_quickstart_contract(monkeypatch: pytest.Monkey
         captured["timeout"] = timeout
         return Response()
 
-    monkeypatch.setattr("app.fortyguard_usage.urlopen", fake_urlopen)
+    monkeypatch.setattr("app.integrations.fortyguard.usage.urlopen", fake_urlopen)
     result = fetch_custom_usage("secret", date(2026, 8, 1), date(2026, 8, 24))
 
     request = cast(Request, captured["request"])

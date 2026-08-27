@@ -14,7 +14,7 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from app.fortyguard_usage import (
+from app.integrations.fortyguard.usage import (
     default_usage_window,
     fetch_custom_usage,
     load_api_key_from_environment,

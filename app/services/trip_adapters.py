@@ -7,7 +7,7 @@ import math
 from pathlib import Path
 from typing import Callable, Mapping
 
-from app.contracts import (
+from app.domain.contracts import (
     BestTimeResult,
     Confidence,
     EnrichmentState,

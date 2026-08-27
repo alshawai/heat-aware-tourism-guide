@@ -6,7 +6,7 @@ unavailable/error states as required by Issue #9.
 
 import pytest
 
-from app.contracts import (
+from app.domain.contracts import (
     Confidence,
     Coordinates,
     ExecutionMode,

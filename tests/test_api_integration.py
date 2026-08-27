@@ -8,7 +8,7 @@ from urllib.error import HTTPError
 import pytest
 
 from app.api import create_fixture_server
-from app.trip_adapters import FixtureTripAnalysisAdapter
+from app.services.trip_adapters import FixtureTripAnalysisAdapter
 
 
 class MalformedTripAdapter:

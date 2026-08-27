@@ -7,12 +7,16 @@
     "start_date": "2026-08-23",
     "forecast": false,
     "threshold_celsius": 35,
-    "direction": "above"
+    "direction": "above",
+    "granularity": 60
   },
   "features": [
     {
       "type": "Feature",
-      "geometry": { "type": "Point", "coordinates": [-98.4936, 29.4241] },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [-98.4936, 29.4241]
+      },
       "properties": {
         "id": "exceedance-1",
         "metric": "exceedance",

@@ -1,11 +1,11 @@
-from app.trip import (
+from app.domain.trip import (
     HotelCandidate,
     HotelRanker,
     RouteCandidate,
     RouteComparator,
 )
 import pytest
-from app.fortyguard import AnalyticType, AreaHeatmapRequest
+from app.integrations.fortyguard.contracts import AnalyticType, AreaHeatmapRequest
 
 
 def test_hotel_ranker_exposes_components_percentiles_and_ties() -> None:

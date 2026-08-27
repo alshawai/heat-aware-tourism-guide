@@ -1,11 +1,12 @@
 # FortyGuard Extraction Contracts
 
 The application integration is server-side and supports fixture execution without
-provider credentials. `app.fortyguard` owns request validation, authenticated
-submit/poll behavior, provider error classification, and normalization into the
-internal tile shape. A submitted activity is polled at most `max_polls` times;
-the first status `404` is tolerated because the provider may not expose a newly
-submitted activity immediately. The client never resubmits a billable activity.
+provider credentials. The `app/integrations/fortyguard/` package owns request
+validation, authenticated submit/poll behavior, provider error classification, and
+normalization into the internal tile shape. A submitted activity is polled at most
+`max_polls` times; post-submit status `404`s are tolerated within a bounded grace
+window (ADR 0003) because the provider may not expose a newly submitted activity
+immediately. The client never resubmits a billable activity.
 
 All heat values are stored in Celsius. `tcm` is a provider temperature metric and
 is not silently labeled as NOAA Heat Index. Forecast and historical results retain
@@ -40,10 +41,11 @@ error; provider credentials never cross this boundary.
 ## Live transport
 
 `HttpFortyGuardTransport` is the concrete server-side HTTP adapter. It sends
-JSON to the configured base URL using the `X-API-Key` header and a bounded
-socket timeout. HTTP and network failures are classified without retaining a
-response body. A heatmap activity is submitted once; transient status lookup
-failures consume the bounded polling budget and never trigger submission again.
+JSON to the configured base URL using the documented `api-key` header (ADR 0001)
+and a bounded socket timeout. HTTP and network failures are classified without
+retaining a response body. A heatmap activity is submitted once; transient status
+lookup failures consume the bounded polling budget and never trigger submission
+again.
 
 `HeatmapRequest.to_payload()` preserves the analytic type, US coordinates,
 start date, forecast/historical status, threshold, and direction. Area requests

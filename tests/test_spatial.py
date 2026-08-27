@@ -1,7 +1,7 @@
 import pytest
 from shapely.geometry import Point, Polygon
 
-from app.analysis import TileGeometry, build_aoi, join_point_to_tiles, join_polygon_to_tiles
+from app.domain.analysis import TileGeometry, build_aoi, join_point_to_tiles, join_polygon_to_tiles
 
 
 def test_polygon_join_area_weights_partial_overlap_in_projected_crs() -> None:

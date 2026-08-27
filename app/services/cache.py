@@ -6,8 +6,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Mapping
 
-from app.domain import CacheKey, Provenance
-from app.security import sanitize_payload
+from app.domain.provenance import CacheKey, Provenance
+from app.domain.security import sanitize_payload
 
 
 @dataclass(frozen=True)

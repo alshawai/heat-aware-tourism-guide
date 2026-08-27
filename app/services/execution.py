@@ -8,15 +8,24 @@ from pathlib import Path
 from typing import Callable, Mapping
 from dataclasses import dataclass
 
-from app.cache import CacheService
-from app.domain import CacheKey
-from app.fortyguard import HeatmapRequest, HeatmapResult, ProviderError, normalize_heatmap_response
+from app.domain.provenance import CacheKey, Transformation
+from app.integrations.fortyguard.contracts import (
+    EnvParamsRequest,
+    EnvParamsResult,
+    HeatmapRequest,
+    HeatmapResult,
+    normalize_env_params_response,
+    normalize_heatmap_response,
+)
+from app.integrations.fortyguard.errors import ProviderError
+from app.services.cache import CacheService
 
 
 @dataclass(frozen=True)
 class LiveHeatmapPayload:
     payload: Mapping[str, object]
     activity_id: str | None = None
+    transformations: tuple[Transformation, ...] = ()
 
 
 class HeatmapExecution:
@@ -44,6 +53,7 @@ class HeatmapExecution:
                 loaded = self.live_loader(request)
                 payload = loaded.payload if isinstance(loaded, LiveHeatmapPayload) else loaded
                 activity_id = loaded.activity_id if isinstance(loaded, LiveHeatmapPayload) else None
+                transformations = loaded.transformations if isinstance(loaded, LiveHeatmapPayload) else ()
                 result = normalize_heatmap_response(
                     payload,
                     request=request,
@@ -51,6 +61,7 @@ class HeatmapExecution:
                     activity_id=activity_id,
                     source="provider",
                     data_date=_fixture_data_date(payload),
+                    transformations=transformations,
                 )
             except (ConnectionError, OSError, ProviderError, TimeoutError, ValueError):
                 if self.cache is None:
@@ -109,6 +120,7 @@ def _request_payload(request: HeatmapRequest) -> dict[str, object]:
         "forecast": request.forecast,
         "threshold_celsius": request.threshold_celsius,
         "direction": request.direction,
+        "granularity": request.granularity,
     }
 
 
@@ -124,3 +136,55 @@ def _fixture_data_date(payload: Mapping[str, object]) -> str:
             if isinstance(valid_time, str):
                 return valid_time[:10]
     raise ValueError("fixture is missing data date freshness metadata")
+
+
+@dataclass(frozen=True)
+class LiveEnvParamsPayload:
+    payload: Mapping[str, object]
+    activity_id: str | None = None
+    transformations: tuple[Transformation, ...] = ()
+
+
+@dataclass(frozen=True)
+class EnvParamsOutcome:
+    result: EnvParamsResult
+    source: str
+    activity_id: str | None = None
+    transformations: tuple[Transformation, ...] = ()
+
+
+class EnvParamsExecution:
+    """Fixture/live execution for the environmental-parameters series."""
+
+    def __init__(
+        self,
+        *,
+        fixture_path: Path,
+        live_loader: Callable[[EnvParamsRequest], Mapping[str, object] | LiveEnvParamsPayload] | None = None,
+    ) -> None:
+        self.fixture_path = fixture_path
+        self.live_loader = live_loader
+
+    def run(self, request: EnvParamsRequest, *, live: bool = False) -> EnvParamsOutcome:
+        if live:
+            if self.live_loader is None:
+                raise RuntimeError("live execution is not configured")
+            loaded = self.live_loader(request)
+            payload = loaded.payload if isinstance(loaded, LiveEnvParamsPayload) else loaded
+            activity_id = loaded.activity_id if isinstance(loaded, LiveEnvParamsPayload) else None
+            transformations = loaded.transformations if isinstance(loaded, LiveEnvParamsPayload) else ()
+            return EnvParamsOutcome(
+                normalize_env_params_response(payload, request=request),
+                "provider",
+                activity_id,
+                transformations,
+            )
+        with self.fixture_path.open(encoding="utf-8") as fixture:
+            payload = json.load(fixture)
+        if not isinstance(payload, Mapping):
+            raise ValueError("fixture must contain a JSON object")
+        return EnvParamsOutcome(
+            normalize_env_params_response(payload, request=request),
+            "fixture",
+            None,
+        )
