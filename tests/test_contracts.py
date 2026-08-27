@@ -24,6 +24,7 @@ from app.contracts import (
     HotelRankingResult,
     RouteCandidateData,
     TripAnalysisRequest,
+    TripAnalysisInputs,
     TripAnalysisResponse,
     TripMode,
     UnavailableResult,
@@ -55,14 +56,6 @@ def _valid_request(**overrides: object) -> TripAnalysisRequest:
         "date": "2026-08-23",
         "hour": 14,
         "cautious": False,
-        "heat_metric": "tcm",
-        "heat_value": 38.0,
-        "heat_threshold": 35.0,
-        "corridor_heat_values": (34.0, 38.0),
-        "building_coverage": 0.9,
-        "hotels": (_valid_hotel_candidate(),),
-        "routes": (_valid_route_candidate(),),
-        "shade": {"route-a": 50.0},
     }
     defaults.update(overrides)
     return TripAnalysisRequest(**defaults)  # type: ignore[arg-type]
@@ -142,9 +135,7 @@ class TestValidConstruction:
     def test_request_with_all_fields(self) -> None:
         request = _valid_request()
         assert request.landmark_name == "The Alamo"
-        assert request.heat_metric == "tcm"
-        assert len(request.hotels) == 1
-        assert len(request.routes) == 1
+        assert request.mode is TripMode.CURATED
 
     def test_response_success_with_all_sections(self) -> None:
         response = _valid_response()
@@ -197,14 +188,6 @@ class TestValidConstruction:
 # ---------------------------------------------------------------------------
 
 class TestIncompleteFields:
-    def test_request_missing_hotels_rejected(self) -> None:
-        with pytest.raises(ValueError, match="hotel candidate"):
-            _valid_request(hotels=())
-
-    def test_request_missing_routes_rejected(self) -> None:
-        with pytest.raises(ValueError, match="route candidate"):
-            _valid_request(routes=())
-
     def test_request_missing_landmark_rejected(self) -> None:
         with pytest.raises(ValueError, match="landmark_name"):
             _valid_request(landmark_name="")
@@ -388,15 +371,24 @@ class TestMalformedPayloads:
 
     def test_request_building_coverage_out_of_range(self) -> None:
         with pytest.raises(ValueError, match="building_coverage"):
-            _valid_request(building_coverage=1.5)
+            TripAnalysisInputs(
+                "tcm", 38, 35, (), 1.5,
+                (_valid_hotel_candidate(),), (_valid_route_candidate(),), {"route-a": 50},
+            )
 
     def test_request_heat_value_nan(self) -> None:
         with pytest.raises(ValueError, match="heat_value"):
-            _valid_request(heat_value=float("nan"))
+            TripAnalysisInputs(
+                "tcm", float("nan"), 35, (), 0.9,
+                (_valid_hotel_candidate(),), (_valid_route_candidate(),), {"route-a": 50},
+            )
 
     def test_request_heat_threshold_infinite(self) -> None:
         with pytest.raises(ValueError, match="heat_threshold"):
-            _valid_request(heat_threshold=float("inf"))
+            TripAnalysisInputs(
+                "tcm", 38, float("inf"), (), 0.9,
+                (_valid_hotel_candidate(),), (_valid_route_candidate(),), {"route-a": 50},
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -494,11 +486,18 @@ class TestApiContractValidation:
             })
 
     def test_missing_hotels_rejected(self) -> None:
-        from app.api import _parse_trip_request
+        from app.api import _parse_trip_inputs
         with pytest.raises(ValueError, match="hotels"):
-            _parse_trip_request({
-                "latitude": 29.42,
-                "longitude": -98.49,
+            _parse_trip_inputs({
+                "origin_latitude": 29.42,
+                "origin_longitude": -98.49,
+                "destination_latitude": 29.43,
+                "destination_longitude": -98.48,
+                "landmark_name": "The Alamo",
+                "district_name": "Downtown",
+                "date": "2026-08-23",
+                "hour": 14,
+                "mode": "curated",
                 "routes": [{"identity": "r", "distance_m": 1000, "duration_s": 600}],
                 "shade": {"r": 50},
                 "heat_value": 38,
@@ -507,11 +506,18 @@ class TestApiContractValidation:
             })
 
     def test_missing_routes_rejected(self) -> None:
-        from app.api import _parse_trip_request
+        from app.api import _parse_trip_inputs
         with pytest.raises(ValueError, match="routes"):
-            _parse_trip_request({
-                "latitude": 29.42,
-                "longitude": -98.49,
+            _parse_trip_inputs({
+                "origin_latitude": 29.42,
+                "origin_longitude": -98.49,
+                "destination_latitude": 29.43,
+                "destination_longitude": -98.48,
+                "landmark_name": "The Alamo",
+                "district_name": "Downtown",
+                "date": "2026-08-23",
+                "hour": 14,
+                "mode": "curated",
                 "hotels": [{"identity": "a", "components": {"night": 30, "hot_hours": 5, "persistence": 2, "day": 32}}],
                 "shade": {"r": 50},
                 "heat_value": 38,
@@ -520,11 +526,18 @@ class TestApiContractValidation:
             })
 
     def test_missing_shade_rejected(self) -> None:
-        from app.api import _parse_trip_request
+        from app.api import _parse_trip_inputs
         with pytest.raises(ValueError, match="shade"):
-            _parse_trip_request({
-                "latitude": 29.42,
-                "longitude": -98.49,
+            _parse_trip_inputs({
+                "origin_latitude": 29.42,
+                "origin_longitude": -98.49,
+                "destination_latitude": 29.43,
+                "destination_longitude": -98.48,
+                "landmark_name": "The Alamo",
+                "district_name": "Downtown",
+                "date": "2026-08-23",
+                "hour": 14,
+                "mode": "curated",
                 "hotels": [{"identity": "a", "components": {"night": 30, "hot_hours": 5, "persistence": 2, "day": 32}}],
                 "routes": [{"identity": "r", "distance_m": 1000, "duration_s": 600}],
                 "heat_value": 38,
@@ -532,22 +545,25 @@ class TestApiContractValidation:
                 "building_coverage": 0.9,
             })
 
-    def test_valid_minimal_body_accepted(self) -> None:
+    def test_full_body_with_defaults_accepted(self) -> None:
         from app.api import _parse_trip_request
         request = _parse_trip_request({
-            "latitude": 29.42,
-            "longitude": -98.49,
+            "origin_latitude": 29.42,
+            "origin_longitude": -98.49,
+            "destination_latitude": 29.43,
+            "destination_longitude": -98.48,
             "landmark_name": "The Alamo",
             "district_name": "Downtown",
             "date": "2026-08-23",
+            "hour": 12,
             "hotels": [{"identity": "a", "components": {"night": 30, "hot_hours": 5, "persistence": 2, "day": 32}}],
             "routes": [{"identity": "r", "distance_m": 1000, "duration_s": 600}],
             "shade": {"r": 50},
             "heat_value": 38,
             "heat_threshold": 35,
             "building_coverage": 0.9,
+            "mode": "curated",
         })
-        assert request.heat_metric == "tcm"
         assert request.cautious is False
         assert request.hour == 12
 
@@ -558,6 +574,7 @@ class TestApiContractValidation:
             "origin_longitude": -98.491,
             "destination_latitude": 29.425,
             "destination_longitude": -98.484,
+            "mode": "exploratory",
             "landmark_name": "The Alamo",
             "district_name": "Downtown San Antonio",
             "date": "2026-08-23",
@@ -572,7 +589,53 @@ class TestApiContractValidation:
             "routes": [{"identity": "r", "distance_m": 1000, "duration_s": 600}],
             "shade": {"r": 50},
         })
+        assert request.mode is TripMode.EXPLORATORY
         assert request.landmark_name == "The Alamo"
         assert request.cautious is True
         assert request.hour == 14
-        assert request.corridor_heat_values == (34.0, 38.0)
+
+    def test_string_cautious_value_rejected(self) -> None:
+        from app.api import _parse_trip_request
+
+        with pytest.raises(ValueError, match="cautious must be a boolean"):
+            _parse_trip_request({
+                "origin_latitude": 29.42,
+                "origin_longitude": -98.49,
+                "destination_latitude": 29.43,
+                "destination_longitude": -98.48,
+                "mode": "curated",
+                "landmark_name": "The Alamo",
+                "district_name": "Downtown",
+                "date": "2026-08-23",
+                "hour": 14,
+                "cautious": "false",
+                "heat_value": 38,
+                "heat_threshold": 35,
+                "building_coverage": 0.9,
+                "hotels": [{"identity": "a", "components": {"night": 30, "hot_hours": 5, "persistence": 2, "day": 32}}],
+                "routes": [{"identity": "r", "distance_m": 1000, "duration_s": 600}],
+                "shade": {"r": 50},
+            })
+
+    def test_unknown_metric_rejected(self) -> None:
+        from app.api import _parse_trip_inputs
+
+        with pytest.raises(ValueError, match="heat_metric"):
+            _parse_trip_inputs({
+                "origin_latitude": 29.42,
+                "origin_longitude": -98.49,
+                "destination_latitude": 29.43,
+                "destination_longitude": -98.48,
+                "mode": "curated",
+                "landmark_name": "The Alamo",
+                "district_name": "Downtown",
+                "date": "2026-08-23",
+                "hour": 14,
+                "heat_metric": "apparent_temperature",
+                "heat_value": 38,
+                "heat_threshold": 35,
+                "building_coverage": 0.9,
+                "hotels": [{"identity": "a", "components": {"night": 30, "hot_hours": 5, "persistence": 2, "day": 32}}],
+                "routes": [{"identity": "r", "distance_m": 1000, "duration_s": 600}],
+                "shade": {"r": 50},
+            })

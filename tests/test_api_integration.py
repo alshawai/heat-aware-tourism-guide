@@ -92,6 +92,7 @@ def test_trip_analysis_endpoint_returns_ranked_hotels_and_route_decision() -> No
                 "origin_longitude": -98.4906,
                 "destination_latitude": 29.4255,
                 "destination_longitude": -98.4836,
+                "mode": "curated",
                 "landmark_name": "The Alamo",
                 "district_name": "Downtown San Antonio",
                 "date": "2026-08-23",
@@ -120,8 +121,42 @@ def test_trip_analysis_endpoint_returns_ranked_hotels_and_route_decision() -> No
             )
         )
         result = json.load(response)
-        assert result["hotels"][0]["identity"] == "cooler"
-        assert result["route"]["recommended_id"] == "shady"
+        assert result["state"] == "success"
+        assert result["execution_mode"] == "fixture"
+        assert result["best_time"]["hourly"][0]["metric"]["unit"] == "C"
+        assert result["best_time"]["hourly"][0]["metric"]["label"] == "provider_tcm"
+        assert result["best_time"]["provenance"]["transformation_version"] == "trip-contract-v1"
+        assert result["best_time"]["provenance"]["provider"] == "fortyguard"
+        assert result["hotels"]["ranked"][0]["identity"] == "cooler"
+        assert result["routes"]["recommended_id"] == "shady"
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+
+def test_trip_analysis_returns_explicit_unavailable_contract() -> None:
+    server = create_fixture_server(Path("fixtures/heatmap-historical.json"))
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        body = json.dumps({
+            "mode": "exploratory",
+            "execution_mode": "fixture",
+            "request_identity": "exploratory-1",
+            "unavailable_reason": "no matching fixture",
+        }).encode()
+        response = urlopen(Request(
+            f"http://127.0.0.1:{server.server_port}/api/trip/analyze",
+            data=body,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        ))
+        result = json.load(response)
+        assert result["state"] == "unavailable"
+        assert result["mode"] == "exploratory"
+        assert result["best_time"] is None
+        assert result["unavailable"]["reason"] == "no matching fixture"
     finally:
         server.shutdown()
         server.server_close()
@@ -138,6 +173,7 @@ def test_trip_analysis_rejects_untrusted_metric_and_provenance_fields() -> None:
             "origin_longitude": -98.4906,
             "destination_latitude": 29.4255,
             "destination_longitude": -98.4836,
+            "mode": "curated",
             "landmark_name": "The Alamo",
             "district_name": "Downtown San Antonio",
             "date": "2026-08-23",

@@ -7,10 +7,10 @@ defined here.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 import math
-from typing import Any
+from typing import Protocol
 
 
 # ---------------------------------------------------------------------------
@@ -49,6 +49,12 @@ class MetricLabel(str, Enum):
     NOAA_HEAT_INDEX = "noaa_heat_index"
 
 
+class EnrichmentState(str, Enum):
+    AVAILABLE = "available"
+    UNAVAILABLE = "unavailable"
+    NOT_REQUESTED = "not_requested"
+
+
 # ---------------------------------------------------------------------------
 # Shared value objects
 # ---------------------------------------------------------------------------
@@ -75,6 +81,11 @@ class Provenance:
     confidence: Confidence
     coverage: float | None = None
     note: str | None = None
+    retrieved_at: str | None = None
+    transformation_version: str = "trip-contract-v1"
+    provider: str | None = None
+    activity_id: str | None = None
+    response_status: str | None = None
 
     def __post_init__(self) -> None:
         if not self.source:
@@ -83,6 +94,8 @@ class Provenance:
             raise ValueError("provenance data_date is required")
         if self.coverage is not None and not 0 <= self.coverage <= 1:
             raise ValueError("coverage must be between 0 and 1")
+        if not self.transformation_version:
+            raise ValueError("provenance transformation_version is required")
 
 
 @dataclass(frozen=True)
@@ -126,22 +139,6 @@ class TripAnalysisRequest:
     hour: int
     cautious: bool
 
-    # Heat context
-    heat_metric: str
-    heat_value: float
-    heat_threshold: float
-    corridor_heat_values: tuple[float, ...]
-    building_coverage: float
-
-    # Hotel candidates from discovery/ranking
-    hotels: tuple[HotelCandidateData, ...]
-
-    # Route candidates from OSRM
-    routes: tuple[RouteCandidateData, ...]
-
-    # Shade estimates keyed by route identity
-    shade: dict[str, float]
-
     def __post_init__(self) -> None:
         if not self.landmark_name:
             raise ValueError("landmark_name is required")
@@ -151,18 +148,38 @@ class TripAnalysisRequest:
             raise ValueError("date is required")
         if not 0 <= self.hour <= 23:
             raise ValueError("hour must be between 0 and 23")
-        if not self.heat_metric:
-            raise ValueError("heat_metric is required")
+        if not isinstance(self.cautious, bool):
+            raise ValueError("cautious must be a boolean")
+        if self.mode not in (TripMode.CURATED, TripMode.EXPLORATORY):
+            raise ValueError("unknown trip mode")
+
+
+@dataclass(frozen=True)
+class TripAnalysisInputs:
+    """Adapter-owned normalized inputs; not part of the frontend request."""
+
+    heat_metric: str
+    heat_value: float
+    heat_threshold: float
+    corridor_heat_values: tuple[float, ...]
+    building_coverage: float
+    hotels: tuple[HotelCandidateData, ...]
+    routes: tuple[RouteCandidateData, ...]
+    shade: dict[str, float]
+
+    def __post_init__(self) -> None:
+        if not self.hotels or not self.routes:
+            raise ValueError("trip analysis requires hotel and route inputs")
+        if self.heat_metric not in {"tcm", "heat_index_celsius"}:
+            raise ValueError("heat_metric must be tcm or heat_index_celsius")
         if not math.isfinite(self.heat_value):
             raise ValueError("heat_value must be finite")
         if not math.isfinite(self.heat_threshold):
             raise ValueError("heat_threshold must be finite")
+        if any(not math.isfinite(value) for value in self.corridor_heat_values):
+            raise ValueError("corridor heat values must be finite")
         if not 0 <= self.building_coverage <= 1:
             raise ValueError("building_coverage must be between 0 and 1")
-        if not self.hotels:
-            raise ValueError("at least one hotel candidate is required")
-        if not self.routes:
-            raise ValueError("at least one route candidate is required")
 
 
 @dataclass(frozen=True)
@@ -171,6 +188,8 @@ class HotelCandidateData:
     components: dict[str, float]
 
     def __post_init__(self) -> None:
+        if not self.identity:
+            raise ValueError("hotel identity is required")
         required = {"night", "hot_hours", "persistence", "day"}
         if set(self.components) != required:
             raise ValueError(f"hotel components must be exactly {required}")
@@ -186,6 +205,8 @@ class RouteCandidateData:
     duration_s: float
 
     def __post_init__(self) -> None:
+        if not self.identity:
+            raise ValueError("route identity is required")
         if not math.isfinite(self.distance_m) or self.distance_m <= 0:
             raise ValueError("distance_m must be a positive finite number")
         if not math.isfinite(self.duration_s) or self.duration_s <= 0:
@@ -211,6 +232,8 @@ class BestTimeResult:
             raise ValueError("recommendation_hour must be between 0 and 23")
         if not self.recommendation_reason:
             raise ValueError("recommendation_reason is required")
+        if not self.hourly:
+            raise ValueError("hourly evidence is required")
 
 
 @dataclass(frozen=True)
@@ -222,6 +245,8 @@ class RankedHotel:
     tie_group: int
 
     def __post_init__(self) -> None:
+        if not self.identity:
+            raise ValueError("hotel identity is required")
         for name, value in self.components.items():
             if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
                 raise ValueError(f"hotel component {name} must be a finite number")
@@ -238,8 +263,20 @@ class HotelRankingResult:
     usable_count: int
     discovered_count: int
     provenance: Provenance
+    enrichment: EnrichmentState = EnrichmentState.NOT_REQUESTED
 
     def __post_init__(self) -> None:
+        required = {"night", "hot_hours", "persistence", "day"}
+        if set(self.weights) != required:
+            raise ValueError(f"weights must be exactly {required}")
+        if any(
+            isinstance(value, bool)
+            or not isinstance(value, (int, float))
+            or not math.isfinite(value)
+            or value < 0
+            for value in self.weights.values()
+        ):
+            raise ValueError("weights must be finite and non-negative")
         if abs(sum(self.weights.values()) - 1) > 0.001:
             raise ValueError("weights must sum to 1")
         if self.usable_count < 0 or self.discovered_count < 0:
@@ -258,12 +295,19 @@ class RouteOption:
     shade_confidence: Confidence | None
 
     def __post_init__(self) -> None:
+        if not self.identity:
+            raise ValueError("route identity is required")
         if not math.isfinite(self.distance_m) or self.distance_m <= 0:
             raise ValueError("distance_m must be positive and finite")
         if not math.isfinite(self.duration_s) or self.duration_s <= 0:
             raise ValueError("duration_s must be positive and finite")
         if not math.isfinite(self.heat_value):
             raise ValueError("heat_value must be finite")
+        if self.modeled_shade_percent is not None and (
+            not math.isfinite(self.modeled_shade_percent)
+            or not 0 <= self.modeled_shade_percent <= 100
+        ):
+            raise ValueError("modeled_shade_percent must be between 0 and 100")
 
 
 @dataclass(frozen=True)
@@ -348,3 +392,11 @@ class TripAnalysisResponse:
         elif self.state is ResultState.ERROR:
             if self.unavailable is None:
                 raise ValueError("error state requires unavailable detail")
+            if self.best_time is not None or self.hotels is not None or self.routes is not None:
+                raise ValueError("error state must not include result data")
+
+
+class TripAnalysisAdapter(Protocol):
+    """Fixture and live implementations share this provider-neutral boundary."""
+
+    def analyze(self, request: TripAnalysisRequest) -> TripAnalysisResponse: ...
