@@ -54,6 +54,8 @@ class FortyGuardClient:
         *,
         sleep: Callable[[float], None] = default_sleep,
         max_polls: int = 12,
+        interval_seconds: float = 1.0,
+        status_404_grace_checks: int = 3,
     ) -> tuple[Mapping[str, object], ActivityMetadata]:
         response = self._transport.post(endpoint, payload, self._api_key)
         status_code = response.get("status_code")
@@ -77,6 +79,8 @@ class FortyGuardClient:
             get_status=get_status,
             sleep=sleep,
             max_polls=max_polls,
+            interval_seconds=interval_seconds,
+            status_404_grace_checks=status_404_grace_checks,
             on_transition=transitions.append,
             on_event=self._emit,
         )
@@ -109,15 +113,25 @@ def poll_activity(
     sleep: Callable[[float], None] = default_sleep,
     max_polls: int = 12,
     interval_seconds: float = 1.0,
+    status_404_grace_checks: int = 3,
     on_transition: Callable[[str], None] | None = None,
     on_event: Callable[[str, Mapping[str, object]], None] | None = None,
 ) -> Mapping[str, object]:
-    """Poll one already-submitted billable activity with bounded status checks."""
-    saw_submission_404 = False
+    """Poll one already-submitted billable activity with bounded status checks.
+
+    Post-submit 404s are tolerated within the early grace window — the first
+    ``status_404_grace_checks`` status checks, or until any non-404 status
+    response is seen — because the provider documents activities as
+    "temporarily unavailable immediately after submission". After the window a
+    404 is terminal (the activity genuinely does not exist). 404s consume poll
+    budget either way; the activity is never resubmitted (ADR 0003).
+    """
+    saw_non_404 = False
     for poll_number in range(1, max_polls + 1):
         response = get_status(activity_id)
         status_code = response.get("status_code")
         if status_code in (408, 429):
+            saw_non_404 = True
             if on_transition is not None:
                 on_transition("timed_out" if status_code == 408 else "rate_limited")
             if on_event is not None:
@@ -126,6 +140,7 @@ def poll_activity(
                 sleep(interval_seconds)
                 continue
         if isinstance(status_code, int) and status_code >= 500:
+            saw_non_404 = True
             if on_transition is not None:
                 on_transition("server_error")
             if on_event is not None:
@@ -133,10 +148,11 @@ def poll_activity(
             if poll_number < max_polls:
                 sleep(interval_seconds)
                 continue
-        if status_code == 404 and not saw_submission_404:
-            saw_submission_404 = True
-        elif status_code == 404:
-            raise classify_provider_error(404, "activity not found")
+        if status_code == 404:
+            if saw_non_404 or poll_number > status_404_grace_checks:
+                raise classify_provider_error(404, "activity not found")
+        else:
+            saw_non_404 = True
         status = response.get("status")
         if isinstance(status, str) and on_transition is not None:
             on_transition(status)

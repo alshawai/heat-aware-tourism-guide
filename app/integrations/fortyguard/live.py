@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from datetime import date
 import math
+from time import sleep as default_sleep
 from typing import Callable, Mapping, Sequence
 
 from app.domain.provenance import Transformation
@@ -16,6 +17,7 @@ from app.integrations.fortyguard.contracts import AnalyticType, EnvParamsRequest
 from app.integrations.fortyguard.errors import ProviderError, ProviderErrorKind
 from app.integrations.fortyguard.transport import HttpFortyGuardTransport
 from app.services.execution import LiveEnvParamsPayload, LiveHeatmapPayload
+from app.settings import FortyGuardPollingSettings
 
 HISTORICAL_EARLIEST = date(2019, 1, 1)
 DEFAULT_AREA_GRANULARITY_M = 100
@@ -195,13 +197,24 @@ class LiveHeatmapAdapter:
         client: FortyGuardClient,
         *,
         today: Callable[[], date] = date.today,
+        polling: FortyGuardPollingSettings | None = None,
+        sleep: Callable[[float], None] | None = None,
     ) -> None:
         self._client = client
         self._today = today
+        self._polling = polling or FortyGuardPollingSettings()
+        self._sleep = sleep
 
     def load(self, request: HeatmapRequest) -> LiveHeatmapPayload:
         payload = build_documented_heatmap_payload(request, today=self._today())
-        result, metadata = self._client.submit_and_poll("/v1/heatmap", payload)
+        result, metadata = self._client.submit_and_poll(
+            "/v1/heatmap",
+            payload,
+            sleep=self._sleep or default_sleep,
+            max_polls=self._polling.max_polls,
+            interval_seconds=self._polling.interval_seconds,
+            status_404_grace_checks=self._polling.status_404_grace_checks,
+        )
         translated = translate_heatmap_response(result, request=request)
         return LiveHeatmapPayload(
             translated,
@@ -233,10 +246,25 @@ def build_documented_env_params_payload(request: EnvParamsRequest) -> dict[str, 
 class LiveEnvParamsAdapter:
     """Owns the live environmental-parameters path."""
 
-    def __init__(self, client: FortyGuardClient) -> None:
+    def __init__(
+        self,
+        client: FortyGuardClient,
+        *,
+        polling: FortyGuardPollingSettings | None = None,
+        sleep: Callable[[float], None] | None = None,
+    ) -> None:
         self._client = client
+        self._polling = polling or FortyGuardPollingSettings()
+        self._sleep = sleep
 
     def load(self, request: EnvParamsRequest) -> LiveEnvParamsPayload:
         payload = build_documented_env_params_payload(request)
-        result, metadata = self._client.submit_and_poll("/v1/env_params", payload)
+        result, metadata = self._client.submit_and_poll(
+            "/v1/env_params",
+            payload,
+            sleep=self._sleep or default_sleep,
+            max_polls=self._polling.max_polls,
+            interval_seconds=self._polling.interval_seconds,
+            status_404_grace_checks=self._polling.status_404_grace_checks,
+        )
         return LiveEnvParamsPayload(result, metadata.activity_id)

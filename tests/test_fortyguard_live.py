@@ -4,7 +4,7 @@ from typing import Any, cast
 
 import pytest
 
-from app.integrations.fortyguard.client import FortyGuardClient
+from app.integrations.fortyguard.client import FortyGuardClient, poll_activity
 from app.integrations.fortyguard.contracts import (
     AnalyticType,
     HeatmapRequest,
@@ -18,6 +18,7 @@ from app.integrations.fortyguard.live import (
     translate_heatmap_response,
 )
 from app.integrations.fortyguard.transport import HttpFortyGuardTransport
+from app.settings import FortyGuardPollingSettings
 from app.services.execution import LiveHeatmapPayload
 
 
@@ -376,3 +377,90 @@ def test_adapter_load_rejects_out_of_contract_date_before_any_submission() -> No
         adapter.load(request)
     assert error.value.kind is ProviderErrorKind.VALIDATION
     assert submissions == []
+
+
+# --- Bounded polling and post-submit 404 tolerance (ADR 0003) --- #
+
+
+def test_polling_tolerates_404s_within_grace_window() -> None:
+    responses: list[dict[str, object]] = [
+        {"status_code": 404},
+        {"status_code": 404},
+        {"status_code": 404},
+        {"status_code": 200, "status": "Completed", "result": {"map_data": {}}},
+    ]
+    result = poll_activity(
+        "a1",
+        get_status=lambda _: responses.pop(0),
+        sleep=lambda _: None,
+        max_polls=6,
+        status_404_grace_checks=3,
+    )
+    assert result == {"map_data": {}}
+
+
+def test_polling_404_after_activity_seen_is_terminal() -> None:
+    responses: list[dict[str, object]] = [
+        {"status_code": 200, "status": "Processing"},
+        {"status_code": 404},
+    ]
+    with pytest.raises(ProviderError) as error:
+        poll_activity(
+            "a1",
+            get_status=lambda _: responses.pop(0),
+            sleep=lambda _: None,
+            max_polls=5,
+            status_404_grace_checks=3,
+        )
+    assert error.value.kind is ProviderErrorKind.VALIDATION
+
+
+def test_polling_404_beyond_grace_window_is_terminal() -> None:
+    responses: list[dict[str, object]] = [
+        {"status_code": 404},
+        {"status_code": 404},
+        {"status_code": 404},
+        {"status_code": 404},
+    ]
+    with pytest.raises(ProviderError) as error:
+        poll_activity(
+            "a1",
+            get_status=lambda _: responses.pop(0),
+            sleep=lambda _: None,
+            max_polls=8,
+            status_404_grace_checks=3,
+        )
+    assert error.value.kind is ProviderErrorKind.VALIDATION
+
+
+def test_submit_and_poll_threads_interval_seconds() -> None:
+    sleeps: list[float] = []
+    transport, _ = _recording_transport(
+        [
+            {"data": {"activity_id": "a1"}},
+            {"data": {"activity_id": "a1", "status": "Processing"}},
+            {"data": {"activity_id": "a1", "status": "Completed", "result": {"ok": True}}},
+        ]
+    )
+    client = FortyGuardClient(transport, "secret", clock=lambda: datetime(2026, 8, 27))
+    client.submit_and_poll("/v1/heatmap", {}, sleep=sleeps.append, max_polls=3, interval_seconds=5.0)
+    assert sleeps == [5.0]
+
+
+def test_adapter_uses_polling_settings_bounds() -> None:
+    sleeps: list[float] = []
+    client, _ = _adapter_client(
+        [
+            {"data": {"activity_id": "a1"}},
+            {"data": {"activity_id": "a1", "status": "Processing"}},
+            {"data": {"activity_id": "a1", "status": "Completed", "result": _live_map_data()}},
+        ]
+    )
+    adapter = LiveHeatmapAdapter(
+        client,
+        polling=FortyGuardPollingSettings(max_polls=3, interval_seconds=2.0),
+        sleep=sleeps.append,
+    )
+    loaded = adapter.load(_tcm_request())
+    assert loaded.activity_id == "a1"
+    assert sleeps == [2.0]

@@ -54,7 +54,7 @@ def _live_client(settings: AppSettings) -> FortyGuardClient:
 
 def build_live_heatmap_execution(settings: AppSettings, *, fixture_path: Path) -> HeatmapExecution:
     """Compose the live heatmap execution: transport, client, adapter, cache."""
-    adapter = LiveHeatmapAdapter(_live_client(settings))
+    adapter = LiveHeatmapAdapter(_live_client(settings), polling=settings.polling)
     return HeatmapExecution(
         fixture_path=fixture_path,
         live_loader=adapter.load,
@@ -66,7 +66,7 @@ def build_live_env_params_execution(
     settings: AppSettings, *, fixture_path: Path
 ) -> EnvParamsExecution:
     """Compose the live environmental-parameters execution."""
-    adapter = LiveEnvParamsAdapter(_live_client(settings))
+    adapter = LiveEnvParamsAdapter(_live_client(settings), polling=settings.polling)
     return EnvParamsExecution(fixture_path=fixture_path, live_loader=adapter.load)
 
 
