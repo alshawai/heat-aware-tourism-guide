@@ -6,7 +6,11 @@ from pathlib import Path
 import uvicorn
 
 from app.api import create_app
-from app.trip_adapters import FixtureTripAnalysisAdapter
+from app.trip_adapters import (
+    FixtureTripAnalysisAdapter,
+    LiveTripAnalysisAdapter,
+    ModeDispatchTripAnalysisAdapter,
+)
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -15,7 +19,10 @@ app = create_app(
     ROOT / "fixtures/heatmap-historical.json",
     allow_live=os.getenv("ALLOW_LIVE", "false").lower() == "true",
     frontend_dist=ROOT / "frontend/dist",
-    trip_adapter=FixtureTripAnalysisAdapter(ROOT / "fixtures/trip-analysis.json"),
+    trip_adapter=ModeDispatchTripAnalysisAdapter(
+        FixtureTripAnalysisAdapter(ROOT / "fixtures/trip-analysis.json"),
+        LiveTripAnalysisAdapter(lambda request: {"unavailable": "live trip adapter is not configured"}),
+    ),
 )
 
 

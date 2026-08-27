@@ -53,6 +53,7 @@ def _valid_route_option(identity: str = "route-a", *, recommended: bool = False)
         distance_m=1000,
         duration_s=600,
         heat_value=34,
+        heat_unit="C",
         heat_metric=HeatMetricName.TCM,
         heat_status=HeatStatus.ELEVATED,
         modeled_shade_percent=65 if recommended else None,
@@ -82,7 +83,18 @@ def _valid_request(**overrides: object) -> TripAnalysisRequest:
 
 
 def _valid_provenance() -> Provenance:
-    return Provenance(source="fixture", data_date="2026-08-23", confidence=Confidence.SUFFICIENT, coverage=0.9)
+    return Provenance(
+        source="fixture",
+        data_date="2026-08-23",
+        confidence=Confidence.SUFFICIENT,
+        retrieved_at="2026-08-24T00:00:00+00:00",
+        transformation_version="trip-contract-v1",
+        provider="test-provider",
+        response_status="completed",
+        request_configuration={},
+        fresh=True,
+        coverage=0.9,
+    )
 
 
 def _valid_hourly() -> tuple[HourlyEntry, ...]:
@@ -95,7 +107,7 @@ def _valid_hourly() -> tuple[HourlyEntry, ...]:
 def _valid_best_time() -> BestTimeResult:
     return BestTimeResult(
         hourly=_valid_hourly(),
-        recommendation_hour=6,
+        recommendation_hour=0,
         recommendation_reason="coolest available period",
         metric_label=MetricLabel.PROVIDER_TCM,
         provenance=_valid_provenance(),
@@ -105,13 +117,14 @@ def _valid_best_time() -> BestTimeResult:
 def _valid_ranked_hotels() -> HotelRankingResult:
     return HotelRankingResult(
         ranked=(
-            RankedHotel(identity="a", components={"night": 30, "hot_hours": 5, "persistence": 2, "day": 32}, score=18.5, percentile=100, tie_group=0),
-            RankedHotel(identity="b", components={"night": 36, "hot_hours": 9, "persistence": 5, "day": 38}, score=24.8, percentile=0, tie_group=1),
+            RankedHotel(identity="a", components={"night": 30, "hot_hours": 5, "persistence": 2, "day": 32}, score=18.55, percentile=100, tie_group=0),
+            RankedHotel(identity="b", components={"night": 36, "hot_hours": 9, "persistence": 5, "day": 38}, score=23.45, percentile=0, tie_group=1),
         ),
         weights={"night": 0.35, "hot_hours": 0.25, "persistence": 0.20, "day": 0.20},
         usable_count=2,
         discovered_count=3,
         provenance=_valid_provenance(),
+        component_units={"night": "C", "hot_hours": "hours", "persistence": "hours", "day": "C"},
     )
 
 
@@ -126,6 +139,7 @@ def _valid_route_comparison() -> RouteComparisonResult:
         heat_status=HeatStatus.ELEVATED,
         corridor_heat_value=38.0,
         heat_metric=HeatMetricName.TCM,
+        heat_unit="C",
         coverage=0.9,
         confidence=Confidence.SUFFICIENT,
         comparison_scope="returned alternatives",
@@ -170,7 +184,7 @@ class TestValidConstruction:
         assert coords.latitude == 29.42
 
     def test_provenance_with_coverage(self) -> None:
-        prov = Provenance(source="fixture", data_date="2026-08-23", confidence=Confidence.SUFFICIENT, coverage=0.85, note="strong data")
+        prov = Provenance(source="fixture", data_date="2026-08-23", confidence=Confidence.SUFFICIENT, retrieved_at="2026-08-24T00:00:00+00:00", transformation_version="trip-contract-v1", provider="test-provider", response_status="completed", request_configuration={}, fresh=True, coverage=0.85, note="strong data")
         assert prov.coverage == 0.85
         assert prov.note == "strong data"
 
@@ -221,15 +235,15 @@ class TestIncompleteFields:
             _valid_request(hour=24)
 
     def test_response_success_missing_best_time(self) -> None:
-        with pytest.raises(ValueError, match="best_time"):
+        with pytest.raises(ValueError, match="BestTimeResult"):
             _valid_response(best_time=None)
 
     def test_response_success_missing_hotels(self) -> None:
-        with pytest.raises(ValueError, match="hotels"):
+        with pytest.raises(ValueError, match="HotelRankingResult"):
             _valid_response(hotels=None)
 
     def test_response_success_missing_routes(self) -> None:
-        with pytest.raises(ValueError, match="routes"):
+        with pytest.raises(ValueError, match="RouteComparisonResult"):
             _valid_response(routes=None)
 
     def test_unavailable_state_without_detail(self) -> None:
@@ -274,15 +288,15 @@ class TestMalformedPayloads:
 
     def test_provenance_empty_source(self) -> None:
         with pytest.raises(ValueError, match="source"):
-            Provenance(source="", data_date="2026-08-23", confidence=Confidence.SUFFICIENT)
+            Provenance(source="", data_date="2026-08-23", confidence=Confidence.SUFFICIENT, retrieved_at="x", transformation_version="v1", provider="p", response_status="completed", request_configuration={}, fresh=True)
 
     def test_provenance_empty_data_date(self) -> None:
         with pytest.raises(ValueError, match="data_date"):
-            Provenance(source="fixture", data_date="", confidence=Confidence.SUFFICIENT)
+            Provenance(source="fixture", data_date="", confidence=Confidence.SUFFICIENT, retrieved_at="x", transformation_version="v1", provider="p", response_status="completed", request_configuration={}, fresh=True)
 
     def test_provenance_coverage_out_of_range(self) -> None:
         with pytest.raises(ValueError, match="coverage"):
-            Provenance(source="fixture", data_date="2026-08-23", confidence=Confidence.SUFFICIENT, coverage=1.5)
+            Provenance(source="fixture", data_date="2026-08-23", confidence=Confidence.SUFFICIENT, retrieved_at="2026-08-24T00:00:00+00:00", transformation_version="v1", provider="p", response_status="completed", request_configuration={}, fresh=True, coverage=1.5)
 
     def test_metric_nan_value(self) -> None:
         with pytest.raises(ValueError, match="finite"):
@@ -320,6 +334,19 @@ class TestMalformedPayloads:
         with pytest.raises(ValueError, match="score"):
             RankedHotel(identity="a", components={"night": 30, "hot_hours": 5, "persistence": 2, "day": 32}, score=float("nan"), percentile=50, tie_group=0)
 
+    def test_hotel_ranking_rejects_duplicate_identity_and_wrong_order(self) -> None:
+        first = RankedHotel(identity="a", components={"night": 30, "hot_hours": 5, "persistence": 2, "day": 32}, score=20, percentile=0, tie_group=0)
+        second = RankedHotel(identity="a", components={"night": 31, "hot_hours": 6, "persistence": 3, "day": 33}, score=10, percentile=100, tie_group=1)
+        with pytest.raises(ValueError, match="weighted|ordered|unique"):
+            HotelRankingResult(
+                ranked=(first, second),
+                weights={"night": 0.35, "hot_hours": 0.25, "persistence": 0.2, "day": 0.2},
+                usable_count=2,
+                discovered_count=2,
+                provenance=_valid_provenance(),
+                component_units={"night": "C", "hot_hours": "hours", "persistence": "hours", "day": "C"},
+            )
+
     def test_hotel_ranking_weights_not_sum_to_one(self) -> None:
         with pytest.raises(ValueError, match="weights"):
             HotelRankingResult(
@@ -328,6 +355,7 @@ class TestMalformedPayloads:
                 usable_count=1,
                 discovered_count=1,
                 provenance=_valid_provenance(),
+                component_units={"night": "C", "hot_hours": "hours", "persistence": "hours", "day": "C"},
             )
 
     def test_hotel_ranking_usable_exceeds_discovered(self) -> None:
@@ -344,7 +372,7 @@ class TestMalformedPayloads:
         with pytest.raises(ValueError, match="heat_value"):
             RouteOption(
                 identity="a", distance_m=1000, duration_s=600, heat_value=float("-inf"),
-                heat_metric=HeatMetricName.TCM, heat_status=HeatStatus.ELEVATED,
+                heat_metric=HeatMetricName.TCM, heat_unit="C", heat_status=HeatStatus.ELEVATED,
                 modeled_shade_percent=None, shade_confidence=None, building_coverage=0.9,
                 recommended=False, recommendation_reason=None, shade_model_label=None,
             )
@@ -358,6 +386,7 @@ class TestMalformedPayloads:
                 heat_status=HeatStatus.NOT_ELEVATED,
                 corridor_heat_value=30.0,
                 heat_metric=HeatMetricName.TCM,
+                heat_unit="C",
                 coverage=0.9,
                 confidence=Confidence.SUFFICIENT,
                 comparison_scope="returned alternatives",
@@ -373,6 +402,7 @@ class TestMalformedPayloads:
                 heat_status=HeatStatus.NOT_ELEVATED,
                 corridor_heat_value=30.0,
                 heat_metric=HeatMetricName.TCM,
+                heat_unit="C",
                 coverage=0.9,
                 confidence=Confidence.SUFFICIENT,
                 comparison_scope="returned alternatives",
@@ -388,30 +418,49 @@ class TestMalformedPayloads:
                 heat_status=HeatStatus.NOT_ELEVATED,
                 corridor_heat_value=30.0,
                 heat_metric=HeatMetricName.TCM,
+                heat_unit="C",
                 coverage=2.0,
                 confidence=Confidence.SUFFICIENT,
                 comparison_scope="returned alternatives",
                 provenance=_valid_provenance(),
             )
 
+    def test_route_comparison_rejects_nonfinite_heat_and_wrong_unit(self) -> None:
+        with pytest.raises(ValueError, match="must use C"):
+            RouteComparisonResult(
+                alternatives=(_valid_route_option("a", recommended=True),),
+                recommended_id="a", reason="test", heat_status=HeatStatus.ELEVATED,
+                corridor_heat_value=30, heat_metric=HeatMetricName.TCM, heat_unit="F",
+                coverage=0.9, confidence=Confidence.SUFFICIENT,
+                comparison_scope="returned alternatives", provenance=_valid_provenance(),
+            )
+        with pytest.raises(ValueError, match="corridor_heat_value"):
+            RouteComparisonResult(
+                alternatives=(_valid_route_option("a", recommended=True),),
+                recommended_id="a", reason="test", heat_status=HeatStatus.ELEVATED,
+                corridor_heat_value=float("nan"), heat_metric=HeatMetricName.TCM, heat_unit="C",
+                coverage=0.9, confidence=Confidence.SUFFICIENT,
+                comparison_scope="returned alternatives", provenance=_valid_provenance(),
+            )
+
     def test_request_building_coverage_out_of_range(self) -> None:
         with pytest.raises(ValueError, match="building_coverage"):
             TripAnalysisInputs(
-                "tcm", 38, 35, (), 1.5,
+                HeatMetricName.TCM, 38, 35, (), 1.5,
                 (_valid_hotel_candidate(),), (_valid_route_candidate(),), {"route-a": 50},
             )
 
     def test_request_heat_value_nan(self) -> None:
         with pytest.raises(ValueError, match="heat_value"):
             TripAnalysisInputs(
-                "tcm", float("nan"), 35, (), 0.9,
+                HeatMetricName.TCM, float("nan"), 35, (), 0.9,
                 (_valid_hotel_candidate(),), (_valid_route_candidate(),), {"route-a": 50},
             )
 
     def test_request_heat_threshold_infinite(self) -> None:
         with pytest.raises(ValueError, match="heat_threshold"):
             TripAnalysisInputs(
-                "tcm", 38, float("inf"), (), 0.9,
+                HeatMetricName.TCM, 38, float("inf"), (), 0.9,
                 (_valid_hotel_candidate(),), (_valid_route_candidate(),), {"route-a": 50},
             )
 
@@ -450,7 +499,7 @@ class TestUnavailableStates:
         response = _valid_response(
             state=ResultState.DEGRADED,
             hotels=None,
-            unavailable=UnavailableResult(reason="hotel discovery failed", recoverable=True),
+            degraded_reasons={"hotels": "hotel discovery failed"},
         )
         assert response.state is ResultState.DEGRADED
         assert response.best_time is not None
@@ -464,7 +513,7 @@ class TestUnavailableStates:
             )
 
     def test_success_rejected_with_unavailable_state(self) -> None:
-        with pytest.raises(ValueError, match="requires unavailable"):
+        with pytest.raises(ValueError, match="unavailable"):
             TripAnalysisResponse(
                 request_identity="req-1",
                 mode=TripMode.CURATED,
@@ -482,6 +531,42 @@ class TestUnavailableStates:
                 best_time=None,
                 hotels=None,
                 routes=None,
+            )
+
+    def test_plain_string_success_state_cannot_bypass_invariants(self) -> None:
+        with pytest.raises(ValueError, match="ResultState"):
+            TripAnalysisResponse(
+                request_identity="req-1",
+                mode=TripMode.CURATED,
+                execution_mode=ExecutionMode.FIXTURE,
+                state="success",  # type: ignore[arg-type]
+            )
+
+    def test_plain_string_metric_label_is_rejected(self) -> None:
+        with pytest.raises(ValueError, match="MetricLabel"):
+            Metric(
+                value=35,
+                unit="C",
+                label="noaa_heat_index",  # type: ignore[arg-type]
+                is_actual_heat_index=False,
+            )
+
+    def test_unavailable_and_error_reject_degraded_metadata(self) -> None:
+        for state in (ResultState.UNAVAILABLE, ResultState.ERROR):
+            with pytest.raises(ValueError, match="degraded_reasons"):
+                TripAnalysisResponse(
+                    request_identity="req-1", mode=TripMode.CURATED,
+                    execution_mode=ExecutionMode.FIXTURE, state=state,
+                    unavailable=UnavailableResult("failed", recoverable=False),
+                    degraded_reasons={"routes": "failed"},
+                )
+
+    def test_success_rejects_arbitrary_section_objects(self) -> None:
+        with pytest.raises(ValueError, match="BestTimeResult"):
+            TripAnalysisResponse(
+                request_identity="req-1", mode=TripMode.CURATED,
+                execution_mode=ExecutionMode.FIXTURE, state=ResultState.SUCCESS,
+                best_time=object(), hotels=_valid_ranked_hotels(), routes=_valid_route_comparison(),  # type: ignore[arg-type]
             )
 
 

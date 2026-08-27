@@ -19,12 +19,10 @@ from fastapi.staticfiles import StaticFiles
 from app.contracts import (
     Coordinates,
     ExecutionMode,
-    ResultState,
     TripAnalysisAdapter,
     TripAnalysisRequest,
     TripAnalysisResponse,
     TripMode,
-    UnavailableResult,
 )
 from app.execution import HeatmapExecution
 from app.fortyguard import AnalyticType, HeatmapRequest, ProviderError
@@ -240,22 +238,12 @@ def _trip_result(
 ) -> dict[str, object]:
     """Run the trip analysis and serialize the shared product contract."""
     execution_mode = _execution_mode(body, allow_live=allow_live)
-    unavailable_reason = body.get("unavailable_reason")
-    if unavailable_reason is not None:
-        if not isinstance(unavailable_reason, str) or not unavailable_reason:
-            raise ValueError("unavailable_reason must be a non-empty string")
-        response = TripAnalysisResponse(
-            request_identity=str(body.get("request_identity", "unavailable")),
-            mode=TripMode(str(body.get("mode", TripMode.EXPLORATORY.value))),
-            execution_mode=execution_mode,
-            state=ResultState.UNAVAILABLE,
-            unavailable=UnavailableResult(unavailable_reason, recoverable=True),
-        )
-        return asdict(response)
     request = _parse_trip_request(body)
     if trip_adapter is None:
         raise ValueError("trip analysis adapter is not configured")
-    response = trip_adapter.analyze(request)
+    response = trip_adapter.analyze(request, execution_mode)
+    if not isinstance(response, TripAnalysisResponse):
+        raise ValueError("trip adapter returned an invalid response")
     if response.execution_mode is not execution_mode:
         raise ValueError("trip adapter returned the wrong execution mode")
     return asdict(response)

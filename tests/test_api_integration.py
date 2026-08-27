@@ -11,6 +11,11 @@ from app.api import create_fixture_server
 from app.trip_adapters import FixtureTripAnalysisAdapter
 
 
+class MalformedTripAdapter:
+    def analyze(self, request: object, execution_mode: object) -> object:
+        return object()
+
+
 def test_fixture_backed_http_flow_returns_normalized_domain_result() -> None:
     server = create_fixture_server(Path("fixtures/heatmap-historical.json"))
     thread = Thread(target=server.serve_forever, daemon=True)
@@ -95,9 +100,9 @@ def test_trip_analysis_endpoint_returns_ranked_hotels_and_route_decision() -> No
         body = json.dumps(
             {
                 "origin_latitude": 29.4210,
-                "origin_longitude": -98.4906,
-                "destination_latitude": 29.4255,
-                "destination_longitude": -98.4836,
+                "origin_longitude": -98.491,
+                "destination_latitude": 29.425,
+                "destination_longitude": -98.484,
                 "mode": "curated",
                 "landmark_name": "The Alamo",
                 "district_name": "Downtown San Antonio",
@@ -134,7 +139,7 @@ def test_trip_analysis_endpoint_returns_ranked_hotels_and_route_decision() -> No
 def test_trip_analysis_returns_explicit_unavailable_contract() -> None:
     server = create_fixture_server(
         Path("fixtures/heatmap-historical.json"),
-        trip_adapter=FixtureTripAnalysisAdapter(Path("fixtures/trip-analysis.json")),
+        trip_adapter=FixtureTripAnalysisAdapter(Path("fixtures/trip-analysis-unavailable.json")),
     )
     thread = Thread(target=server.serve_forever, daemon=True)
     thread.start()
@@ -142,8 +147,14 @@ def test_trip_analysis_returns_explicit_unavailable_contract() -> None:
         body = json.dumps({
             "mode": "exploratory",
             "execution_mode": "fixture",
-            "request_identity": "exploratory-1",
-            "unavailable_reason": "no matching fixture",
+            "origin_latitude": 29.421,
+            "origin_longitude": -98.491,
+            "destination_latitude": 29.425,
+            "destination_longitude": -98.484,
+            "landmark_name": "The Alamo",
+            "district_name": "Downtown San Antonio",
+            "date": "2026-08-23",
+            "hour": 14,
         }).encode()
         response = urlopen(Request(
             f"http://127.0.0.1:{server.server_port}/api/trip/analyze",
@@ -155,7 +166,7 @@ def test_trip_analysis_returns_explicit_unavailable_contract() -> None:
         assert result["state"] == "unavailable"
         assert result["mode"] == "exploratory"
         assert result["best_time"] is None
-        assert result["unavailable"]["reason"] == "no matching fixture"
+        assert result["unavailable"]["reason"] == "no matching fixture for the requested exploratory trip"
     finally:
         server.shutdown()
         server.server_close()
@@ -196,6 +207,30 @@ def test_trip_analysis_rejects_untrusted_metric_and_provenance_fields() -> None:
             urlopen(Request(f"http://127.0.0.1:{server.server_port}/api/trip/analyze", data=body, method="POST"))
         assert caught.value.code == 400
         assert json.load(caught.value)["status"] == "unavailable"
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+
+def test_trip_analysis_rejects_malformed_adapter_response() -> None:
+    server = create_fixture_server(
+        Path("fixtures/heatmap-historical.json"),
+        trip_adapter=MalformedTripAdapter(),  # type: ignore[arg-type]
+    )
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        body = json.dumps({
+            "origin_latitude": 29.421, "origin_longitude": -98.491,
+            "destination_latitude": 29.425, "destination_longitude": -98.484,
+            "mode": "curated", "landmark_name": "The Alamo",
+            "district_name": "Downtown San Antonio", "date": "2026-08-23", "hour": 14,
+        }).encode()
+        with pytest.raises(HTTPError) as caught:
+            urlopen(Request(f"http://127.0.0.1:{server.server_port}/api/trip/analyze", data=body, method="POST"))
+        assert caught.value.code == 400
+        assert "invalid response" in json.load(caught.value)["error"]
     finally:
         server.shutdown()
         server.server_close()
