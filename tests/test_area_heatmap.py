@@ -433,9 +433,11 @@ class TestLiveAreaHeatmapAdapter:
         submitted = submissions[0]
         assert "polygon_aoi" in submitted
         aoi = submitted["polygon_aoi"]
+        assert isinstance(aoi, dict)
         assert aoi["type"] == "FeatureCollection"
-        # Verify the polygon is a corridor, not a small square
-        geom = shape(aoi["features"][0]["geometry"])
+        features = aoi["features"]
+        assert isinstance(features, list)
+        geom = shape(features[0]["geometry"])
         assert geom.is_valid
 
         # Verify area provenance stamps
