@@ -70,7 +70,7 @@ def test_live_adapter_rejects_non_object_payload() -> None:
         adapter.analyze(_request(), ExecutionMode.LIVE)
 
 
-@pytest.mark.parametrize(
+@pytest.mark.parametrize(  # type: ignore[untyped-decorator]
     ("section", "field"),
     [
         ("best_time", "unit"),

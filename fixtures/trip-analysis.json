@@ -1,27 +1,129 @@
 {
-  "scenario": {"landmark_name": "The Alamo", "district_name": "Downtown San Antonio", "date": "2026-08-23", "origin": {"latitude": 29.421, "longitude": -98.491}, "destination": {"latitude": 29.425, "longitude": -98.484}},
+  "scenario": {
+    "landmark_name": "The Alamo",
+    "district_name": "Downtown San Antonio",
+    "date": "2026-08-23",
+    "origin": { "latitude": 29.421, "longitude": -98.491 },
+    "destination": { "latitude": 29.425, "longitude": -98.484 }
+  },
   "best_time": {
     "metric_name": "tcm",
     "unit": "C",
-    "hourly": [{"hour": 8, "value": 29.0}, {"hour": 14, "value": 38.0}, {"hour": 19, "value": 32.0}], "hourly_coverage": 0.125,
+    "hourly": [
+      { "hour": 8, "value": 29.0 },
+      { "hour": 14, "value": 38.0 },
+      { "hour": 19, "value": 32.0 }
+    ],
+    "hourly_coverage": 0.125,
     "recommendation_hour": 8,
     "recommendation_reason": "lowest provider temperature among available hours",
-    "provenance": {"provider": "fortyguard", "data_date": "2026-08-23", "retrieved_at": "2026-08-24T00:00:00+00:00", "transformation_version": "trip-contract-v1", "response_status": "completed", "confidence": "sufficient", "coverage": 1.0, "fresh": true, "request_configuration": {"metric": "tcm", "threshold_celsius": 35}}
+    "provenance": {
+      "provider": "fortyguard",
+      "data_date": "2026-08-23",
+      "retrieved_at": "2026-08-24T00:00:00+00:00",
+      "transformation_version": "trip-contract-v1",
+      "response_status": "completed",
+      "confidence": "sufficient",
+      "coverage": 1.0,
+      "fresh": true,
+      "request_configuration": { "metric": "tcm", "threshold_celsius": 35 }
+    }
   },
   "hotels": {
     "ranked": [
-      {"identity": "cooler", "components": {"night": 30, "hot_hours": 5, "persistence": 2, "day": 32}, "score": 18.55, "percentile": 100, "tie_group": 0},
-      {"identity": "hotter", "components": {"night": 36, "hot_hours": 9, "persistence": 5, "day": 38}, "score": 23.45, "percentile": 0, "tie_group": 1}
+      {
+        "identity": "cooler",
+        "components": {
+          "night": 30,
+          "hot_hours": 5,
+          "persistence": 2,
+          "day": 32
+        },
+        "score": 18.55,
+        "percentile": 100,
+        "tie_group": 0
+      },
+      {
+        "identity": "hotter",
+        "components": {
+          "night": 36,
+          "hot_hours": 9,
+          "persistence": 5,
+          "day": 38
+        },
+        "score": 23.45,
+        "percentile": 0,
+        "tie_group": 1
+      }
     ],
-    "weights": {"night": 0.35, "hot_hours": 0.25, "persistence": 0.2, "day": 0.2}, "component_units": {"night": "C", "hot_hours": "hours", "persistence": "hours", "day": "C"}, "usable_count": 2, "discovered_count": 2, "enrichment": "not_requested",
-    "provenance": {"provider": "openstreetmap_overpass_and_fortyguard", "data_date": "2026-08-23", "retrieved_at": "2026-08-24T00:00:00+00:00", "transformation_version": "trip-contract-v1", "response_status": "completed", "confidence": "sufficient", "coverage": 1.0, "fresh": true, "request_configuration": {"district": "Downtown San Antonio"}}
+    "weights": {
+      "night": 0.35,
+      "hot_hours": 0.25,
+      "persistence": 0.2,
+      "day": 0.2
+    },
+    "component_units": {
+      "night": "C",
+      "hot_hours": "hours",
+      "persistence": "hours",
+      "day": "C"
+    },
+    "usable_count": 2,
+    "discovered_count": 2,
+    "enrichment": "not_requested",
+    "provenance": {
+      "provider": "openstreetmap_overpass_and_fortyguard",
+      "data_date": "2026-08-23",
+      "retrieved_at": "2026-08-24T00:00:00+00:00",
+      "transformation_version": "trip-contract-v1",
+      "response_status": "completed",
+      "confidence": "sufficient",
+      "coverage": 1.0,
+      "fresh": true,
+      "request_configuration": { "district": "Downtown San Antonio" }
+    }
   },
   "routes": {
     "alternatives": [
-      {"identity": "short", "distance_m": 1000, "duration_s": 600, "heat_value": 38, "modeled_shade_percent": 20, "building_coverage": 0.9},
-      {"identity": "shady", "distance_m": 1200, "duration_s": 700, "heat_value": 38, "modeled_shade_percent": 80, "building_coverage": 0.9, "recommendation_reason": "highest modeled shade among returned routes"}
+      {
+        "identity": "short",
+        "distance_m": 1000,
+        "duration_s": 600,
+        "heat_value": 38,
+        "modeled_shade_percent": 20,
+        "building_coverage": 0.9
+      },
+      {
+        "identity": "shady",
+        "distance_m": 1200,
+        "duration_s": 700,
+        "heat_value": 38,
+        "modeled_shade_percent": 80,
+        "building_coverage": 0.9,
+        "recommendation_reason": "highest modeled shade among returned routes"
+      }
     ],
-    "recommended_id": "shady", "reason": "highest modeled shade among returned routes", "heat_status": "elevated", "corridor_heat_value": 38, "heat_metric": "tcm", "heat_unit": "C", "coverage": 0.9, "confidence": "sufficient",
-    "provenance": {"provider": "osrm_openstreetmap_and_fortyguard", "data_date": "2026-08-23", "retrieved_at": "2026-08-24T00:00:00+00:00", "transformation_version": "trip-contract-v1", "response_status": "completed", "confidence": "sufficient", "coverage": 0.9, "fresh": true, "request_configuration": {"routing_profile": "walking", "alternatives": true}}
+    "recommended_id": "shady",
+    "reason": "highest modeled shade among returned routes",
+    "heat_status": "elevated",
+    "corridor_heat_value": 38,
+    "heat_metric": "tcm",
+    "heat_unit": "C",
+    "coverage": 0.9,
+    "confidence": "sufficient",
+    "provenance": {
+      "provider": "osrm_openstreetmap_and_fortyguard",
+      "data_date": "2026-08-23",
+      "retrieved_at": "2026-08-24T00:00:00+00:00",
+      "transformation_version": "trip-contract-v1",
+      "response_status": "completed",
+      "confidence": "sufficient",
+      "coverage": 0.9,
+      "fresh": true,
+      "request_configuration": {
+        "routing_profile": "walking",
+        "alternatives": true
+      }
+    }
   }
 }
