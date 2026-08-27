@@ -17,6 +17,7 @@ from typing import Mapping
 from fastapi import FastAPI
 
 from app.api import create_app
+from app.domain.contracts import TripAnalysisAdapter
 from app.domain.security import sanitize_payload
 from app.integrations.fortyguard.client import FortyGuardClient
 from app.integrations.fortyguard.live import (
@@ -26,6 +27,11 @@ from app.integrations.fortyguard.live import (
 )
 from app.services.cache import CacheService
 from app.services.execution import EnvParamsExecution, HeatmapExecution
+from app.services.trip_adapters import (
+    FixtureTripAnalysisAdapter,
+    LiveTripAnalysisAdapter,
+    ModeDispatchTripAnalysisAdapter,
+)
 from app.settings import AppSettings, SettingsError
 
 _EVENT_LOGGER = logging.getLogger("app.fortyguard")
@@ -76,6 +82,7 @@ def create_production_app(
     fixture_path: Path | None = None,
     env_params_fixture_path: Path | None = None,
     frontend_dist: Path | None = None,
+    trip_adapter: TripAnalysisAdapter | None = None,
 ) -> FastAPI:
     """Create the production app; misconfigured live mode fails fast at startup."""
     from app.settings import load_settings
@@ -94,10 +101,18 @@ def create_production_app(
     if resolved.allow_live:
         execution = build_live_heatmap_execution(resolved, fixture_path=heatmap_fixture)
         env_params_execution = build_live_env_params_execution(resolved, fixture_path=env_fixture)
+    if trip_adapter is None:
+        trip_adapter = ModeDispatchTripAnalysisAdapter(
+            FixtureTripAnalysisAdapter(heatmap_fixture.parent / "trip-analysis.json"),
+            LiveTripAnalysisAdapter(
+                lambda request: {"unavailable": "live trip adapter is not configured"}
+            ),
+        )
     return create_app(
         heatmap_fixture,
         execution=execution,
         env_params_execution=env_params_execution,
         allow_live=resolved.allow_live,
         frontend_dist=dist,
+        trip_adapter=trip_adapter,
     )
