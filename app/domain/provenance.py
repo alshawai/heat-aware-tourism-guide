@@ -10,6 +10,20 @@ from typing import Any
 
 
 @dataclass(frozen=True)
+class Transformation:
+    """A named, versioned inference or reshaping step applied on the live path (ADR 0002)."""
+
+    name: str
+    version: int
+
+    def __post_init__(self) -> None:
+        if not self.name.strip():
+            raise ValueError("transformation name is required")
+        if self.version < 1:
+            raise ValueError("transformation version must be positive")
+
+
+@dataclass(frozen=True)
 class CacheKey:
     value: str
 
@@ -33,6 +47,7 @@ class Provenance:
     forecast: bool
     activity_id: str | None = None
     raw_payload: dict[str, Any] | None = None
+    transformations: tuple[Transformation, ...] = ()
 
     @classmethod
     def cached(

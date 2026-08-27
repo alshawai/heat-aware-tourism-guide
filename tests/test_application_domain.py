@@ -155,3 +155,36 @@ def test_spatial_contract_reports_partial_polygon_coverage_and_point_fallback() 
     point = point_join_contract(containing_value=None, boundary=False, outside_aoi=True, nearest_value=35, nearest_distance_m=12)
     assert point.quality == "nearest_fallback"
     assert point.distance_m == 12
+
+
+def test_provenance_transformations_default_to_empty_and_serialize_structured() -> None:
+    from dataclasses import asdict
+
+    from app.domain.provenance import Provenance, Transformation
+
+    plain = Provenance("fixture", datetime(2026, 8, 27, tzinfo=timezone.utc), "2026-08-27", False, True)
+    assert plain.transformations == ()
+
+    stamped = Provenance(
+        "provider",
+        datetime(2026, 8, 27, tzinfo=timezone.utc),
+        "2026-08-27",
+        False,
+        True,
+        "activity-1",
+        None,
+        (Transformation("tcm_unit_celsius", 1), Transformation("valid_time_from_request", 1)),
+    )
+    assert asdict(stamped)["transformations"] == (
+        {"name": "tcm_unit_celsius", "version": 1},
+        {"name": "valid_time_from_request", "version": 1},
+    )
+
+
+def test_transformation_rejects_blank_names_and_non_positive_versions() -> None:
+    from app.domain.provenance import Transformation
+
+    with pytest.raises(ValueError, match="name"):
+        Transformation("", 1)
+    with pytest.raises(ValueError, match="version"):
+        Transformation("tcm_unit_celsius", 0)
