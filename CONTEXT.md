@@ -52,11 +52,27 @@ directly.
   point lookups distinguish containing tile / boundary / outside-AOI /
   fallback). Weak coverage is surfaced, never hidden.
 - **Credit ledger** — Budget accounting for billable provider usage;
-  `plan_optional` is separate from actual spend.
+  `plan_optional` is separate from actual spend. Persists as JSONL
+  (`data/ledger.jsonl`), loaded at startup with activity-ID dedupe; the
+  optional `FORTYGUARD_CREDIT_BUDGET` enforces an all-time total (record-only
+  when unset). Budget windowing belongs to issue #22 (ADR 0004).
+- **Acquisition record** — The sidecar JSON (`<stem>.acquisition.json`) beside
+  every committed fixture: source (`provider` or `synthesized`), endpoint,
+  request configuration, retrieval time, data date, status, schema version,
+  provider configuration version, safe activity ID, and transformations. The
+  single authoritative fixture match identity (ADR 0004). Synthesized
+  fixtures carry `null` activity IDs and retrieval times, never fabricated
+  ones.
+- **Provider configuration version** — The explicit constant
+  (`fortyguard-config-v1`) naming the provider/request-construction semantics
+  a response was produced under. Fourth component of cache identity alongside
+  endpoint, schema version, and complete request payload (ADR 0004).
 - **Degradation rule** — On a live-path failure the execution layer replays a
-  matching cache entry when one exists, otherwise raises an explicit
-  unavailable error. Stale/cached data is never presented as a current
-  forecast.
+  matching cache entry (exact key), then a matching fixture (sidecar match;
+  date-relaxed for forecast mode only), otherwise raises an explicit
+  unavailable error. Every replay is labelled (`source="cache"/"fixture"`,
+  `stale=True`, true data date) and never presented as a current forecast
+  (ADR 0004).
 - **Source of truth for provider behavior** — The official FortyGuard docs
   (reconciled in `docs/research/issue-7-san-antonio-provider-validation.md`
   and ADR 0001), with the quickstart repo as reference only.
@@ -66,8 +82,10 @@ directly.
 - ADR 0001 — live provider adapter boundary, sync submit/poll model, wiring.
 - ADR 0002 — unit/freshness inference and transformation stamping.
 - ADR 0003 — bounded polling, 404 tolerance window, submit-once.
+- ADR 0004 — fixture acquisition sidecars, cache identity, degradation
+  chain, JSONL cost ledger.
 - `docs/design/fortyguard-extraction.md` — extraction contract from issue #6.
-- Layout: `app/domain/` (pure contracts), `app/services/` (cache, ledger,
-  execution, sanitization), `app/integrations/fortyguard/` (provider client
-  stack + live adapter), `app/api.py` + `app/main.py` + `app/settings.py`
-  (composition root).
+- Layout: `app/domain/` (pure contracts), `app/services/` (cache, execution,
+  acquisition, sidecars, ledger store), `app/integrations/fortyguard/`
+  (provider client stack + live adapter), `app/api.py` + `app/main.py` +
+  `app/settings.py` (composition root).

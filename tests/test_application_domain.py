@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 import pytest
 
 from app.domain.analysis import extract_exposure, point_join_contract, polygon_join_contract
-from app.domain.provenance import CacheKey, Provenance
+from app.domain.provenance import AcquisitionRecord, CacheKey, Provenance
 from app.domain.readiness import (
     EnrichmentOutcome,
     EnrichmentPlanner,
@@ -15,8 +15,70 @@ from app.services.cache import CacheService
 
 def test_cache_key_separates_endpoint_and_schema_for_same_payload() -> None:
     payload = {"latitude": 29.4241, "longitude": -98.4936}
-    assert CacheKey.create("heatmap", "v1", payload) != CacheKey.create("status", "v1", payload)
-    assert CacheKey.create("heatmap", "v1", payload) == CacheKey.create("heatmap", "v1", dict(reversed(list(payload.items()))))
+    assert CacheKey.create("heatmap", "v1", payload, "fortyguard-config-v1") != CacheKey.create(
+        "status", "v1", payload, "fortyguard-config-v1"
+    )
+    assert CacheKey.create("heatmap", "v1", payload, "fortyguard-config-v1") == CacheKey.create(
+        "heatmap", "v1", dict(reversed(list(payload.items()))), "fortyguard-config-v1"
+    )
+
+
+def test_cache_key_separates_provider_configuration_versions() -> None:
+    payload = {"latitude": 29.4241, "longitude": -98.4936}
+    assert CacheKey.create("heatmap", "v1", payload, "fortyguard-config-v1") != CacheKey.create(
+        "heatmap", "v1", payload, "fortyguard-config-v2"
+    )
+
+
+def test_acquisition_record_round_trips_through_payload() -> None:
+    record = AcquisitionRecord(
+        source="provider",
+        endpoint="/v1/heatmap",
+        request_configuration={"analytic_type": "tcm", "latitude": 29.4241},
+        retrieved_at=datetime(2026, 8, 23, 12, tzinfo=timezone.utc),
+        data_date="2026-08-23",
+        status="ok",
+        schema_version="v1",
+        provider_config_version="fortyguard-config-v1",
+        activity_id="activity-1",
+    )
+    payload = record.to_payload()
+    assert AcquisitionRecord.from_payload(payload) == record
+
+
+def test_acquisition_record_rejects_unknown_source_and_missing_identity() -> None:
+    base = {
+        "source": "synthesized",
+        "endpoint": "/v1/heatmap",
+        "request_configuration": {"analytic_type": "tcm"},
+        "retrieved_at": None,
+        "data_date": "2026-08-23",
+        "status": "ok",
+        "schema_version": "v1",
+        "provider_config_version": None,
+        "activity_id": None,
+    }
+    with pytest.raises(ValueError, match="source"):
+        AcquisitionRecord.from_payload({**base, "source": "guessed"})
+    with pytest.raises(ValueError, match="endpoint"):
+        AcquisitionRecord.from_payload({**base, "endpoint": ""})
+
+
+def test_synthesized_acquisition_record_has_no_fabricated_activity_or_time() -> None:
+    record = AcquisitionRecord(
+        source="synthesized",
+        endpoint="/v1/heatmap",
+        request_configuration={"analytic_type": "tcm"},
+        retrieved_at=None,
+        data_date="2026-08-20",
+        status="ok",
+        schema_version="v1",
+        provider_config_version=None,
+        activity_id=None,
+    )
+    assert record.activity_id is None
+    assert record.retrieved_at is None
+    assert record.to_payload()["activity_id"] is None
 
 
 def test_stale_cache_provenance_is_explicit() -> None:
@@ -32,13 +94,42 @@ def test_stale_cache_provenance_is_explicit() -> None:
 
 def test_cache_hit_is_marked_as_replayed_and_cache_miss_is_none() -> None:
     service = CacheService()
-    key = service.put("heatmap", "v1", {"metric": "tcm"}, {"value": 35}, retrieved_at=datetime(2026, 8, 23, tzinfo=timezone.utc), data_date="2026-08-23", activity_id="a1")
+    key = service.put(
+        "heatmap",
+        "v1",
+        {"metric": "tcm"},
+        {"value": 35},
+        retrieved_at=datetime(2026, 8, 23, tzinfo=timezone.utc),
+        data_date="2026-08-23",
+        activity_id="a1",
+        provider_config_version="fortyguard-config-v1",
+    )
     hit = service.get(key)
     assert hit is not None
     assert hit.provenance.source == "cache"
     assert hit.provenance.stale is True
     assert hit.provenance.raw_payload == {"value": 35}
-    assert service.get(CacheKey.create("heatmap", "v1", {"metric": "other"})) is None
+    assert service.get(
+        CacheKey.create("heatmap", "v1", {"metric": "other"}, "fortyguard-config-v1")
+    ) is None
+
+
+def test_cache_hit_requires_matching_provider_configuration_version() -> None:
+    service = CacheService()
+    key = service.put(
+        "heatmap",
+        "v1",
+        {"metric": "tcm"},
+        {"value": 35},
+        retrieved_at=datetime(2026, 8, 23, tzinfo=timezone.utc),
+        data_date="2026-08-23",
+        provider_config_version="fortyguard-config-v1",
+    )
+    assert service.get(key) is not None
+    assert (
+        service.get(CacheKey.create("heatmap", "v1", {"metric": "tcm"}, "fortyguard-config-v2"))
+        is None
+    )
 
 
 def test_cache_preserves_forecast_and_data_date_metadata() -> None:
@@ -51,6 +142,7 @@ def test_cache_preserves_forecast_and_data_date_metadata() -> None:
         retrieved_at=datetime(2026, 8, 23, tzinfo=timezone.utc),
         data_date="2026-08-23",
         forecast=True,
+        provider_config_version="fortyguard-config-v1",
     )
     entry = service.get(key)
     assert entry is not None

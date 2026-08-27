@@ -1,0 +1,12 @@
+{
+  "source": "synthesized",
+  "endpoint": "/api/trip/analyze",
+  "request_configuration": {},
+  "retrieved_at": null,
+  "data_date": null,
+  "status": "unavailable",
+  "schema_version": "trip-contract-v1",
+  "provider_config_version": null,
+  "activity_id": null,
+  "transformations": []
+}

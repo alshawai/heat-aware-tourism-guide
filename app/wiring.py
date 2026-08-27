@@ -2,8 +2,8 @@
 
 The server owns credentials, submission, bounded polling, error classification,
 sanitized activity metadata, and provider-specific behavior (ADR 0001). This
-module is the only place that assembles transport, client, adapter, cache, and
-execution from application settings.
+module is the only place that assembles transport, client, adapter, cache,
+ledger, and execution from application settings.
 """
 
 from __future__ import annotations
@@ -12,12 +12,13 @@ from datetime import datetime, timezone
 import json
 import logging
 from pathlib import Path
-from typing import Mapping
+from typing import Mapping, Sequence
 
 from fastapi import FastAPI
 
 from app.api import create_app
 from app.domain.contracts import TripAnalysisAdapter
+from app.domain.ledger import CreditLedger
 from app.domain.security import sanitize_payload
 from app.integrations.fortyguard.client import FortyGuardClient
 from app.integrations.fortyguard.live import (
@@ -27,6 +28,7 @@ from app.integrations.fortyguard.live import (
 )
 from app.services.cache import CacheService
 from app.services.execution import EnvParamsExecution, HeatmapExecution
+from app.services.ledger_store import JsonlLedgerStore
 from app.services.trip_adapters import (
     FixtureTripAnalysisAdapter,
     LiveTripAnalysisAdapter,
@@ -43,7 +45,20 @@ def json_event_sink(event: Mapping[str, object]) -> None:
     _EVENT_LOGGER.info(json.dumps(sanitized, default=str))
 
 
-def _live_client(settings: AppSettings) -> FortyGuardClient:
+def build_ledger(settings: AppSettings) -> CreditLedger:
+    """Load the persistent cost ledger, or an in-memory one (ADR 0004).
+
+    Recording is unconditional whenever live is enabled; enforcement applies
+    only when ``FORTYGUARD_CREDIT_BUDGET`` is set, against the all-time total.
+    """
+    if settings.ledger_path is None:
+        return CreditLedger(settings.credit_budget)
+    return JsonlLedgerStore(settings.ledger_path).load(budget=settings.credit_budget)
+
+
+def build_live_client(
+    settings: AppSettings, *, ledger: CreditLedger | None = None
+) -> FortyGuardClient:
     if not settings.fortyguard_api_key:
         raise SettingsError("live execution requires FORTYGUARD_API_KEY to be set")
     transport = LiveFortyGuardTransport(
@@ -55,25 +70,59 @@ def _live_client(settings: AppSettings) -> FortyGuardClient:
         settings.fortyguard_api_key,
         clock=lambda: datetime.now(timezone.utc),
         event_sink=json_event_sink,
+        ledger=ledger,
     )
 
 
-def build_live_heatmap_execution(settings: AppSettings, *, fixture_path: Path) -> HeatmapExecution:
+def build_live_heatmap_execution(
+    settings: AppSettings,
+    *,
+    fixture_path: Path,
+    client: FortyGuardClient | None = None,
+    cache: CacheService | None = None,
+    additional_fixtures: Sequence[Path] = (),
+) -> HeatmapExecution:
     """Compose the live heatmap execution: transport, client, adapter, cache."""
-    adapter = LiveHeatmapAdapter(_live_client(settings), polling=settings.polling)
+    adapter = LiveHeatmapAdapter(client or build_live_client(settings), polling=settings.polling)
     return HeatmapExecution(
         fixture_path=fixture_path,
         live_loader=adapter.load,
-        cache=CacheService(),
+        cache=cache if cache is not None else CacheService(),
+        additional_fixtures=additional_fixtures,
     )
 
 
 def build_live_env_params_execution(
-    settings: AppSettings, *, fixture_path: Path
+    settings: AppSettings,
+    *,
+    fixture_path: Path,
+    client: FortyGuardClient | None = None,
+    cache: CacheService | None = None,
+    additional_fixtures: Sequence[Path] = (),
 ) -> EnvParamsExecution:
     """Compose the live environmental-parameters execution."""
-    adapter = LiveEnvParamsAdapter(_live_client(settings), polling=settings.polling)
-    return EnvParamsExecution(fixture_path=fixture_path, live_loader=adapter.load)
+    adapter = LiveEnvParamsAdapter(client or build_live_client(settings), polling=settings.polling)
+    return EnvParamsExecution(
+        fixture_path=fixture_path,
+        live_loader=adapter.load,
+        cache=cache,
+        additional_fixtures=additional_fixtures,
+    )
+
+
+def _fixture_candidates(primary: Path, pattern: str) -> list[Path]:
+    """Committed fixtures of one kind: the fixture directory plus acquisitions.
+
+    Acquisition sidecars are excluded — they are identity metadata, not payloads.
+    """
+    def payloads(paths: list[Path]) -> list[Path]:
+        return [path for path in paths if not path.name.endswith(".acquisition.json")]
+
+    candidates = payloads(sorted(primary.parent.glob(pattern)))
+    acquired = primary.parent / "acquired"
+    if acquired.is_dir():
+        candidates.extend(payloads(sorted(acquired.glob(pattern))))
+    return candidates
 
 
 def create_production_app(
@@ -99,8 +148,23 @@ def create_production_app(
     execution: HeatmapExecution | None = None
     env_params_execution: EnvParamsExecution | None = None
     if resolved.allow_live:
-        execution = build_live_heatmap_execution(resolved, fixture_path=heatmap_fixture)
-        env_params_execution = build_live_env_params_execution(resolved, fixture_path=env_fixture)
+        ledger = build_ledger(resolved)
+        client = build_live_client(resolved, ledger=ledger)
+        cache = CacheService()
+        execution = build_live_heatmap_execution(
+            resolved,
+            fixture_path=heatmap_fixture,
+            client=client,
+            cache=cache,
+            additional_fixtures=_fixture_candidates(heatmap_fixture, "heatmap-*.json"),
+        )
+        env_params_execution = build_live_env_params_execution(
+            resolved,
+            fixture_path=env_fixture,
+            client=client,
+            cache=cache,
+            additional_fixtures=_fixture_candidates(env_fixture, "env-params*.json"),
+        )
     if trip_adapter is None:
         trip_adapter = ModeDispatchTripAnalysisAdapter(
             FixtureTripAnalysisAdapter(heatmap_fixture.parent / "trip-analysis.json"),

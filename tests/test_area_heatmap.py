@@ -27,7 +27,7 @@ from app.integrations.fortyguard.live import (
     map_tiles_to_route_segments,
     translate_heatmap_response,
 )
-from app.services.execution import LiveHeatmapPayload
+from app.integrations.fortyguard.live import LiveHeatmapPayload
 from app.settings import FortyGuardPollingSettings
 
 

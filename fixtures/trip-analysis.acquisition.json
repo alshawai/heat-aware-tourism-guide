@@ -1,0 +1,24 @@
+{
+  "source": "synthesized",
+  "endpoint": "/api/trip/analyze",
+  "request_configuration": {
+    "landmark_name": "The Alamo",
+    "district_name": "Downtown San Antonio",
+    "date": "2026-08-23",
+    "origin": {
+      "latitude": 29.421,
+      "longitude": -98.491
+    },
+    "destination": {
+      "latitude": 29.425,
+      "longitude": -98.484
+    }
+  },
+  "retrieved_at": null,
+  "data_date": "2026-08-23",
+  "status": "ok",
+  "schema_version": "trip-contract-v1",
+  "provider_config_version": null,
+  "activity_id": null,
+  "transformations": []
+}

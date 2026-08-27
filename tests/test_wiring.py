@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime, timezone
 import json
 import logging
 from pathlib import Path
@@ -10,7 +10,8 @@ from fastapi.testclient import TestClient
 from app.api import create_app
 from app.integrations.fortyguard.contracts import EnvParamsRequest, HeatmapRequest
 from app.integrations.fortyguard.errors import ProviderError, ProviderErrorKind
-from app.services.execution import EnvParamsExecution, HeatmapExecution, LiveEnvParamsPayload
+from app.integrations.fortyguard.live import LiveEnvParamsPayload
+from app.services.execution import EnvParamsExecution, HeatmapExecution
 from app.settings import AppSettings, FortyGuardPollingSettings, SettingsError
 from app.wiring import (
     build_live_env_params_execution,
@@ -23,11 +24,13 @@ FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
 
 
 def _env_body() -> dict[str, object]:
+    """The true scenario of the committed env-params observation (issue #7)."""
     return {
-        "latitude": 29.4241,
-        "longitude": -98.4936,
+        "latitude": 29.4259,
+        "longitude": -98.4861,
         "start_date": "2026-08-24",
         "temperature_anchor_celsius": 35.0,
+        "hour": 13,
     }
 
 
@@ -45,9 +48,21 @@ def test_env_params_route_serves_fixture_series() -> None:
     assert body["provenance"] == {
         "source": "fixture",
         "stale": False,
-        "activity_id": None,
+        "activity_id": "0b592283-ef6f-4783-bacb-79ea59e7254a",
+        "retrieved_at": "2026-08-24T11:28:01+00:00",
+        "data_date": "2026-08-24",
         "transformations": [],
     }
+
+
+def test_env_params_route_rejects_non_matching_scenario_as_unavailable() -> None:
+    app = create_app(FIXTURES / "heatmap-historical.json")
+    client = TestClient(app)
+    response = client.post(
+        "/api/env-params", json={**_env_body(), "temperature_anchor_celsius": 28.0}
+    )
+    assert response.status_code == 503
+    assert response.json()["detail"]["status"] == "unavailable"
 
 
 def test_env_params_route_rejects_missing_anchor_and_bad_hour() -> None:
@@ -64,7 +79,7 @@ def test_env_params_route_rejects_live_when_not_enabled() -> None:
     client = TestClient(app)
     response = client.post("/api/env-params", json={**_env_body(), "execution_mode": "live"})
     assert response.status_code == 400
-    assert response.json()["detail"]["status"] == "unavailable"
+    assert response.json()["detail"]["status"] == "error"
 
 
 def test_env_params_route_uses_injected_live_loader() -> None:
@@ -92,12 +107,13 @@ def test_env_params_route_uses_injected_live_loader() -> None:
     assert response.status_code == 200
     body = response.json()
     assert body["entries"][0]["heat_index_celsius"] == 31.0
-    assert body["provenance"] == {
-        "source": "provider",
-        "stale": False,
-        "activity_id": "env-activity-1",
-        "transformations": [],
-    }
+    provenance = body["provenance"]
+    assert provenance["source"] == "provider"
+    assert provenance["stale"] is False
+    assert provenance["activity_id"] == "env-activity-1"
+    assert provenance["transformations"] == []
+    assert provenance["retrieved_at"] is not None
+    assert provenance["data_date"] == "2026-08-24"
 
 
 def test_env_params_live_without_loader_is_explicitly_unavailable() -> None:
@@ -108,7 +124,7 @@ def test_env_params_live_without_loader_is_explicitly_unavailable() -> None:
     )
     client = TestClient(app)
     response = client.post("/api/env-params", json={**_env_body(), "execution_mode": "live"})
-    assert response.status_code == 400
+    assert response.status_code == 503
     assert "not configured" in response.json()["detail"]["error"]
 
 
@@ -129,14 +145,14 @@ def test_provider_errors_surface_error_kind_in_unavailable_response() -> None:
         "/api/heatmap",
         json={
             "analytic_type": "tcm",
-            "latitude": 29.4241,
-            "longitude": -98.4936,
+            "latitude": 30.2672,
+            "longitude": -97.7431,
             "start_date": "2026-08-23",
             "forecast": False,
             "execution_mode": "live",
         },
     )
-    assert response.status_code == 400
+    assert response.status_code == 503
     detail = response.json()["detail"]
     assert detail["status"] == "unavailable"
     assert detail["error_kind"] == "task_failure"
@@ -265,3 +281,81 @@ def test_env_params_live_loader_receives_documented_date_windows() -> None:
     assert payload["analysis"] == ["heat_index_celsius", "relative_humidity_percent"]
     hourly = build_documented_env_params_payload(EnvParamsRequest(29.4241, -98.4936, date(2026, 8, 24), 35.0, hour=13))
     assert hourly["date_time"] == {"start_date": "2026-08-24", "filter_type": 1, "start_time": "13:00"}
+
+
+def test_budget_exceeded_maps_to_service_unavailable_with_error_kind() -> None:
+    from app.domain.ledger import BudgetExceededError
+    from app.services.execution import HeatmapExecution
+
+    def overspend(request: HeatmapRequest) -> Mapping[str, object]:
+        raise BudgetExceededError("credit budget exceeded")
+
+    app = create_app(
+        FIXTURES / "heatmap-historical.json",
+        allow_live=True,
+        execution=HeatmapExecution(
+            fixture_path=FIXTURES / "heatmap-historical.json",
+            live_loader=overspend,
+        ),
+    )
+    client = TestClient(app)
+    response = client.post(
+        "/api/heatmap",
+        json={
+            "analytic_type": "tcm",
+            "latitude": 30.2672,
+            "longitude": -97.7431,
+            "start_date": "2026-08-23",
+            "forecast": False,
+            "execution_mode": "live",
+        },
+    )
+    assert response.status_code == 503
+    detail = response.json()["detail"]
+    assert detail["status"] == "unavailable"
+    assert detail["error_kind"] == "budget_exceeded"
+
+
+def test_build_ledger_loads_history_and_applies_budget(tmp_path: Path) -> None:
+    from dataclasses import replace
+
+    from app.domain.ledger import UsageRecord
+    from app.services.ledger_store import JsonlLedgerStore
+    from app.wiring import build_ledger
+
+    ledger_path = tmp_path / "ledger.jsonl"
+    JsonlLedgerStore(ledger_path).load().record(
+        UsageRecord("activity-1", "/v1/heatmap", 4, datetime.now(timezone.utc), "completed")
+    )
+    settings = AppSettings(
+        allow_live=True,
+        fortyguard_api_key="key-1",
+        fortyguard_base_url="https://api.example.test",
+        credit_budget=10,
+        ledger_path=ledger_path,
+    )
+    ledger = build_ledger(settings)
+    assert ledger.budget == 10
+    assert ledger.total_used == 4
+    assert ledger.remaining == 6
+
+    memory = build_ledger(replace(settings, ledger_path=None))
+    assert memory.budget == 10
+    assert memory.total_used == 0
+
+
+def test_heatmap_fixture_candidates_include_acquired_directory(tmp_path: Path) -> None:
+    from app.wiring import _fixture_candidates
+
+    primary = tmp_path / "heatmap-historical.json"
+    primary.write_text("{}", encoding="utf-8")
+    acquired = tmp_path / "acquired" / "heatmap-tcm-historical.json"
+    acquired.parent.mkdir()
+    acquired.write_text("{}", encoding="utf-8")
+    (tmp_path / "env-params.json").write_text("{}", encoding="utf-8")
+
+    candidates = _fixture_candidates(primary, "heatmap-*.json")
+    assert primary in candidates
+    assert acquired in candidates
+    assert (tmp_path / "env-params.json") not in candidates
+    assert not any(path.name.endswith(".acquisition.json") for path in candidates)

@@ -13,6 +13,9 @@ from shapely.geometry import shape
 from app.domain.provenance import Provenance, Transformation
 from app.domain.security import sanitize_payload
 
+PROVIDER_CONFIG_VERSION = "fortyguard-config-v1"
+"""Provider/request-construction semantics a response was produced under (ADR 0004)."""
+
 
 class AnalyticType(str, Enum):
     TCM = "tcm"
@@ -291,7 +294,14 @@ def normalize_heatmap_response(
     source: str = "provider",
     data_date: str | None = None,
     transformations: tuple[Transformation, ...] = (),
+    stale: bool | None = None,
 ) -> HeatmapResult:
+    """Normalize any heatmap payload shape into the shared validated tile schema.
+
+    ``stale`` defaults to True only for cache replays; callers override it for
+    stale-labelled fixture fallbacks and date-relaxed forecast replays
+    (ADR 0004).
+    """
     features = payload.get("features")
     if not isinstance(features, Sequence) or isinstance(features, (str, bytes)) or not features:
         raise ValueError("heatmap response contains no features")
@@ -344,7 +354,7 @@ def normalize_heatmap_response(
             source,
             retrieved_at,
             data_date or request.start_date.isoformat(),
-            source == "cache",
+            source == "cache" if stale is None else stale,
             request.forecast,
             activity_id,
             sanitized_payload,

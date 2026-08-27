@@ -1,0 +1,18 @@
+{
+  "source": "provider",
+  "endpoint": "/v1/env_params",
+  "request_configuration": {
+    "latitude": 29.4259,
+    "longitude": -98.4861,
+    "start_date": "2026-08-24",
+    "temperature_anchor_celsius": 35.0,
+    "hour": 13
+  },
+  "retrieved_at": "2026-08-24T11:28:01+00:00",
+  "data_date": "2026-08-24",
+  "status": "ok",
+  "schema_version": "v1",
+  "provider_config_version": "fortyguard-config-v1",
+  "activity_id": "0b592283-ef6f-4783-bacb-79ea59e7254a",
+  "transformations": []
+}

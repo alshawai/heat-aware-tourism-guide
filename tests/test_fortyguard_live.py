@@ -22,7 +22,7 @@ from app.integrations.fortyguard.live import (
 )
 from app.integrations.fortyguard.transport import HttpFortyGuardTransport
 from app.settings import FortyGuardPollingSettings
-from app.services.execution import LiveHeatmapPayload
+from app.integrations.fortyguard.live import LiveHeatmapPayload
 
 
 class _Response:

@@ -31,8 +31,9 @@ class CacheService:
         data_date: str,
         activity_id: str | None = None,
         forecast: bool = False,
+        provider_config_version: str,
     ) -> CacheKey:
-        key = CacheKey.create(endpoint, schema_version, request_payload)
+        key = CacheKey.create(endpoint, schema_version, request_payload, provider_config_version)
         sanitized = sanitize_payload(response_payload)
         self._entries[key.value] = CacheEntry(
             sanitized,

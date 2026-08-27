@@ -48,7 +48,7 @@ def test_fixture_backed_http_flow_returns_normalized_domain_result() -> None:
         thread.join(timeout=2)
 
 
-def test_invalid_boolean_and_missing_fixture_return_unavailable() -> None:
+def test_invalid_boolean_returns_client_error() -> None:
     server = create_fixture_server(Path("fixtures/missing.json"))
     thread = Thread(target=server.serve_forever, daemon=True)
     thread.start()
@@ -66,14 +66,14 @@ def test_invalid_boolean_and_missing_fixture_return_unavailable() -> None:
             urlopen(Request(f"http://127.0.0.1:{server.server_port}/api/heatmap", data=body, method="POST"))
         except HTTPError as error:
             assert error.code == 400
-            assert json.load(error)["status"] == "unavailable"
+            assert json.load(error)["status"] == "error"
     finally:
         server.shutdown()
         server.server_close()
         thread.join(timeout=2)
 
 
-def test_non_object_json_body_returns_unavailable() -> None:
+def test_non_object_json_body_returns_client_error() -> None:
     server = create_fixture_server(Path("fixtures/heatmap-historical.json"))
     thread = Thread(target=server.serve_forever, daemon=True)
     thread.start()
@@ -82,7 +82,7 @@ def test_non_object_json_body_returns_unavailable() -> None:
             urlopen(Request(f"http://127.0.0.1:{server.server_port}/api/heatmap", data=b"[]", method="POST"))
         except HTTPError as error:
             assert error.code == 400
-            assert json.load(error)["status"] == "unavailable"
+            assert json.load(error)["status"] == "error"
     finally:
         server.shutdown()
         server.server_close()
@@ -206,7 +206,7 @@ def test_trip_analysis_rejects_untrusted_metric_and_provenance_fields() -> None:
         with pytest.raises(HTTPError) as caught:
             urlopen(Request(f"http://127.0.0.1:{server.server_port}/api/trip/analyze", data=body, method="POST"))
         assert caught.value.code == 400
-        assert json.load(caught.value)["status"] == "unavailable"
+        assert json.load(caught.value)["status"] == "error"
     finally:
         server.shutdown()
         server.server_close()
@@ -231,6 +231,32 @@ def test_trip_analysis_rejects_malformed_adapter_response() -> None:
             urlopen(Request(f"http://127.0.0.1:{server.server_port}/api/trip/analyze", data=body, method="POST"))
         assert caught.value.code == 400
         assert "invalid response" in json.load(caught.value)["error"]
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+
+def test_missing_fixture_returns_service_unavailable_not_client_error() -> None:
+    server = create_fixture_server(Path("fixtures/missing.json"))
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        body = json.dumps(
+            {
+                "analytic_type": "tcm",
+                "latitude": 29.4241,
+                "longitude": -98.4936,
+                "start_date": "2026-08-23",
+                "forecast": False,
+            }
+        ).encode()
+        with pytest.raises(HTTPError) as caught:
+            urlopen(
+                Request(f"http://127.0.0.1:{server.server_port}/api/heatmap", data=body, method="POST")
+            )
+        assert caught.value.code == 503
+        assert json.load(caught.value)["status"] == "unavailable"
     finally:
         server.shutdown()
         server.server_close()
