@@ -6,10 +6,17 @@ This module is the only place that knows the documented live provider shapes
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import date
+import logging
 import math
 from time import sleep as default_sleep
 from typing import Callable, Mapping, Sequence
+
+from pyproj import CRS, Transformer
+from shapely.geometry import LineString, Polygon, mapping as shapely_mapping
+from shapely.geometry.base import BaseGeometry
+from shapely.ops import transform as shapely_ops_transform
 
 from app.domain.provenance import Transformation
 from app.integrations.fortyguard.client import FortyGuardClient
@@ -18,6 +25,8 @@ from app.integrations.fortyguard.errors import ProviderError, ProviderErrorKind
 from app.integrations.fortyguard.transport import HttpFortyGuardTransport
 from app.services.execution import LiveEnvParamsPayload, LiveHeatmapPayload
 from app.settings import FortyGuardPollingSettings
+
+logger = logging.getLogger(__name__)
 
 HISTORICAL_EARLIEST = date(2019, 1, 1)
 _DEGREES_PER_METER = 1.0 / 111320.0
@@ -57,7 +66,7 @@ def build_documented_heatmap_payload(
     and historical requests must fall between 2019-01-01 and today.
     """
     current = date.today() if today is None else today
-    _validate_documented_window(request, today=current)
+    _validate_documented_window(start_date=request.start_date, forecast=request.forecast, today=current)
     payload: dict[str, object] = {
         "polygon_aoi": _point_square_feature_collection(
             request.latitude, request.longitude, side_m=request.granularity
@@ -73,15 +82,16 @@ def build_documented_heatmap_payload(
     return payload
 
 
-def _validate_documented_window(request: HeatmapRequest, *, today: date) -> None:
-    if request.forecast:
-        if request.start_date != today:
+def _validate_documented_window(*, start_date: date, forecast: bool, today: date) -> None:
+    """Shape-independent date/forecast validation shared by point and area paths."""
+    if forecast:
+        if start_date != today:
             raise ProviderError(
                 ProviderErrorKind.VALIDATION,
                 detail="documented forecast window ends 12 hours ahead; full-day forecast heatmaps are limited to today",
             )
     else:
-        _validate_documented_date(request.start_date, today=today)
+        _validate_documented_date(start_date, today=today)
 
 
 def _validate_documented_date(start_date: date, *, today: date) -> None:
@@ -230,6 +240,347 @@ class LiveHeatmapAdapter:
             metadata.activity_id,
             request_transformations(request),
         )
+
+
+# --- Area (route/polygon) heatmap path  --- #
+
+
+_DEFAULT_AREA_GRANULARITY = 100
+_DEFAULT_BUFFER_M = 25.0
+_DEFAULT_MAX_VERTICES = 200
+_SIMPLIFICATION_SAFETY_FACTOR = 0.5
+_MAX_SIMPLIFICATION_ATTEMPTS = 8
+
+
+def _local_utm_crs(latitude: float, longitude: float) -> CRS:
+    """Choose a local UTM CRS for metre-accurate buffering."""
+    zone = int((longitude + 180) // 6) + 1
+    epsg = (32600 if latitude >= 0 else 32700) + zone
+    return CRS.from_epsg(epsg)
+
+
+def _project_to_utm(geometry: BaseGeometry, crs: CRS) -> BaseGeometry:
+    transformer = Transformer.from_crs("EPSG:4326", crs, always_xy=True)
+    return shapely_ops_transform(transformer.transform, geometry)
+
+
+def _project_to_wgs84(geometry: BaseGeometry, crs: CRS) -> BaseGeometry:
+    transformer = Transformer.from_crs(crs, "EPSG:4326", always_xy=True)
+    return shapely_ops_transform(transformer.transform, geometry)
+
+
+def _polygon_vertex_count(geometry: BaseGeometry) -> int:
+    if isinstance(geometry, Polygon):
+        return len(geometry.exterior.coords)
+    if hasattr(geometry, "geoms"):
+        return sum(len(g.exterior.coords) for g in geometry.geoms if isinstance(g, Polygon))
+    return 0
+
+
+def build_route_corridor_polygon(
+    route: Sequence[tuple[float, float]],
+    *,
+    buffer_m: float = _DEFAULT_BUFFER_M,
+    max_vertices: int = _DEFAULT_MAX_VERTICES,
+    use_bounding_box: bool = False,
+) -> BaseGeometry:
+    """Buffer a route polyline into a corridor or bounding-box polygon for ``polygon_aoi``.
+
+    Parameters
+    ----------
+    route:
+        Sequence of ``(latitude, longitude)`` coordinate pairs along the route.
+    buffer_m:
+        Half-width of the corridor buffer in metres (default 25 m).
+    max_vertices:
+        Hard upper bound on polygon vertex count.  If the buffered polygon
+        exceeds this, Douglas-Peucker simplification is applied with
+        increasing tolerance (up to ``_MAX_SIMPLIFICATION_ATTEMPTS`` rounds).
+    use_bounding_box:
+        If True, buffers the route's full rectangular envelope instead of a thin
+        corridor polyline, ensuring complete tile grid coverage from FortyGuard.
+
+    Raises
+    ------
+    ValueError
+        If the polygon cannot be simplified to ``max_vertices`` within the
+        bounded number of attempts.
+
+    Returns
+    -------
+    A Shapely Polygon in WGS 84 (lng, lat) order, ready for GeoJSON export.
+    """
+    if len(route) < 2:
+        raise ValueError("route must contain at least two coordinate pairs")
+    if buffer_m <= 0:
+        raise ValueError("buffer_m must be positive")
+    if max_vertices < 4:
+        raise ValueError("max_vertices must be at least 4 for a valid polygon")
+
+    # LineString expects (x, y) = (lng, lat)
+    line = LineString([(lng, lat) for lat, lng in route])
+    centroid = line.centroid
+    crs = _local_utm_crs(centroid.y, centroid.x)
+
+    projected = _project_to_utm(line, crs)
+    base_geom = projected.envelope if use_bounding_box else projected
+    buffered = base_geom.buffer(
+        buffer_m,
+        cap_style="square" if use_bounding_box else "round",
+        join_style="mitre" if use_bounding_box else "round",
+    )
+
+    # Simplify with increasing tolerance until vertex count is within the hard limit.
+    tolerance = buffer_m * _SIMPLIFICATION_SAFETY_FACTOR
+    for _ in range(_MAX_SIMPLIFICATION_ATTEMPTS):
+        if _polygon_vertex_count(buffered) <= max_vertices:
+            break
+        buffered = buffered.simplify(tolerance, preserve_topology=True)
+        tolerance *= 2.0
+    else:
+        count = _polygon_vertex_count(buffered)
+        if count > max_vertices:
+            raise ValueError(
+                f"cannot simplify corridor polygon to {max_vertices} vertices "
+                f"after {_MAX_SIMPLIFICATION_ATTEMPTS} attempts "
+                f"(got {count})"
+            )
+
+    corridor = _project_to_wgs84(buffered, crs)
+    if not corridor.is_valid:
+        corridor = corridor.buffer(0)
+    return corridor
+
+
+def _geometry_to_feature_collection(geometry: BaseGeometry) -> dict[str, object]:
+    """Wrap a Shapely geometry in the same FeatureCollection structure used by the point path."""
+    geojson = shapely_mapping(geometry)
+    return {
+        "type": "FeatureCollection",
+        "features": [
+            {"type": "Feature", "properties": {}, "geometry": dict(geojson)}
+        ],
+    }
+
+
+def build_documented_area_heatmap_payload(
+    route: Sequence[tuple[float, float]],
+    *,
+    analytic_type: AnalyticType,
+    start_date: date,
+    forecast: bool = True,
+    threshold_celsius: float | None = None,
+    direction: str | None = None,
+    granularity: int = _DEFAULT_AREA_GRANULARITY,
+    buffer_m: float = _DEFAULT_BUFFER_M,
+    max_vertices: int = _DEFAULT_MAX_VERTICES,
+    use_bounding_box: bool = False,
+    today: date | None = None,
+) -> dict[str, object]:
+    """Build the documented live ``polygon_aoi`` payload for a route corridor.
+
+    Parallel to ``build_documented_heatmap_payload`` for point requests but
+    constructs the AOI from a buffered route polyline instead of a single-point
+    expansion.  Date/forecast validation reuses the shape-independent rules.
+    Granularity defaults to 100 m for area requests (ADR 0001).
+    """
+    current = date.today() if today is None else today
+    _validate_documented_window(start_date=start_date, forecast=forecast, today=current)
+
+    corridor = build_route_corridor_polygon(
+        route,
+        buffer_m=buffer_m,
+        max_vertices=max_vertices,
+        use_bounding_box=use_bounding_box,
+    )
+    payload: dict[str, object] = {
+        "polygon_aoi": _geometry_to_feature_collection(corridor),
+        "date_time": {"start_date": start_date.isoformat(), "filter_type": 3},
+        "granularity": granularity,
+        "analytic_type": analytic_type.value,
+    }
+    if threshold_celsius is not None:
+        payload["threshold"] = threshold_celsius
+    if direction is not None:
+        payload["direction"] = direction
+    return payload
+
+
+def area_request_transformations(analytic_type: AnalyticType) -> tuple[Transformation, ...]:
+    """The inference stamps every live area heatmap result carries (ADR 0002)."""
+    stamps = [
+        Transformation("live_envelope_unwrapped", 1),
+        Transformation("route_to_aoi_buffer", 1),
+        Transformation("valid_time_from_request", 1),
+    ]
+    if analytic_type is AnalyticType.TCM:
+        stamps.append(Transformation("tcm_unit_celsius", 1))
+    return tuple(stamps)
+
+
+class LiveAreaHeatmapAdapter:
+    """Owns the live area heatmap path: route buffering, documented payload, submission, and translation."""
+
+    def __init__(
+        self,
+        client: FortyGuardClient,
+        *,
+        today: Callable[[], date] = date.today,
+        polling: FortyGuardPollingSettings | None = None,
+        sleep: Callable[[float], None] | None = None,
+        buffer_m: float = _DEFAULT_BUFFER_M,
+        max_vertices: int = _DEFAULT_MAX_VERTICES,
+        use_bounding_box: bool = False,
+    ) -> None:
+        self._client = client
+        self._today = today
+        self._polling = polling or FortyGuardPollingSettings()
+        self._sleep = sleep
+        self._buffer_m = buffer_m
+        self._max_vertices = max_vertices
+        self._use_bounding_box = use_bounding_box
+
+    def load(
+        self,
+        route: Sequence[tuple[float, float]],
+        *,
+        analytic_type: AnalyticType,
+        start_date: date,
+        forecast: bool = True,
+        threshold_celsius: float | None = None,
+        direction: str | None = None,
+        granularity: int = _DEFAULT_AREA_GRANULARITY,
+        use_bounding_box: bool | None = None,
+    ) -> LiveHeatmapPayload:
+        bbox_setting = self._use_bounding_box if use_bounding_box is None else use_bounding_box
+        payload = build_documented_area_heatmap_payload(
+            route,
+            analytic_type=analytic_type,
+            start_date=start_date,
+            forecast=forecast,
+            threshold_celsius=threshold_celsius,
+            direction=direction,
+            granularity=granularity,
+            buffer_m=self._buffer_m,
+            max_vertices=self._max_vertices,
+            use_bounding_box=bbox_setting,
+            today=self._today(),
+        )
+        result, metadata = self._client.submit_and_poll(
+            "/v1/heatmap",
+            payload,
+            sleep=self._sleep or default_sleep,
+            max_polls=self._polling.max_polls,
+            interval_seconds=self._polling.interval_seconds,
+            status_404_grace_checks=self._polling.status_404_grace_checks,
+        )
+        # Build a temporary HeatmapRequest for translate_heatmap_response
+        # which needs a request to determine mode, analytic type, etc.
+        mid = route[len(route) // 2]
+        request_for_translation = HeatmapRequest(
+            analytic_type=analytic_type,
+            latitude=mid[0],
+            longitude=mid[1],
+            start_date=start_date,
+            forecast=forecast,
+            threshold_celsius=threshold_celsius,
+            direction=direction,
+            granularity=granularity,
+        )
+        translated = translate_heatmap_response(result, request=request_for_translation)
+        return LiveHeatmapPayload(
+            translated,
+            metadata.activity_id,
+            area_request_transformations(analytic_type),
+        )
+
+
+# --- Route-to-tile segment mapping (consumer-side aggregation) --- #
+
+
+@dataclass(frozen=True)
+class RouteSegmentHeat:
+    """Heat metric for one segment of a route, derived from tile overlap."""
+    segment_index: int
+    start: tuple[float, float]
+    end: tuple[float, float]
+    value: float | None
+    coverage: float
+    tile_count: int
+
+
+def map_tiles_to_route_segments(
+    route: Sequence[tuple[float, float]],
+    tiles: Sequence[dict[str, object]],
+    *,
+    buffer_m: float = _DEFAULT_BUFFER_M,
+) -> list[RouteSegmentHeat]:
+    """Map heatmap tiles back to route segments for corridor analysis.
+
+    For each consecutive pair of route points, builds a small buffered segment
+    corridor in a projected CRS, intersects it with each tile's geometry, and
+    computes an area-weighted average temperature/metric value.  Returns a list
+    of per-segment results that the consumer can use to compute corridor-level
+    summaries (e.g., "% of route above 35 °C").
+
+    This function lives in the adapter module (not ``analysis.py``) because it
+    operates on the raw translated tile dictionaries from the provider response,
+    not on normalized ``Tile`` dataclasses.
+    """
+    from shapely.geometry import shape
+
+    if len(route) < 2:
+        raise ValueError("route must contain at least two points")
+
+    segments: list[RouteSegmentHeat] = []
+    mid = route[len(route) // 2]
+    crs = _local_utm_crs(mid[0], mid[1])
+
+    # Pre-project tile geometries
+    projected_tiles: list[tuple[BaseGeometry, float]] = []
+    for tile in tiles:
+        props = tile.get("properties")
+        geom = tile.get("geometry")
+        if not isinstance(props, dict) or not isinstance(geom, dict):
+            continue
+        value = props.get("value")
+        if not isinstance(value, (int, float)):
+            continue
+        tile_geom = shape(geom)
+        if tile_geom.is_valid and not tile_geom.is_empty:
+            projected_tiles.append((_project_to_utm(tile_geom, crs), float(value)))
+
+    for i in range(len(route) - 1):
+        start_pt = route[i]
+        end_pt = route[i + 1]
+        segment_line = LineString([(start_pt[1], start_pt[0]), (end_pt[1], end_pt[0])])
+        projected_segment = _project_to_utm(segment_line, crs).buffer(buffer_m)
+
+        segment_area = projected_segment.area
+        weighted_sum = 0.0
+        overlap_area = 0.0
+        tile_count = 0
+
+        for proj_tile_geom, tile_value in projected_tiles:
+            intersection = projected_segment.intersection(proj_tile_geom)
+            if intersection.area > 0:
+                weighted_sum += tile_value * intersection.area
+                overlap_area += intersection.area
+                tile_count += 1
+
+        coverage = min(1.0, overlap_area / segment_area) if segment_area > 0 else 0.0
+        avg_value = weighted_sum / overlap_area if overlap_area > 0 else None
+
+        segments.append(RouteSegmentHeat(
+            segment_index=i,
+            start=start_pt,
+            end=end_pt,
+            value=avg_value,
+            coverage=coverage,
+            tile_count=tile_count,
+        ))
+
+    return segments
 
 
 def build_documented_env_params_payload(request: EnvParamsRequest) -> dict[str, object]:

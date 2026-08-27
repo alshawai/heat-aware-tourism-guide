@@ -4,6 +4,7 @@ import pytest
 
 from app.settings import (
     AppSettings,
+    FortyGuardAreaSettings,
     FortyGuardPollingSettings,
     SettingsError,
     load_settings,
@@ -19,6 +20,7 @@ def test_load_settings_reads_core_configuration_from_environment() -> None:
         fortyguard_api_key="key-123",
         fortyguard_base_url="https://example.test",
         polling=FortyGuardPollingSettings(),
+        area=FortyGuardAreaSettings(),
     )
 
 
@@ -121,3 +123,21 @@ def test_empty_process_environment_value_still_overrides_env_file(tmp_path: Path
     settings = load_settings(environ={"FORTYGUARD_API_KEY": "", "ALLOW_LIVE": ""}, env_file=env_file)
     assert settings.fortyguard_api_key is None
     assert settings.allow_live is False
+
+
+def test_area_settings_overrides_are_read_from_environment() -> None:
+    settings = load_settings(
+        environ={
+            "FORTYGUARD_AREA_BUFFER_M": "50.0",
+            "FORTYGUARD_AREA_GRANULARITY": "80",
+            "FORTYGUARD_AREA_USE_BOUNDING_BOX": "false",
+            "FORTYGUARD_AREA_MAX_VERTICES": "150",
+        }
+    )
+    assert settings.area == FortyGuardAreaSettings(
+        buffer_m=50.0,
+        granularity=80,
+        use_bounding_box=False,
+        max_vertices=150,
+    )
+

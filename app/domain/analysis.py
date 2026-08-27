@@ -7,7 +7,7 @@ import math
 from typing import Mapping, Sequence
 
 from pyproj import CRS, Transformer
-from shapely import transform
+from shapely.ops import transform
 from shapely.geometry import LineString, Point
 from shapely.geometry.base import BaseGeometry
 
@@ -121,7 +121,7 @@ def _local_crs(geometry: BaseGeometry) -> CRS:
 
 def _project(geometry: BaseGeometry, crs: CRS) -> BaseGeometry:
     transformer = Transformer.from_crs("EPSG:4326", crs, always_xy=True)
-    return transform(geometry, transformer.transform, interleaved=False)
+    return transform(transformer.transform, geometry)
 
 
 def join_polygon_to_tiles(target: BaseGeometry, tiles: Sequence[TileGeometry]) -> SpatialMatch:
@@ -180,4 +180,4 @@ def build_aoi(points: Sequence[Point], *, buffer_m: float, corridor: bool = Fals
     crs = _local_crs(source)
     projected = _project(source, crs).buffer(buffer_m)
     inverse = Transformer.from_crs(crs, "EPSG:4326", always_xy=True)
-    return transform(projected, inverse.transform, interleaved=False)
+    return transform(inverse.transform, projected)

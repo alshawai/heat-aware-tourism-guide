@@ -53,7 +53,7 @@ class HttpFortyGuardTransport:
             method="POST" if payload is not None else "GET",
         )
         try:
-            with self._opener(request, self.timeout_seconds) as response:  # type: ignore[attr-defined]
+            with self._opener(request, timeout=self.timeout_seconds) as response:  # type: ignore[attr-defined]
                 parsed = json.loads(response.read())
         except self.HttpError as error:
             status = getattr(error.response, "status", None)

@@ -26,11 +26,22 @@ class FortyGuardPollingSettings:
 
 
 @dataclass(frozen=True)
+class FortyGuardAreaSettings:
+    """Area heatmap corridor configuration."""
+
+    buffer_m: float = 25.0
+    granularity: int = 100
+    use_bounding_box: bool = True
+    max_vertices: int = 200
+
+
+@dataclass(frozen=True)
 class AppSettings:
     allow_live: bool
     fortyguard_api_key: str | None
     fortyguard_base_url: str
     polling: FortyGuardPollingSettings = FortyGuardPollingSettings()
+    area: FortyGuardAreaSettings = FortyGuardAreaSettings()
 
 
 def load_dotenv(path: Path) -> dict[str, str]:
@@ -50,6 +61,43 @@ def load_dotenv(path: Path) -> dict[str, str]:
         if key:
             values[key] = value
     return values
+
+
+def _area_from_env(merged: Mapping[str, str]) -> FortyGuardAreaSettings:
+    def positive_int(name: str, default: int) -> int:
+        raw = merged.get(name, "").strip()
+        if not raw:
+            return default
+        try:
+            value = int(raw)
+        except ValueError:
+            raise SettingsError(f"{name} must be an integer") from None
+        if value < 1:
+            raise SettingsError(f"{name} must be a positive integer")
+        return value
+
+    def positive_float(name: str, default: float) -> float:
+        raw = merged.get(name, "").strip()
+        if not raw:
+            return default
+        try:
+            value = float(raw)
+        except ValueError:
+            raise SettingsError(f"{name} must be a number") from None
+        if not value > 0:
+            raise SettingsError(f"{name} must be a positive number")
+        return value
+
+    bbox_raw = merged.get("FORTYGUARD_AREA_USE_BOUNDING_BOX", "true").strip().lower()
+    if bbox_raw not in {"true", "false"}:
+        raise SettingsError("FORTYGUARD_AREA_USE_BOUNDING_BOX must be true or false")
+
+    return FortyGuardAreaSettings(
+        buffer_m=positive_float("FORTYGUARD_AREA_BUFFER_M", 25.0),
+        granularity=positive_int("FORTYGUARD_AREA_GRANULARITY", 100),
+        use_bounding_box=(bbox_raw == "true"),
+        max_vertices=positive_int("FORTYGUARD_AREA_MAX_VERTICES", 200),
+    )
 
 
 def _polling_from_env(merged: Mapping[str, str]) -> FortyGuardPollingSettings:
@@ -90,6 +138,7 @@ def load_settings(
     environ: Mapping[str, str] | None = None,
     env_file: Path | None = None,
     polling: FortyGuardPollingSettings | None = None,
+    area: FortyGuardAreaSettings | None = None,
 ) -> AppSettings:
     """Load settings; the process environment always wins over the .env file.
 
@@ -118,4 +167,5 @@ def load_settings(
         fortyguard_api_key=api_key or None,
         fortyguard_base_url=base_url,
         polling=polling or _polling_from_env(merged),
+        area=area or _area_from_env(merged),
     )
