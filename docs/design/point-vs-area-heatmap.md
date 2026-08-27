@@ -19,17 +19,17 @@ GeoJSON `FeatureCollection`. Two request paths produce that polygon:
 
 ## Decision table
 
-| Criterion                        | Point request                              | Area request                                |
-| -------------------------------- | ------------------------------------------ | ------------------------------------------- |
-| **Use when**                     | Single landmark, hotel, or coordinate      | Route corridor, neighborhood, district      |
-| **Input**                        | `(lat, lon)` + `granularity` (60/80/100 m) | Route geometry or polygon + `buffer_m`      |
-| **AOI construction**             | Square centered on point                   | Buffered polyline or caller polygon         |
-| **Returned tiles**               | 1–2 (single cell)                          | N tiles covering the full AOI grid          |
-| **Granularity meaning**          | Side length of the expansion square AND tile resolution | Tile resolution within the submitted AOI    |
-| **Default granularity**          | 60 m (ADR 0001)                            | 100 m (ADR 0001)                            |
-| **Consumer aggregation needed**  | No — value is directly usable              | Yes — tiles must be joined back to route segments or averaged over the region |
-| **Provenance transformation**    | `point_to_aoi_expansion` v1                | `route_to_aoi_buffer` v1                    |
-| **Billable cost**                | Lower (small AOI)                          | Higher (proportional to AOI area)           |
+| Criterion                       | Point request                                           | Area request                                                                  |
+| ------------------------------- | ------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| **Use when**                    | Single landmark, hotel, or coordinate                   | Route corridor, neighborhood, district                                        |
+| **Input**                       | `(lat, lon)` + `granularity` (60/80/100 m)              | Route geometry or polygon + `buffer_m`                                        |
+| **AOI construction**            | Square centered on point                                | Buffered polyline or caller polygon                                           |
+| **Returned tiles**              | 1–2 (single cell)                                       | N tiles covering the full AOI grid                                            |
+| **Granularity meaning**         | Side length of the expansion square AND tile resolution | Tile resolution within the submitted AOI                                      |
+| **Default granularity**         | 60 m (ADR 0001)                                         | 100 m (ADR 0001)                                                              |
+| **Consumer aggregation needed** | No — value is directly usable                           | Yes — tiles must be joined back to route segments or averaged over the region |
+| **Provenance transformation**   | `point_to_aoi_expansion` v1                             | `route_to_aoi_buffer` v1                                                      |
+| **Billable cost**               | Lower (small AOI)                                       | Higher (proportional to AOI area)                                             |
 
 ## When to use which
 
@@ -75,44 +75,46 @@ Live verification was performed against the production FortyGuard API (`https://
 
 ### 1. Point Heatmap Validation (`LiveHeatmapAdapter`)
 
-* **Request**: Landmark `(29.4259, -98.4861)` (The Alamo, San Antonio), `TCM` analytic type, `granularity=100`.
-* **Activity ID**: `07736420-f70c-4247-8bea-7c91aebff538`
-* **Response**: Completed HTTP 200 after polling.
-* **Returned Tiles**: 1 tile (`31.6053 °C`, `valid_time: 2024-07-15T00:00:00+00:00`).
-* **Provenance Stamps**: `['live_envelope_unwrapped', 'point_to_aoi_expansion', 'valid_time_from_request', 'tcm_unit_celsius']`.
+- **Request**: Landmark `(29.4259, -98.4861)` (The Alamo, San Antonio), `TCM` analytic type, `granularity=100`.
+- **Activity ID**: `07736420-f70c-4247-8bea-7c91aebff538`
+- **Response**: Completed HTTP 200 after polling.
+- **Returned Tiles**: 1 tile (`31.6053 °C`, `valid_time: 2024-07-15T00:00:00+00:00`).
+- **Provenance Stamps**: `['live_envelope_unwrapped', 'point_to_aoi_expansion', 'valid_time_from_request', 'tcm_unit_celsius']`.
 
 ### 2. Area Heatmap Validation (`LiveAreaHeatmapAdapter`)
 
-* **Request**: 5-point San Antonio route polyline (`Menger Hotel` to `Alamo Plaza`), `buffer_m=25`, `granularity=100`.
-* **Activity ID**: `88f8b050-d342-4f7c-90cf-ea4b351736c5`
-* **Response**: Completed HTTP 200 after polling.
-* **Returned Tiles**: 2 tiles (`31.6996 °C`, `valid_time: 2024-07-15T00:00:00+00:00`).
-* **Provenance Stamps**: `['live_envelope_unwrapped', 'route_to_aoi_buffer', 'valid_time_from_request', 'tcm_unit_celsius']`.
+- **Request**: 5-point San Antonio route polyline (`Menger Hotel` to `Alamo Plaza`), `buffer_m=25`, `granularity=100`.
+- **Activity ID**: `88f8b050-d342-4f7c-90cf-ea4b351736c5`
+- **Response**: Completed HTTP 200 after polling.
+- **Returned Tiles**: 2 tiles (`31.6996 °C`, `valid_time: 2024-07-15T00:00:00+00:00`).
+- **Provenance Stamps**: `['live_envelope_unwrapped', 'route_to_aoi_buffer', 'valid_time_from_request', 'tcm_unit_celsius']`.
 
 ### 3. Route Segment Heat Mapping (`map_tiles_to_route_segments`)
 
 Intersected the returned multi-tile grid back with the projected route corridor segments:
-* **Segment 0** (`(29.4259, -98.4861) -> (29.4250, -98.4858)`): `31.66 °C` weighted average, **`100.0%` coverage** (2 overlapping tiles).
-* **Segment 1** (`(29.4250, -98.4858) -> (29.4241, -98.4853)`): `31.70 °C` weighted average, **`42.8%` coverage** (1 overlapping tile).
+
+- **Segment 0** (`(29.4259, -98.4861) -> (29.4250, -98.4858)`): `31.66 °C` weighted average, **`100.0%` coverage** (2 overlapping tiles).
+- **Segment 1** (`(29.4250, -98.4858) -> (29.4241, -98.4853)`): `31.70 °C` weighted average, **`42.8%` coverage** (1 overlapping tile).
 
 ### 4. Spatial Grid Resolution & Coverage Findings
 
 During live validation of route requests against FortyGuard's API, comparative tests revealed two critical indexing behaviors:
 
-| AOI Mode | Geometry Type | Returned Tiles | Segment 0 Coverage | Segment 1 Coverage | Segment 2 Coverage | Grid Status |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **Thin Corridor** (`buffer_m=25m`) | 50 m Width Polyline | **2 tiles** | **100.0%** | **42.8%** | **0.0%** | Cell Clipping Drops Edges |
-| **Wide Corridor** (`buffer_m=60m`) | 120 m Width Polyline | **4 tiles** | **100.0%** | **96.0%** | **48.8%** | Partial Intersection |
-| **Full Rectangle AOI** (`use_bounding_box=True`) | Bounding Box Envelope | **6 tiles** | **100.0%** | **100.0%** | **100.0%** | **100% Full Coverage Achieved** |
+| AOI Mode                                         | Geometry Type         | Returned Tiles | Segment 0 Coverage | Segment 1 Coverage | Segment 2 Coverage | Grid Status                     |
+| :----------------------------------------------- | :-------------------- | :------------- | :----------------- | :----------------- | :----------------- | :------------------------------ |
+| **Thin Corridor** (`buffer_m=25m`)               | 50 m Width Polyline   | **2 tiles**    | **100.0%**         | **42.8%**          | **0.0%**           | Cell Clipping Drops Edges       |
+| **Wide Corridor** (`buffer_m=60m`)               | 120 m Width Polyline  | **4 tiles**    | **100.0%**         | **96.0%**          | **48.8%**          | Partial Intersection            |
+| **Full Rectangle AOI** (`use_bounding_box=True`) | Bounding Box Envelope | **6 tiles**    | **100.0%**         | **100.0%**         | **100.0%**         | **100% Full Coverage Achieved** |
 
-* **Key Takeaway 1 (Full Bounding Box AOI)**: Setting `use_bounding_box=True` (or `FORTYGUARD_AREA_USE_BOUNDING_BOX=true` in `.env`) forces the adapter to send a full rectangular route envelope. This prevents FortyGuard's server-side spatial indexer from dropping edge tiles and achieves **100.0% full coverage** across all route segments in the provider grid.
-* **Key Takeaway 2 (Provider Dataset Bounds)**: FortyGuard's historical temperature dataset for downtown San Antonio terminates at `latitude 29.42366°N`. Route coordinates south of `29.42366°N` fall outside the provider grid; `map_tiles_to_route_segments` detects these uncovered segments and logs an automated `logger.warning(...)` alert.
+- **Key Takeaway 1 (Full Bounding Box AOI)**: Setting `use_bounding_box=True` (or `FORTYGUARD_AREA_USE_BOUNDING_BOX=true` in `.env`) forces the adapter to send a full rectangular route envelope. This prevents FortyGuard's server-side spatial indexer from dropping edge tiles and achieves **100.0% full coverage** across all route segments in the provider grid.
+- **Key Takeaway 2 (Provider Dataset Bounds)**: FortyGuard's historical temperature dataset for downtown San Antonio terminates at `latitude 29.42366°N`. Route coordinates south of `29.42366°N` fall outside the provider grid; `map_tiles_to_route_segments` detects these uncovered segments and logs an automated `logger.warning(...)` alert.
 
 ### 5. Transport Bug Fix
 
 During live integration testing, a positional argument bug in `HttpFortyGuardTransport._request` was identified and resolved:
-* `self._opener(request, self.timeout_seconds)` passed `timeout_seconds` positionally, causing Python's `urllib.request.urlopen` to treat the integer timeout as the HTTP POST body `data`.
-* **Fix**: Updated to `self._opener(request, timeout=self.timeout_seconds)`.
+
+- `self._opener(request, self.timeout_seconds)` passed `timeout_seconds` positionally, causing Python's `urllib.request.urlopen` to treat the integer timeout as the HTTP POST body `data`.
+- **Fix**: Updated to `self._opener(request, timeout=self.timeout_seconds)`.
 
 ## How to Use These APIs
 
