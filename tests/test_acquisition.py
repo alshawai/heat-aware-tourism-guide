@@ -172,7 +172,8 @@ def test_acquisition_records_actual_usage_in_ledger(tmp_path: Path) -> None:
         HEATMAP_SCENARIOS["tcm-historical"], _client(RAW_TCM_RESULT, ledger=ledger), out_dir=tmp_path
     )
     reloaded = JsonlLedgerStore(tmp_path / "ledger.jsonl").load()
-    assert reloaded.total_used == 2
+    assert reloaded.call_count == 1
+    assert reloaded.reported_credits == 2
     assert reloaded.records[0].activity_id == "activity-acq-1"
     assert reloaded.records[0].endpoint == "/v1/heatmap"
 

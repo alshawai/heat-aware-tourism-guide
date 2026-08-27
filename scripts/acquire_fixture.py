@@ -4,9 +4,10 @@ Maintainer-triggered (real credits are spent). Usage:
 
     python scripts/acquire_fixture.py --scenario tcm-historical --out-dir fixtures/acquired
 
-Requires ALLOW_LIVE=true and FORTYGUARD_API_KEY (see .env.example). Actual
-usage is appended to the ledger (FORTYGUARD_LEDGER_PATH, default
-data/ledger.jsonl) and obeys FORTYGUARD_CREDIT_BUDGET.
+Requires ALLOW_LIVE=true and FORTYGUARD_API_KEY (see .env.example). The call
+is appended to the ledger (FORTYGUARD_LEDGER_PATH, default data/ledger.jsonl)
+and obeys FORTYGUARD_CALL_BUDGET. The provider does not price individual calls,
+so run scripts/reconcile_ledger.py for the credit cost (ADR 0004 5).
 """
 
 from __future__ import annotations
@@ -55,7 +56,6 @@ def main(argv: list[str] | None = None) -> int:
         settings = replace(settings, ledger_path=args.ledger_path)
 
     ledger = build_ledger(settings)
-    credits_before = ledger.total_used
     client = build_live_client(settings, ledger=ledger)
     if args.scenario in HEATMAP_SCENARIOS:
         outcome = acquire_heatmap_fixture(
@@ -72,19 +72,12 @@ def main(argv: list[str] | None = None) -> int:
             polling=settings.polling,
         )
     print(f"acquired {args.scenario}: {outcome.fixture_path}")
-    credits_recorded = ledger.total_used > credits_before
-    if credits_recorded:
-        print(
-            f"activity {outcome.record.activity_id}, "
-            f"data date {outcome.record.data_date}, "
-            f"credits recorded to {settings.ledger_path or 'in-memory ledger'}"
-        )
-    else:
-        print(
-            f"activity {outcome.record.activity_id}, "
-            f"data date {outcome.record.data_date}, "
-            f"no credits reported by provider (ledger not updated)"
-        )
+    print(f"activity {outcome.record.activity_id}, data date {outcome.record.data_date}")
+    print(
+        f"call logged to {settings.ledger_path or 'in-memory ledger'}; "
+        f"{ledger.call_count} call(s) all-time"
+    )
+    print("run scripts/reconcile_ledger.py for the authoritative credit cost")
     return 0
 
 

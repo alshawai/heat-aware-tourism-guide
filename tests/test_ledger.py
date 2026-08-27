@@ -1,64 +1,161 @@
-from datetime import datetime, timezone
+"""Call ledger: honest call accounting with call-count budget enforcement (ADR 0004 §5)."""
+
+from datetime import date, datetime, timezone
 
 import pytest
 
-from app.domain.ledger import BudgetExceededError, CreditLedger, UsageRecord
+from app.domain.ledger import (
+    BudgetExceededError,
+    CreditLedger,
+    ReconciliationRecord,
+    UsageRecord,
+)
+
+NOW = datetime(2026, 8, 28, 12, tzinfo=timezone.utc)
 
 
-def test_ledger_records_actual_provider_usage_and_rejects_overspend() -> None:
+def _call(activity_id: str, credits: int | None = None, endpoint: str = "/v1/heatmap") -> UsageRecord:
+    return UsageRecord(activity_id, endpoint, credits, NOW, "completed")
+
+
+def test_ledger_counts_calls_and_authorizes_against_the_call_budget() -> None:
+    ledger = CreditLedger(budget=2)
+    ledger.authorize_call()
+    ledger.record(_call("activity-1"))
+    assert ledger.remaining == 1
+    assert ledger.call_count == 1
+
+    ledger.authorize_call()
+    ledger.record(_call("activity-2", endpoint="/v1/env_params"))
+    assert ledger.remaining == 0
+    with pytest.raises(BudgetExceededError, match="call budget exceeded"):
+        ledger.authorize_call()
+
+
+def test_ledger_records_calls_the_provider_did_not_price() -> None:
+    """The real provider omits credits_used; an unpriced call is still a call."""
     ledger = CreditLedger(budget=10)
-    ledger.record(UsageRecord("activity-1", "/v1/heatmap", 4, datetime.now(timezone.utc), "completed"))
-    assert ledger.remaining == 6
-    assert ledger.total_used == 4
-    with pytest.raises(BudgetExceededError, match="budget"):
-        ledger.record(UsageRecord("activity-2", "/v1/env_params", 7, datetime.now(timezone.utc), "completed"))
+    ledger.record(_call("activity-1", credits=None))
+    assert ledger.call_count == 1
+    assert ledger.records[0].credits_used is None
+    assert ledger.reported_credits == 0
+    assert ledger.reconciled_credits is None
 
 
-def test_ledger_separates_planned_optional_usage_from_actual_usage() -> None:
+def test_ledger_keeps_provider_reported_credits_when_present() -> None:
+    ledger = CreditLedger()
+    ledger.record(_call("activity-1", credits=4))
+    ledger.record(_call("activity-2", credits=None))
+    assert ledger.reported_credits == 4
+    assert ledger.call_count == 2
+
+
+def test_ledger_rejects_negative_reported_credits() -> None:
+    with pytest.raises(ValueError, match="non-negative"):
+        CreditLedger().record(_call("activity-1", credits=-1))
+
+
+def test_ledger_separates_planned_optional_usage_from_actual_calls() -> None:
     ledger = CreditLedger(budget=10)
     ledger.plan_optional("hotel-a", 3)
-    ledger.record(UsageRecord("activity-1", "/v1/satellite", 2, datetime.now(timezone.utc), "completed"))
+    ledger.record(_call("activity-1", endpoint="/v1/satellite"))
     assert ledger.planned_optional == {"hotel-a": 3}
-    assert ledger.total_used == 2
+    assert ledger.call_count == 1
     assert ledger.records[0].activity_id == "activity-1"
 
 
 def test_ledger_does_not_double_count_replayed_activity_completion() -> None:
     ledger = CreditLedger(budget=5)
-    usage = UsageRecord("activity-1", "/v1/heatmap", 4, datetime.now(timezone.utc), "completed")
+    usage = _call("activity-1", credits=4)
     ledger.record(usage)
     ledger.record(usage)
-    assert ledger.total_used == 4
-    assert len(ledger.records) == 1
+    assert ledger.call_count == 1
 
 
 def test_ledger_without_budget_records_without_enforcing() -> None:
     ledger = CreditLedger()
-    ledger.record(UsageRecord("activity-1", "/v1/heatmap", 10_000, datetime.now(timezone.utc), "completed"))
-    ledger.record(UsageRecord("activity-2", "/v1/heatmap", 10_000, datetime.now(timezone.utc), "completed"))
+    for index in range(50):
+        ledger.record(_call(f"activity-{index}"))
+    ledger.authorize_call()
     assert ledger.budget is None
-    assert ledger.total_used == 20_000
+    assert ledger.call_count == 50
 
 
-def test_ledger_initial_records_load_without_enforcement_or_sink() -> None:
-    over_budget = [
-        UsageRecord("activity-1", "/v1/heatmap", 8, datetime.now(timezone.utc), "completed"),
-        UsageRecord("activity-2", "/v1/heatmap", 8, datetime.now(timezone.utc), "completed"),
-    ]
+def test_loaded_records_count_toward_the_budget_without_retroactive_raising() -> None:
     seen: list[UsageRecord] = []
-    ledger = CreditLedger(budget=10, initial_records=over_budget, on_record=seen.append)
-    assert ledger.total_used == 16
+    ledger = CreditLedger(
+        budget=2,
+        initial_records=[_call("activity-1"), _call("activity-2"), _call("activity-3")],
+        on_record=seen.append,
+    )
+    assert ledger.call_count == 3
+    assert seen == []
     with pytest.raises(BudgetExceededError):
-        ledger.record(UsageRecord("activity-3", "/v1/heatmap", 1, datetime.now(timezone.utc), "completed"))
-    assert seen == []
-    ledger.record(UsageRecord("activity-2", "/v1/heatmap", 1, datetime.now(timezone.utc), "completed"))
-    assert seen == []
+        ledger.authorize_call()
 
 
 def test_ledger_on_record_sink_observes_only_new_accepted_records() -> None:
     seen: list[UsageRecord] = []
     ledger = CreditLedger(budget=10, on_record=seen.append)
-    usage = UsageRecord("activity-1", "/v1/heatmap", 4, datetime.now(timezone.utc), "completed")
+    usage = _call("activity-1", credits=4)
     ledger.record(usage)
     ledger.record(usage)
     assert seen == [usage]
+
+
+def _snapshot(total: int = 42, start: date = date(2026, 8, 1)) -> ReconciliationRecord:
+    return ReconciliationRecord(
+        window_start=start,
+        window_end=date(2026, 8, 28),
+        total_credits_used=total,
+        reconciled_at=NOW,
+        activity_breakdown=({"name": "Thermal Comfort Map", "credits": 42, "count": 7},),
+    )
+
+
+def test_reconciliation_supplies_the_authoritative_credit_total() -> None:
+    seen: list[ReconciliationRecord] = []
+    ledger = CreditLedger(on_reconcile=seen.append)
+    ledger.record(_call("activity-1"))
+    assert ledger.reconciled_credits is None
+
+    ledger.reconcile(_snapshot())
+    assert ledger.reconciled_credits == 42
+    assert seen == [_snapshot()]
+
+
+def test_reconciling_the_same_window_twice_is_idempotent() -> None:
+    seen: list[ReconciliationRecord] = []
+    ledger = CreditLedger(on_reconcile=seen.append)
+    ledger.reconcile(_snapshot())
+    ledger.reconcile(_snapshot())
+    assert len(ledger.reconciliations) == 1
+    assert len(seen) == 1
+
+
+def test_latest_reconciliation_wins() -> None:
+    ledger = CreditLedger()
+    ledger.reconcile(_snapshot(total=42, start=date(2026, 8, 1)))
+    later = ReconciliationRecord(
+        window_start=date(2026, 8, 2),
+        window_end=date(2026, 8, 28),
+        total_credits_used=99,
+        reconciled_at=datetime(2026, 8, 29, tzinfo=timezone.utc),
+    )
+    ledger.reconcile(later)
+    assert ledger.reconciled_credits == 99
+
+
+def test_reconciliation_rejects_impossible_windows_and_totals() -> None:
+    ledger = CreditLedger()
+    with pytest.raises(ValueError, match="non-negative"):
+        ledger.reconcile(_snapshot(total=-1))
+    with pytest.raises(ValueError, match="must not precede"):
+        ledger.reconcile(
+            ReconciliationRecord(
+                window_start=date(2026, 8, 28),
+                window_end=date(2026, 8, 1),
+                total_credits_used=5,
+                reconciled_at=NOW,
+            )
+        )

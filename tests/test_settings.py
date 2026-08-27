@@ -143,18 +143,18 @@ def test_area_settings_overrides_are_read_from_environment() -> None:
 
 
 
-def test_credit_budget_defaults_to_record_only_and_is_overridable() -> None:
+def test_call_budget_defaults_to_record_only_and_is_overridable() -> None:
 
-    assert load_settings(environ={}).credit_budget is None
-    settings = load_settings(environ={"FORTYGUARD_CREDIT_BUDGET": "500"})
-    assert settings.credit_budget == 500
+    assert load_settings(environ={}).call_budget is None
+    settings = load_settings(environ={"FORTYGUARD_CALL_BUDGET": "500"})
+    assert settings.call_budget == 500
 
 
-def test_invalid_credit_budget_is_rejected() -> None:
-    with pytest.raises(SettingsError, match="FORTYGUARD_CREDIT_BUDGET"):
-        load_settings(environ={"FORTYGUARD_CREDIT_BUDGET": "-1"})
-    with pytest.raises(SettingsError, match="FORTYGUARD_CREDIT_BUDGET"):
-        load_settings(environ={"FORTYGUARD_CREDIT_BUDGET": "many"})
+def test_invalid_call_budget_is_rejected() -> None:
+    with pytest.raises(SettingsError, match="FORTYGUARD_CALL_BUDGET"):
+        load_settings(environ={"FORTYGUARD_CALL_BUDGET": "-1"})
+    with pytest.raises(SettingsError, match="FORTYGUARD_CALL_BUDGET"):
+        load_settings(environ={"FORTYGUARD_CALL_BUDGET": "many"})
 
 
 def test_ledger_path_defaults_to_data_ledger_and_empty_selects_memory(tmp_path: Path) -> None:

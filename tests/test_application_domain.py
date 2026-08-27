@@ -191,7 +191,7 @@ def test_enrichment_execution_records_actual_provider_usage() -> None:
         ledger=ledger,
     )
     assert result.enriched["hotel-a"] == {"canopy": 42}
-    assert ledger.total_used == 2
+    assert ledger.reported_credits == 2
     assert ledger.records[0].activity_id == "activity-1"
 
 

@@ -43,7 +43,7 @@ class AppSettings:
     fortyguard_base_url: str
     polling: FortyGuardPollingSettings = FortyGuardPollingSettings()
     area: FortyGuardAreaSettings = FortyGuardAreaSettings()
-    credit_budget: int | None = None
+    call_budget: int | None = None
     ledger_path: Path | None = DEFAULT_LEDGER_PATH
 
 
@@ -171,21 +171,21 @@ def load_settings(
         fortyguard_base_url=base_url,
         polling=polling or _polling_from_env(merged),
         area=area or _area_from_env(merged),
-        credit_budget=_credit_budget_from_env(merged),
+        call_budget=_call_budget_from_env(merged),
         ledger_path=_ledger_path_from_env(process_env, file_values),
     )
 
 
-def _credit_budget_from_env(merged: Mapping[str, str]) -> int | None:
-    raw = merged.get("FORTYGUARD_CREDIT_BUDGET", "").strip()
+def _call_budget_from_env(merged: Mapping[str, str]) -> int | None:
+    raw = merged.get("FORTYGUARD_CALL_BUDGET", "").strip()
     if not raw:
         return None
     try:
         value = int(raw)
     except ValueError:
-        raise SettingsError("FORTYGUARD_CREDIT_BUDGET must be an integer") from None
+        raise SettingsError("FORTYGUARD_CALL_BUDGET must be an integer") from None
     if value < 0:
-        raise SettingsError("FORTYGUARD_CREDIT_BUDGET must be non-negative")
+        raise SettingsError("FORTYGUARD_CALL_BUDGET must be non-negative")
     return value
 
 

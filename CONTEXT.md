@@ -51,11 +51,21 @@ directly.
   returned tiles (polygon joins use a projected CRS and report coverage;
   point lookups distinguish containing tile / boundary / outside-AOI /
   fallback). Weak coverage is surfaced, never hidden.
-- **Credit ledger** — Budget accounting for billable provider usage;
+- **Credit ledger** — Append-only log of billable provider activity;
   `plan_optional` is separate from actual spend. Persists as JSONL
-  (`data/ledger.jsonl`), loaded at startup with activity-ID dedupe; the
-  optional `FORTYGUARD_CREDIT_BUDGET` enforces an all-time total (record-only
-  when unset). Budget windowing belongs to issue #22 (ADR 0004).
+  (`data/ledger.jsonl`), loaded at startup, holding two record kinds:
+  **call records** (one per completed provider call, keyed by activity ID,
+  `credits_used` null when the provider did not price it) and
+  **reconciliation records** (authoritative account credit totals for a date
+  window). The optional `FORTYGUARD_CALL_BUDGET` enforces an all-time **call
+  count** before each call (record-only when unset) — the enforced unit is
+  calls, because the provider prices per account window, not per call. Budget
+  windowing belongs to issue #22 (ADR 0004 §5).
+- **Reconciliation** — Appending the provider's authoritative credit total for
+  a date window to the ledger, via `scripts/reconcile_ledger.py` querying
+  `/v1/system/fetch-api-key-custom-usage`. The only trustworthy source of
+  credit cost; the breakdown is aggregated by activity name with no activity
+  IDs, so per-call credit attribution is impossible (ADR 0004 §5).
 - **Acquisition record** — The sidecar JSON (`<stem>.acquisition.json`) beside
   every committed fixture: source (`provider` or `synthesized`), endpoint,
   request configuration, retrieval time, data date, status, schema version,

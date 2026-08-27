@@ -46,14 +46,15 @@ def json_event_sink(event: Mapping[str, object]) -> None:
 
 
 def build_ledger(settings: AppSettings) -> CreditLedger:
-    """Load the persistent cost ledger, or an in-memory one (ADR 0004).
+    """Load the persistent call ledger, or an in-memory one (ADR 0004 §5).
 
     Recording is unconditional whenever live is enabled; enforcement applies
-    only when ``FORTYGUARD_CREDIT_BUDGET`` is set, against the all-time total.
+    only when ``FORTYGUARD_CALL_BUDGET`` is set, against the all-time call
+    count, and is checked before each provider call.
     """
     if settings.ledger_path is None:
-        return CreditLedger(settings.credit_budget)
-    return JsonlLedgerStore(settings.ledger_path).load(budget=settings.credit_budget)
+        return CreditLedger(settings.call_budget)
+    return JsonlLedgerStore(settings.ledger_path).load(budget=settings.call_budget)
 
 
 def build_live_client(

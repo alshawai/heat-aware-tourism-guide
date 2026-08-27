@@ -453,8 +453,60 @@ def test_client_records_provider_reported_credits_in_ledger() -> None:
     FortyGuardClient(
         Transport(), "secret", clock=lambda: datetime(2026, 8, 23, tzinfo=timezone.utc), ledger=ledger
     ).submit_and_poll("/v1/heatmap", {}, sleep=lambda _: None)
-    assert ledger.total_used == 4
+    assert ledger.reported_credits == 4
+    assert ledger.call_count == 1
     assert ledger.records[0].endpoint == "/v1/heatmap"
+
+
+def test_client_logs_the_call_when_provider_reports_no_credits() -> None:
+    """The real provider omits credits_used entirely (ADR 0004 §5).
+
+    A silent provider must still produce a call record, otherwise the ledger
+    stays empty in production and the budget can never enforce.
+    """
+    from app.domain.ledger import CreditLedger
+
+    class SilentTransport:
+        def post(self, endpoint: str, payload: object, api_key: str) -> dict[str, object]:
+            return {"activity_id": "activity-1"}
+
+        def get(self, endpoint: str, api_key: str) -> dict[str, object]:
+            return {"status": "Completed", "result": {"ok": True}}
+
+    ledger = CreditLedger(5)
+    FortyGuardClient(
+        SilentTransport(),
+        "secret",
+        clock=lambda: datetime(2026, 8, 23, tzinfo=timezone.utc),
+        ledger=ledger,
+    ).submit_and_poll("/v1/heatmap", {}, sleep=lambda _: None)
+    assert ledger.call_count == 1
+    assert ledger.records[0].credits_used is None
+    assert ledger.reported_credits == 0
+
+
+def test_client_refuses_to_spend_once_the_call_budget_is_exhausted() -> None:
+    """Enforcement happens before the provider call, so no request is sent."""
+    from app.domain.ledger import BudgetExceededError, CreditLedger, UsageRecord
+
+    posts: list[str] = []
+
+    class CountingTransport:
+        def post(self, endpoint: str, payload: object, api_key: str) -> dict[str, object]:
+            posts.append(endpoint)
+            return {"activity_id": "activity-2"}
+
+        def get(self, endpoint: str, api_key: str) -> dict[str, object]:
+            return {"status": "Completed", "result": {"ok": True}}
+
+    clock = datetime(2026, 8, 23, tzinfo=timezone.utc)
+    ledger = CreditLedger(
+        1, initial_records=[UsageRecord("activity-1", "/v1/heatmap", None, clock, "completed")]
+    )
+    client = FortyGuardClient(CountingTransport(), "secret", clock=lambda: clock, ledger=ledger)
+    with pytest.raises(BudgetExceededError):
+        client.submit_and_poll("/v1/heatmap", {}, sleep=lambda _: None)
+    assert posts == []
 
 
 def test_client_rejects_invalid_provider_credit_metadata() -> None:

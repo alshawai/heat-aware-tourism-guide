@@ -331,17 +331,18 @@ def test_build_ledger_loads_history_and_applies_budget(tmp_path: Path) -> None:
         allow_live=True,
         fortyguard_api_key="key-1",
         fortyguard_base_url="https://api.example.test",
-        credit_budget=10,
+        call_budget=10,
         ledger_path=ledger_path,
     )
     ledger = build_ledger(settings)
     assert ledger.budget == 10
-    assert ledger.total_used == 4
-    assert ledger.remaining == 6
+    assert ledger.call_count == 1
+    assert ledger.reported_credits == 4
+    assert ledger.remaining == 9
 
     memory = build_ledger(replace(settings, ledger_path=None))
     assert memory.budget == 10
-    assert memory.total_used == 0
+    assert memory.call_count == 0
 
 
 def test_heatmap_fixture_candidates_include_acquired_directory(tmp_path: Path) -> None:

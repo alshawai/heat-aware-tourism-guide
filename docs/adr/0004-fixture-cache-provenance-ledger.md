@@ -85,21 +85,44 @@ a different date is wrong data, not degraded data. Cache fallback stays
 exact-key only — the complete request payload is part of cache identity.
 `BudgetExceededError` is never caught by the chain: overspend fails loud.
 
-### 5. The cost ledger persists as JSONL and enforces an all-time budget
+### 5. The ledger is a call log; credits are reconciled from the account endpoint
+
+**Amended after implementation.** The original decision recorded
+provider-reported `credits_used` per activity, read from the activity status
+response. Live acquisition runs disproved the premise: the provider does not
+return `credits_used` on `/v1/heatmap` or `/v1/env_params` status responses, so
+nothing was ever recorded and the budget could never trip. The test suite
+missed it because the fake transport returned `credits_used`, encoding the
+assumption it was meant to verify.
+
+Credits are only available from the account-scoped endpoint
+`POST /v1/system/fetch-api-key-custom-usage` (wrapped by
+`app/integrations/fortyguard/usage.py`), which reports `total_credits_used` and
+a breakdown **aggregated by activity name over a date window, with no activity
+IDs**. Per-activity credit attribution is therefore impossible.
+
+So the ledger splits the two facts it can state honestly:
+
+- **Call records** — one per completed provider call, keyed by activity ID
+  (which we do have), with `credits_used: int | None`. `None` means the
+  provider did not report a cost; it is never guessed. Recording is
+  unconditional whenever live is enabled.
+- **Reconciliation records** — an authoritative window snapshot appended by
+  `scripts/reconcile_ledger.py`, carrying `total_credits_used` and the
+  provider's own breakdown for an explicit date range.
+
+`FORTYGUARD_CALL_BUDGET` (renamed from `FORTYGUARD_CREDIT_BUDGET`, because the
+enforced unit is calls, not credits) is optional: unset means record-only; set
+means all-time enforcement on **call count**, checked _before_ the provider
+call so the budget prevents spend instead of merely observing it.
+`BudgetExceededError` maps to a 503 `budget_exceeded` response.
 
 `FORTYGUARD_LEDGER_PATH` (default `data/ledger.jsonl`, gitignored; explicit
-empty value selects in-memory only) names an append-only JSONL store loaded at
-startup — reload is idempotent thanks to activity-ID dedupe, and loaded
-records never trigger enforcement (they are facts that already happened; only
-new records are checked). `FORTYGUARD_CREDIT_BUDGET` is optional: unset means
-record-only (usage is still recorded — recording is unconditional whenever
-live is enabled); set means all-time enforcement against loaded + session
-records (a spend that would exceed the remaining budget raises
-`BudgetExceededError` at record time, after the provider call, mapping to a
-503 `budget_exceeded` response). Budget _windowing_ policy is deliberately out
-of scope here and belongs to issue #22. The acquisition script appends to the
-same ledger file. Account-level usage snapshots stay a script/utility concern,
-not ledger entries.
+empty value selects in-memory only) names the append-only JSONL store loaded at
+startup. Reload stays idempotent: call records dedupe by activity ID,
+reconciliation records by window range. Loaded call records count toward the
+all-time total but never retroactively raise. Budget _windowing_ policy remains
+out of scope and belongs to issue #22.
 
 ### 6. HTTP failures split three ways
 
@@ -126,8 +149,15 @@ Runtime sanitization stays defense-in-depth; the test is the commit-time gate.
   are machine-readable, and synthesized fixtures are honestly labelled.
 - Cache entries written under one provider configuration version can never be
   replayed as hits under another.
-- The budget is all-time: a deployment stays over budget until the ledger
-  file is cleared; windowing arrives with #22.
+- The budget is all-time and counted in calls: a deployment stays over budget
+  until the ledger file is cleared; windowing arrives with #22.
+- Enforcement moved before the provider call, so an exhausted budget prevents
+  spend rather than reporting it after the fact.
+- Credit totals are only as fresh as the last `scripts/reconcile_ledger.py`
+  run. A ledger with call records and no reconciliation record knows how many
+  calls were made and honestly reports its credit cost as unknown.
+- Any fake transport used in tests must be able to omit `credits_used`, since
+  that is the real provider's behaviour.
 - The canonical acquisition (one tcm-historical run) is triggered by the
   maintainer, not by CI — real credits are spent; the script appends honest
-  usage records to the same ledger the app enforces.
+  call records to the same ledger the app enforces.
