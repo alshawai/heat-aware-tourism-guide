@@ -33,6 +33,7 @@ def test_heatmap_payload_preserves_forecast_history_and_threshold_contract() -> 
         "longitude": -98.4936,
         "start_date": "2026-08-20",
         "forecast": False,
+        "granularity": 60,
         "threshold_celsius": 35,
         "direction": "above",
     }

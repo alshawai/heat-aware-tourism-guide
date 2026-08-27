@@ -232,6 +232,7 @@ def test_live_failure_replays_matching_cache_as_stale_data() -> None:
             "forecast": False,
             "threshold_celsius": None,
             "direction": None,
+            "granularity": 60,
         },
         payload,
         retrieved_at=datetime(2026, 8, 23, tzinfo=timezone.utc),
@@ -255,7 +256,7 @@ def test_live_result_preserves_activity_id_and_malformed_payload_uses_cache() ->
     request = HeatmapRequest(AnalyticType.TCM, 29.4241, -98.4936, date(2026, 8, 23), forecast=False)
     payload = json.loads((Path("fixtures") / "heatmap-historical.json").read_text())
     cache.put(
-        "/v1/heatmap", "v1", {"analytic_type": "tcm", "latitude": 29.4241, "longitude": -98.4936, "start_date": "2026-08-23", "forecast": False, "threshold_celsius": None, "direction": None}, payload,
+        "/v1/heatmap", "v1", {"analytic_type": "tcm", "latitude": 29.4241, "longitude": -98.4936, "start_date": "2026-08-23", "forecast": False, "threshold_celsius": None, "direction": None, "granularity": 60}, payload,
         retrieved_at=datetime(2026, 8, 20, tzinfo=timezone.utc), data_date="2026-08-20", activity_id="cached",
     )
     live = HeatmapExecution(
@@ -299,7 +300,7 @@ def test_fixture_and_live_execution_share_normalized_schema(tmp_path: Path) -> N
     from app.services.execution import HeatmapExecution
 
     fixture = tmp_path / "heatmap.json"
-    fixture.write_text('{"mode": "historical", "request": {"analytic_type": "tcm", "latitude": 29.4241, "longitude": -98.4936, "start_date": "2026-08-23", "forecast": false, "threshold_celsius": null, "direction": null}, "features": [{"geometry": {"type": "Point", "coordinates": [1, 1]}, "properties": {"value": 35.5, "unit": "C", "valid_time": "2026-08-23T15:00:00+00:00"}}]}')
+    fixture.write_text('{"mode": "historical", "request": {"analytic_type": "tcm", "latitude": 29.4241, "longitude": -98.4936, "start_date": "2026-08-23", "forecast": false, "threshold_celsius": null, "direction": null, "granularity": 60}, "features": [{"geometry": {"type": "Point", "coordinates": [1, 1]}, "properties": {"value": 35.5, "unit": "C", "valid_time": "2026-08-23T15:00:00+00:00"}}]}')
     request = HeatmapRequest(AnalyticType.TCM, 29.4241, -98.4936, date(2026, 8, 23), forecast=False)
     execution = HeatmapExecution(fixture_path=fixture, live_loader=lambda _: json.loads(fixture.read_text()))
     fixture_result = execution.run(request)

@@ -10,7 +10,7 @@ from typing import Mapping, Sequence
 
 from shapely.geometry import shape
 
-from app.domain.provenance import Provenance
+from app.domain.provenance import Provenance, Transformation
 from app.domain.security import sanitize_payload
 
 
@@ -29,6 +29,7 @@ class HeatmapRequest:
     forecast: bool = True
     threshold_celsius: float | None = None
     direction: str | None = None
+    granularity: int = 60
 
     def __post_init__(self) -> None:
         if not isinstance(self.analytic_type, AnalyticType):
@@ -47,6 +48,8 @@ class HeatmapRequest:
                 raise ValueError("threshold is required for this analytic type")
             if self.direction not in ("above", "below"):
                 raise ValueError("direction must be above or below")
+        if isinstance(self.granularity, bool) or not isinstance(self.granularity, int) or self.granularity not in (60, 80, 100):
+            raise ValueError("granularity must be 60, 80, or 100 meters")
 
     def to_payload(self) -> dict[str, object]:
         payload: dict[str, object] = {
@@ -55,6 +58,7 @@ class HeatmapRequest:
             "longitude": self.longitude,
             "start_date": self.start_date.isoformat(),
             "forecast": self.forecast,
+            "granularity": self.granularity,
         }
         if self.threshold_celsius is not None:
             payload["threshold_celsius"] = self.threshold_celsius
@@ -286,6 +290,7 @@ def normalize_heatmap_response(
     activity_id: str | None = None,
     source: str = "provider",
     data_date: str | None = None,
+    transformations: tuple[Transformation, ...] = (),
 ) -> HeatmapResult:
     features = payload.get("features")
     if not isinstance(features, Sequence) or isinstance(features, (str, bytes)) or not features:
@@ -343,6 +348,7 @@ def normalize_heatmap_response(
             request.forecast,
             activity_id,
             sanitized_payload,
+            transformations,
         ),
     )
 

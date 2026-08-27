@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Callable, Mapping
 from dataclasses import dataclass
 
-from app.domain.provenance import CacheKey
+from app.domain.provenance import CacheKey, Transformation
 from app.integrations.fortyguard.contracts import (
     HeatmapRequest,
     HeatmapResult,
@@ -22,6 +22,7 @@ from app.services.cache import CacheService
 class LiveHeatmapPayload:
     payload: Mapping[str, object]
     activity_id: str | None = None
+    transformations: tuple[Transformation, ...] = ()
 
 
 class HeatmapExecution:
@@ -49,6 +50,7 @@ class HeatmapExecution:
                 loaded = self.live_loader(request)
                 payload = loaded.payload if isinstance(loaded, LiveHeatmapPayload) else loaded
                 activity_id = loaded.activity_id if isinstance(loaded, LiveHeatmapPayload) else None
+                transformations = loaded.transformations if isinstance(loaded, LiveHeatmapPayload) else ()
                 result = normalize_heatmap_response(
                     payload,
                     request=request,
@@ -56,6 +58,7 @@ class HeatmapExecution:
                     activity_id=activity_id,
                     source="provider",
                     data_date=_fixture_data_date(payload),
+                    transformations=transformations,
                 )
             except (ConnectionError, OSError, ProviderError, TimeoutError, ValueError):
                 if self.cache is None:
@@ -114,6 +117,7 @@ def _request_payload(request: HeatmapRequest) -> dict[str, object]:
         "forecast": request.forecast,
         "threshold_celsius": request.threshold_celsius,
         "direction": request.direction,
+        "granularity": request.granularity,
     }
 
 
