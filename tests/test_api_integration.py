@@ -5,7 +5,10 @@ from threading import Thread
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError
 
+import pytest
+
 from app.api import create_fixture_server
+from app.trip_adapters import FixtureTripAnalysisAdapter
 
 
 def test_fixture_backed_http_flow_returns_normalized_domain_result() -> None:
@@ -82,7 +85,10 @@ def test_non_object_json_body_returns_unavailable() -> None:
 
 
 def test_trip_analysis_endpoint_returns_ranked_hotels_and_route_decision() -> None:
-    server = create_fixture_server(Path("fixtures/heatmap-historical.json"))
+    server = create_fixture_server(
+        Path("fixtures/heatmap-historical.json"),
+        trip_adapter=FixtureTripAnalysisAdapter(Path("fixtures/trip-analysis.json")),
+    )
     thread = Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:
@@ -97,19 +103,6 @@ def test_trip_analysis_endpoint_returns_ranked_hotels_and_route_decision() -> No
                 "district_name": "Downtown San Antonio",
                 "date": "2026-08-23",
                 "hour": 14,
-                "heat_value": 38,
-                "heat_threshold": 35,
-                "corridor_heat_values": [34, 38],
-                "building_coverage": 0.9,
-                "hotels": [
-                    {"identity": "cooler", "components": {"night": 30, "hot_hours": 5, "persistence": 2, "day": 32}},
-                    {"identity": "hotter", "components": {"night": 36, "hot_hours": 9, "persistence": 5, "day": 38}},
-                ],
-                "routes": [
-                    {"identity": "short", "distance_m": 1000, "duration_s": 600},
-                    {"identity": "shady", "distance_m": 1200, "duration_s": 700},
-                ],
-                "shade": {"short": 20, "shady": 80},
             }
         ).encode()
         response = urlopen(
@@ -123,10 +116,13 @@ def test_trip_analysis_endpoint_returns_ranked_hotels_and_route_decision() -> No
         result = json.load(response)
         assert result["state"] == "success"
         assert result["execution_mode"] == "fixture"
+        assert len(result["best_time"]["hourly"]) == 3
+        assert result["best_time"]["recommendation_hour"] == 8
         assert result["best_time"]["hourly"][0]["metric"]["unit"] == "C"
         assert result["best_time"]["hourly"][0]["metric"]["label"] == "provider_tcm"
         assert result["best_time"]["provenance"]["transformation_version"] == "trip-contract-v1"
         assert result["best_time"]["provenance"]["provider"] == "fortyguard"
+        assert result["routes"]["provenance"]["provider"] == "osrm_openstreetmap_and_fortyguard"
         assert result["hotels"]["ranked"][0]["identity"] == "cooler"
         assert result["routes"]["recommended_id"] == "shady"
     finally:
@@ -136,7 +132,10 @@ def test_trip_analysis_endpoint_returns_ranked_hotels_and_route_decision() -> No
 
 
 def test_trip_analysis_returns_explicit_unavailable_contract() -> None:
-    server = create_fixture_server(Path("fixtures/heatmap-historical.json"))
+    server = create_fixture_server(
+        Path("fixtures/heatmap-historical.json"),
+        trip_adapter=FixtureTripAnalysisAdapter(Path("fixtures/trip-analysis.json")),
+    )
     thread = Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:
@@ -164,7 +163,10 @@ def test_trip_analysis_returns_explicit_unavailable_contract() -> None:
 
 
 def test_trip_analysis_rejects_untrusted_metric_and_provenance_fields() -> None:
-    server = create_fixture_server(Path("fixtures/heatmap-historical.json"))
+    server = create_fixture_server(
+        Path("fixtures/heatmap-historical.json"),
+        trip_adapter=FixtureTripAnalysisAdapter(Path("fixtures/trip-analysis.json")),
+    )
     thread = Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:
@@ -190,11 +192,10 @@ def test_trip_analysis_rejects_untrusted_metric_and_provenance_fields() -> None:
             ],
             "shade": {"r1": 50},
         }).encode()
-        try:
+        with pytest.raises(HTTPError) as caught:
             urlopen(Request(f"http://127.0.0.1:{server.server_port}/api/trip/analyze", data=body, method="POST"))
-        except HTTPError as error:
-            assert error.code == 400
-            assert json.load(error)["status"] == "unavailable"
+        assert caught.value.code == 400
+        assert json.load(caught.value)["status"] == "unavailable"
     finally:
         server.shutdown()
         server.server_close()

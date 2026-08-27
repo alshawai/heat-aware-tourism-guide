@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict
-from datetime import date, datetime, timezone
+from datetime import date, datetime
 from enum import Enum
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
@@ -17,32 +17,17 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.contracts import (
-    BestTimeResult,
-    Confidence,
     Coordinates,
-    EnrichmentState,
     ExecutionMode,
-    HeatStatus,
-    HotelCandidateData,
-    HotelRankingResult,
-    HourlyEntry,
-    Metric,
-    MetricLabel,
-    Provenance,
-    RankedHotel,
-    RouteCandidateData,
-    RouteComparisonResult,
-    RouteOption,
     ResultState,
+    TripAnalysisAdapter,
     TripAnalysisRequest,
-    TripAnalysisInputs,
     TripAnalysisResponse,
     TripMode,
     UnavailableResult,
 )
 from app.execution import HeatmapExecution
 from app.fortyguard import AnalyticType, HeatmapRequest, ProviderError
-from app.trip import HotelCandidate, HotelRanker, RouteCandidate, RouteComparator
 
 
 def _result_json(result: Any) -> dict[str, object]:
@@ -65,6 +50,7 @@ def create_fixture_server(
     *,
     execution: HeatmapExecution | None = None,
     allow_live: bool = False,
+    trip_adapter: TripAnalysisAdapter | None = None,
 ) -> ThreadingHTTPServer:
     configured_execution: HeatmapExecution = execution or HeatmapExecution(fixture_path=fixture_path)
 
@@ -81,7 +67,12 @@ def create_fixture_server(
                     raise ValueError("request body must be a JSON object")
                 if path == "/api/trip/analyze":
                     response = json.dumps(
-                        _trip_result(body, allow_live=allow_live), default=_json_default
+                        _trip_result(
+                            body,
+                            allow_live=allow_live,
+                            trip_adapter=trip_adapter,
+                        ),
+                        default=_json_default,
                     ).encode()
                     self.send_response(200)
                     self.send_header("Content-Type", "application/json")
@@ -117,6 +108,7 @@ def create_app(
     execution: HeatmapExecution | None = None,
     allow_live: bool = False,
     frontend_dist: Path | None = None,
+    trip_adapter: TripAnalysisAdapter | None = None,
 ) -> FastAPI:
     """Create the server-owned product API used by local runs and deployment."""
     configured_execution: HeatmapExecution = execution or HeatmapExecution(fixture_path=fixture_path)
@@ -140,7 +132,11 @@ def create_app(
     @app.post("/api/trip/analyze")
     def trip_analyze(body: dict[str, object]) -> dict[str, object]:
         try:
-            return _trip_result(body, allow_live=allow_live)
+            return _trip_result(
+                body,
+                allow_live=allow_live,
+                trip_adapter=trip_adapter,
+            )
         except (KeyError, TypeError, ValueError) as error:
             raise HTTPException(status_code=400, detail={"status": "unavailable", "error": str(error)}) from error
 
@@ -187,6 +183,23 @@ def _heatmap_request(body: dict[str, object]) -> HeatmapRequest:
 
 def _parse_trip_request(body: dict[str, object]) -> TripAnalysisRequest:
     """Parse the frontend request into the provider-independent contract."""
+    provider_fields = {
+        "heat_metric",
+        "heat_value",
+        "heat_threshold",
+        "corridor_heat_values",
+        "building_coverage",
+        "hotels",
+        "routes",
+        "shade",
+        "provenance",
+    }
+    supplied_provider_fields = provider_fields.intersection(body)
+    if supplied_provider_fields:
+        raise ValueError(
+            "provider analysis fields are server-owned: "
+            + ", ".join(sorted(supplied_provider_fields))
+        )
     origin_lat = _finite_number(body.get("origin_latitude"), "origin_latitude")
     origin_lon = _finite_number(body.get("origin_longitude"), "origin_longitude")
     dest_lat = _finite_number(body.get("destination_latitude"), "destination_latitude")
@@ -219,58 +232,12 @@ def _parse_trip_request(body: dict[str, object]) -> TripAnalysisRequest:
     )
 
 
-def _parse_trip_inputs(body: dict[str, object]) -> TripAnalysisInputs:
-    """Parse normalized adapter data kept separate from traveler input."""
-    hotels_raw = body.get("hotels")
-    routes_raw = body.get("routes")
-    shade_raw = body.get("shade")
-    if not isinstance(hotels_raw, list) or not hotels_raw:
-        raise ValueError("hotels must be a non-empty list")
-    if not isinstance(routes_raw, list) or not routes_raw:
-        raise ValueError("routes must be a non-empty list")
-    if not isinstance(shade_raw, dict):
-        raise ValueError("shade must be a dict mapping route identity to shade value")
-
-    hotels = tuple(
-        HotelCandidateData(
-            identity=item["identity"],
-            components=dict(item["components"]),
-        )
-        for item in hotels_raw
-    )
-    routes = tuple(
-        RouteCandidateData(
-            identity=item["identity"],
-            distance_m=float(item["distance_m"]),
-            duration_s=float(item["duration_s"]),
-        )
-        for item in routes_raw
-    )
-    shade = {str(k): float(v) for k, v in shade_raw.items()}
-
-    heat_metric = body.get("heat_metric", "tcm")
-    if heat_metric not in {"tcm", "heat_index_celsius"}:
-        raise ValueError("heat_metric must be tcm or heat_index_celsius")
-    corridor_values = body.get("corridor_heat_values", [])
-    if not isinstance(corridor_values, list):
-        raise ValueError("corridor_heat_values must be a list")
-
-    return TripAnalysisInputs(
-        heat_metric=heat_metric,
-        heat_value=_finite_number(body.get("heat_value"), "heat_value"),
-        heat_threshold=_finite_number(body.get("heat_threshold"), "heat_threshold"),
-        corridor_heat_values=tuple(
-            _finite_number(v, "corridor_heat_values entry")
-            for v in corridor_values
-        ),
-        building_coverage=_finite_number(body.get("building_coverage", 0), "building_coverage"),
-        hotels=hotels,
-        routes=routes,
-        shade=shade,
-    )
-
-
-def _trip_result(body: dict[str, object], *, allow_live: bool) -> dict[str, object]:
+def _trip_result(
+    body: dict[str, object],
+    *,
+    allow_live: bool,
+    trip_adapter: TripAnalysisAdapter | None,
+) -> dict[str, object]:
     """Run the trip analysis and serialize the shared product contract."""
     execution_mode = _execution_mode(body, allow_live=allow_live)
     unavailable_reason = body.get("unavailable_reason")
@@ -286,8 +253,11 @@ def _trip_result(body: dict[str, object], *, allow_live: bool) -> dict[str, obje
         )
         return asdict(response)
     request = _parse_trip_request(body)
-    inputs = _parse_trip_inputs(body)
-    response = _analyze_trip(request, inputs, execution_mode)
+    if trip_adapter is None:
+        raise ValueError("trip analysis adapter is not configured")
+    response = trip_adapter.analyze(request)
+    if response.execution_mode is not execution_mode:
+        raise ValueError("trip adapter returned the wrong execution mode")
     return asdict(response)
 
 
@@ -300,116 +270,6 @@ def _execution_mode(body: dict[str, object], *, allow_live: bool) -> ExecutionMo
     if mode is ExecutionMode.LIVE and not allow_live:
         raise ValueError("live execution is not enabled for this server")
     return mode
-
-
-def _analyze_trip(
-    request: TripAnalysisRequest,
-    inputs: TripAnalysisInputs,
-    execution_mode: ExecutionMode,
-) -> TripAnalysisResponse:
-    candidates = tuple(HotelCandidate(hotel.identity, hotel.components) for hotel in inputs.hotels)
-    route_candidates = tuple(
-        RouteCandidate(route.identity, route.distance_m, route.duration_s)
-        for route in inputs.routes
-    )
-
-    route_result = RouteComparator().compare(
-        lambda: route_candidates,
-        heat_value=inputs.heat_value,
-        heat_values=inputs.corridor_heat_values,
-        heat_threshold=inputs.heat_threshold,
-        shade=lambda route: inputs.shade[route.identity],
-        building_coverage=inputs.building_coverage,
-    )
-    confidence = (
-        Confidence.SUFFICIENT
-        if inputs.building_coverage >= 0.7
-        else Confidence.INSUFFICIENT
-    )
-    metric_label = (
-        MetricLabel.NOAA_HEAT_INDEX
-        if inputs.heat_metric == "heat_index_celsius"
-        else MetricLabel.PROVIDER_TCM
-    )
-    provenance = Provenance(
-        source=execution_mode.value,
-        provider="fortyguard",
-        data_date=request.date,
-        retrieved_at=datetime.now(timezone.utc).isoformat(),
-        response_status="completed",
-        transformation_version="trip-contract-v1",
-        confidence=confidence,
-        coverage=inputs.building_coverage,
-    )
-    ranked = tuple(
-        RankedHotel(
-            identity=hotel.identity,
-            components=dict(hotel.components),
-            score=hotel.score,
-            percentile=hotel.percentile,
-            tie_group=hotel.tie_group,
-        )
-        for hotel in HotelRanker().rank(candidates)
-    )
-    route_options = tuple(
-        RouteOption(
-            identity=route.identity,
-            distance_m=route.distance_m,
-            duration_s=route.duration_s,
-            heat_value=route_result.corridor_heat_value,
-            modeled_shade_percent=inputs.shade[route.identity] if route_result.shade_was_computed else None,
-            shade_confidence=confidence if route_result.shade_was_computed else None,
-        )
-        for route in route_candidates
-    )
-    best_hour = request.hour
-    return TripAnalysisResponse(
-        request_identity=f"{request.mode.value}:{request.date}:{request.hour}",
-        mode=request.mode,
-        execution_mode=execution_mode,
-        state=ResultState.DEGRADED if confidence is Confidence.INSUFFICIENT else ResultState.SUCCESS,
-        best_time=BestTimeResult(
-            hourly=(
-                HourlyEntry(
-                    hour=best_hour,
-                    metric=Metric(
-                        value=inputs.heat_value,
-                        unit="C",
-                        label=metric_label,
-                        is_actual_heat_index=metric_label is MetricLabel.NOAA_HEAT_INDEX,
-                    ),
-                ),
-            ),
-            recommendation_hour=best_hour,
-            recommendation_reason="selected trip hour is the available heat observation",
-            metric_label=metric_label,
-            provenance=provenance,
-        ),
-        hotels=HotelRankingResult(
-            ranked=ranked,
-            weights=dict(HotelRanker.default_weights),
-            usable_count=len(ranked),
-            discovered_count=len(ranked),
-            provenance=provenance,
-            enrichment=EnrichmentState.NOT_REQUESTED,
-        ),
-        routes=RouteComparisonResult(
-            alternatives=route_options,
-            recommended_id=route_result.recommended_id,
-            reason=route_result.reason,
-            heat_status=(
-                HeatStatus.ELEVATED
-                if route_result.corridor_heat_value > inputs.heat_threshold
-                else HeatStatus.NOT_ELEVATED
-            ),
-            corridor_heat_value=route_result.corridor_heat_value,
-            heat_metric=inputs.heat_metric,
-            coverage=inputs.building_coverage,
-            confidence=confidence,
-            comparison_scope="returned alternatives",
-            provenance=provenance,
-        ),
-    )
 
 
 def _finite_number(value: object, field: str) -> float:

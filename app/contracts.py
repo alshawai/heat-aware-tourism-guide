@@ -49,6 +49,11 @@ class MetricLabel(str, Enum):
     NOAA_HEAT_INDEX = "noaa_heat_index"
 
 
+class HeatMetricName(str, Enum):
+    TCM = "tcm"
+    HEAT_INDEX_CELSIUS = "heat_index_celsius"
+
+
 class EnrichmentState(str, Enum):
     AVAILABLE = "available"
     UNAVAILABLE = "unavailable"
@@ -86,6 +91,8 @@ class Provenance:
     provider: str | None = None
     activity_id: str | None = None
     response_status: str | None = None
+    request_configuration: dict[str, object] | None = None
+    fresh: bool = True
 
     def __post_init__(self) -> None:
         if not self.source:
@@ -96,6 +103,8 @@ class Provenance:
             raise ValueError("coverage must be between 0 and 1")
         if not self.transformation_version:
             raise ValueError("provenance transformation_version is required")
+        if not isinstance(self.fresh, bool):
+            raise ValueError("provenance fresh must be a boolean")
 
 
 @dataclass(frozen=True)
@@ -234,6 +243,8 @@ class BestTimeResult:
             raise ValueError("recommendation_reason is required")
         if not self.hourly:
             raise ValueError("hourly evidence is required")
+        if self.recommendation_hour not in {entry.hour for entry in self.hourly}:
+            raise ValueError("recommendation_hour must have hourly evidence")
 
 
 @dataclass(frozen=True)
@@ -291,8 +302,14 @@ class RouteOption:
     distance_m: float
     duration_s: float
     heat_value: float
+    heat_metric: HeatMetricName
+    heat_status: HeatStatus
     modeled_shade_percent: float | None
     shade_confidence: Confidence | None
+    building_coverage: float
+    recommended: bool
+    recommendation_reason: str | None
+    shade_model_label: str | None
 
     def __post_init__(self) -> None:
         if not self.identity:
@@ -303,6 +320,8 @@ class RouteOption:
             raise ValueError("duration_s must be positive and finite")
         if not math.isfinite(self.heat_value):
             raise ValueError("heat_value must be finite")
+        if not 0 <= self.building_coverage <= 1:
+            raise ValueError("building_coverage must be between 0 and 1")
         if self.modeled_shade_percent is not None and (
             not math.isfinite(self.modeled_shade_percent)
             or not 0 <= self.modeled_shade_percent <= 100
@@ -319,11 +338,12 @@ class RouteComparisonResult:
     reason: str
     heat_status: HeatStatus
     corridor_heat_value: float
-    heat_metric: str
+    heat_metric: HeatMetricName
     coverage: float
     confidence: Confidence
     comparison_scope: str
     provenance: Provenance
+    fallback_reason: str | None = None
 
     def __post_init__(self) -> None:
         if not self.alternatives:
@@ -334,6 +354,8 @@ class RouteComparisonResult:
             raise ValueError("reason is required")
         if not self.comparison_scope:
             raise ValueError("comparison_scope is required")
+        if self.confidence is Confidence.INSUFFICIENT and not self.fallback_reason:
+            raise ValueError("insufficient confidence requires fallback_reason")
         if not 0 <= self.coverage <= 1:
             raise ValueError("coverage must be between 0 and 1")
         identities = {route.identity for route in self.alternatives}

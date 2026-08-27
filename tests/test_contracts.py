@@ -11,6 +11,7 @@ from app.contracts import (
     Coordinates,
     ExecutionMode,
     HeatStatus,
+    HeatMetricName,
     HourlyEntry,
     Metric,
     MetricLabel,
@@ -44,6 +45,25 @@ def _valid_hotel_candidate(identity: str = "hotel-a") -> HotelCandidateData:
 
 def _valid_route_candidate(identity: str = "route-a") -> RouteCandidateData:
     return RouteCandidateData(identity=identity, distance_m=1000, duration_s=600)
+
+
+def _valid_route_option(identity: str = "route-a", *, recommended: bool = False) -> RouteOption:
+    return RouteOption(
+        identity=identity,
+        distance_m=1000,
+        duration_s=600,
+        heat_value=34,
+        heat_metric=HeatMetricName.TCM,
+        heat_status=HeatStatus.ELEVATED,
+        modeled_shade_percent=65 if recommended else None,
+        shade_confidence=Confidence.SUFFICIENT if recommended else None,
+        building_coverage=0.9,
+        recommended=recommended,
+        recommendation_reason="highest modeled shade" if recommended else None,
+        shade_model_label=(
+            "modeled shade estimate based on OSM building data" if recommended else None
+        ),
+    )
 
 
 def _valid_request(**overrides: object) -> TripAnalysisRequest:
@@ -98,14 +118,14 @@ def _valid_ranked_hotels() -> HotelRankingResult:
 def _valid_route_comparison() -> RouteComparisonResult:
     return RouteComparisonResult(
         alternatives=(
-            RouteOption(identity="short", distance_m=1000, duration_s=600, heat_value=34, modeled_shade_percent=None, shade_confidence=None),
-            RouteOption(identity="shady", distance_m=1200, duration_s=700, heat_value=33, modeled_shade_percent=65.0, shade_confidence=Confidence.SUFFICIENT),
+            _valid_route_option("short"),
+            _valid_route_option("shady", recommended=True),
         ),
         recommended_id="shady",
         reason="highest modeled shade among returned routes",
         heat_status=HeatStatus.ELEVATED,
         corridor_heat_value=38.0,
-        heat_metric="tcm",
+        heat_metric=HeatMetricName.TCM,
         coverage=0.9,
         confidence=Confidence.SUFFICIENT,
         comparison_scope="returned alternatives",
@@ -322,7 +342,12 @@ class TestMalformedPayloads:
 
     def test_route_option_negative_heat(self) -> None:
         with pytest.raises(ValueError, match="heat_value"):
-            RouteOption(identity="a", distance_m=1000, duration_s=600, heat_value=float("-inf"), modeled_shade_percent=None, shade_confidence=None)
+            RouteOption(
+                identity="a", distance_m=1000, duration_s=600, heat_value=float("-inf"),
+                heat_metric=HeatMetricName.TCM, heat_status=HeatStatus.ELEVATED,
+                modeled_shade_percent=None, shade_confidence=None, building_coverage=0.9,
+                recommended=False, recommendation_reason=None, shade_model_label=None,
+            )
 
     def test_route_comparison_empty_alternatives(self) -> None:
         with pytest.raises(ValueError, match="route alternative"):
@@ -332,7 +357,7 @@ class TestMalformedPayloads:
                 reason="test",
                 heat_status=HeatStatus.NOT_ELEVATED,
                 corridor_heat_value=30.0,
-                heat_metric="tcm",
+                heat_metric=HeatMetricName.TCM,
                 coverage=0.9,
                 confidence=Confidence.SUFFICIENT,
                 comparison_scope="returned alternatives",
@@ -342,12 +367,12 @@ class TestMalformedPayloads:
     def test_route_comparison_recommendation_not_in_alternatives(self) -> None:
         with pytest.raises(ValueError, match="recommended_id"):
             RouteComparisonResult(
-                alternatives=(RouteOption(identity="a", distance_m=1000, duration_s=600, heat_value=30, modeled_shade_percent=None, shade_confidence=None),),
+                alternatives=(_valid_route_option("a"),),
                 recommended_id="nonexistent",
                 reason="test",
                 heat_status=HeatStatus.NOT_ELEVATED,
                 corridor_heat_value=30.0,
-                heat_metric="tcm",
+                heat_metric=HeatMetricName.TCM,
                 coverage=0.9,
                 confidence=Confidence.SUFFICIENT,
                 comparison_scope="returned alternatives",
@@ -357,12 +382,12 @@ class TestMalformedPayloads:
     def test_route_comparison_coverage_out_of_range(self) -> None:
         with pytest.raises(ValueError, match="coverage"):
             RouteComparisonResult(
-                alternatives=(RouteOption(identity="a", distance_m=1000, duration_s=600, heat_value=30, modeled_shade_percent=None, shade_confidence=None),),
+                alternatives=(_valid_route_option("a", recommended=True),),
                 recommended_id="a",
                 reason="test",
                 heat_status=HeatStatus.NOT_ELEVATED,
                 corridor_heat_value=30.0,
-                heat_metric="tcm",
+                heat_metric=HeatMetricName.TCM,
                 coverage=2.0,
                 confidence=Confidence.SUFFICIENT,
                 comparison_scope="returned alternatives",
@@ -477,72 +502,6 @@ class TestApiContractValidation:
                 "district_name": "Downtown",
                 "date": "2026-08-23",
                 "hour": 14,
-                "hotels": [{"identity": "a", "components": {"night": 30, "hot_hours": 5, "persistence": 2, "day": 32}}],
-                "routes": [{"identity": "r", "distance_m": 1000, "duration_s": 600}],
-                "shade": {"r": 50},
-                "heat_value": 38,
-                "heat_threshold": 35,
-                "building_coverage": 0.9,
-            })
-
-    def test_missing_hotels_rejected(self) -> None:
-        from app.api import _parse_trip_inputs
-        with pytest.raises(ValueError, match="hotels"):
-            _parse_trip_inputs({
-                "origin_latitude": 29.42,
-                "origin_longitude": -98.49,
-                "destination_latitude": 29.43,
-                "destination_longitude": -98.48,
-                "landmark_name": "The Alamo",
-                "district_name": "Downtown",
-                "date": "2026-08-23",
-                "hour": 14,
-                "mode": "curated",
-                "routes": [{"identity": "r", "distance_m": 1000, "duration_s": 600}],
-                "shade": {"r": 50},
-                "heat_value": 38,
-                "heat_threshold": 35,
-                "building_coverage": 0.9,
-            })
-
-    def test_missing_routes_rejected(self) -> None:
-        from app.api import _parse_trip_inputs
-        with pytest.raises(ValueError, match="routes"):
-            _parse_trip_inputs({
-                "origin_latitude": 29.42,
-                "origin_longitude": -98.49,
-                "destination_latitude": 29.43,
-                "destination_longitude": -98.48,
-                "landmark_name": "The Alamo",
-                "district_name": "Downtown",
-                "date": "2026-08-23",
-                "hour": 14,
-                "mode": "curated",
-                "hotels": [{"identity": "a", "components": {"night": 30, "hot_hours": 5, "persistence": 2, "day": 32}}],
-                "shade": {"r": 50},
-                "heat_value": 38,
-                "heat_threshold": 35,
-                "building_coverage": 0.9,
-            })
-
-    def test_missing_shade_rejected(self) -> None:
-        from app.api import _parse_trip_inputs
-        with pytest.raises(ValueError, match="shade"):
-            _parse_trip_inputs({
-                "origin_latitude": 29.42,
-                "origin_longitude": -98.49,
-                "destination_latitude": 29.43,
-                "destination_longitude": -98.48,
-                "landmark_name": "The Alamo",
-                "district_name": "Downtown",
-                "date": "2026-08-23",
-                "hour": 14,
-                "mode": "curated",
-                "hotels": [{"identity": "a", "components": {"night": 30, "hot_hours": 5, "persistence": 2, "day": 32}}],
-                "routes": [{"identity": "r", "distance_m": 1000, "duration_s": 600}],
-                "heat_value": 38,
-                "heat_threshold": 35,
-                "building_coverage": 0.9,
             })
 
     def test_full_body_with_defaults_accepted(self) -> None:
@@ -556,12 +515,6 @@ class TestApiContractValidation:
             "district_name": "Downtown",
             "date": "2026-08-23",
             "hour": 12,
-            "hotels": [{"identity": "a", "components": {"night": 30, "hot_hours": 5, "persistence": 2, "day": 32}}],
-            "routes": [{"identity": "r", "distance_m": 1000, "duration_s": 600}],
-            "shade": {"r": 50},
-            "heat_value": 38,
-            "heat_threshold": 35,
-            "building_coverage": 0.9,
             "mode": "curated",
         })
         assert request.cautious is False
@@ -580,14 +533,6 @@ class TestApiContractValidation:
             "date": "2026-08-23",
             "hour": 14,
             "cautious": True,
-            "heat_metric": "tcm",
-            "heat_value": 38,
-            "heat_threshold": 35,
-            "corridor_heat_values": [34, 38],
-            "building_coverage": 0.9,
-            "hotels": [{"identity": "a", "components": {"night": 30, "hot_hours": 5, "persistence": 2, "day": 32}}],
-            "routes": [{"identity": "r", "distance_m": 1000, "duration_s": 600}],
-            "shade": {"r": 50},
         })
         assert request.mode is TripMode.EXPLORATORY
         assert request.landmark_name == "The Alamo"
@@ -609,33 +554,4 @@ class TestApiContractValidation:
                 "date": "2026-08-23",
                 "hour": 14,
                 "cautious": "false",
-                "heat_value": 38,
-                "heat_threshold": 35,
-                "building_coverage": 0.9,
-                "hotels": [{"identity": "a", "components": {"night": 30, "hot_hours": 5, "persistence": 2, "day": 32}}],
-                "routes": [{"identity": "r", "distance_m": 1000, "duration_s": 600}],
-                "shade": {"r": 50},
-            })
-
-    def test_unknown_metric_rejected(self) -> None:
-        from app.api import _parse_trip_inputs
-
-        with pytest.raises(ValueError, match="heat_metric"):
-            _parse_trip_inputs({
-                "origin_latitude": 29.42,
-                "origin_longitude": -98.49,
-                "destination_latitude": 29.43,
-                "destination_longitude": -98.48,
-                "mode": "curated",
-                "landmark_name": "The Alamo",
-                "district_name": "Downtown",
-                "date": "2026-08-23",
-                "hour": 14,
-                "heat_metric": "apparent_temperature",
-                "heat_value": 38,
-                "heat_threshold": 35,
-                "building_coverage": 0.9,
-                "hotels": [{"identity": "a", "components": {"night": 30, "hot_hours": 5, "persistence": 2, "day": 32}}],
-                "routes": [{"identity": "r", "distance_m": 1000, "duration_s": 600}],
-                "shade": {"r": 50},
             })
