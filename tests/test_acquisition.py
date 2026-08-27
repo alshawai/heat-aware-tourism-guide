@@ -155,7 +155,9 @@ def test_env_params_acquisition_writes_raw_fixture_and_sidecar(tmp_path: Path) -
     assert record.request_configuration == {
         "latitude": 29.4259,
         "longitude": -98.4861,
-        "start_date": CLOCK.date().isoformat(),
+        # The scenario asks the provider for "today"; read the same ambient clock
+        # the request builder used, so this holds in any timezone (see TODO below).
+        "start_date": date.today().isoformat(),
         "temperature_anchor_celsius": 35.0,
         "hour": 13,
     }
