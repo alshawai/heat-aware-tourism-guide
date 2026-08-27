@@ -5,14 +5,15 @@ from typing import Iterator
 
 import pytest
 
-from app.fortyguard import (
+from app.integrations.fortyguard.client import FortyGuardClient, poll_activity
+from app.integrations.fortyguard.contracts import (
     AnalyticType,
     HeatmapRequest,
-    ProviderErrorKind,
-    FortyGuardClient,
-    classify_provider_error,
     normalize_heatmap_response,
-    poll_activity,
+)
+from app.integrations.fortyguard.errors import (
+    ProviderErrorKind,
+    classify_provider_error,
 )
 
 
@@ -158,7 +159,7 @@ def test_committed_fixtures_normalize_to_the_same_tile_schema(
     value: float,
     tmp_path: Path,
 ) -> None:
-    from app.execution import HeatmapExecution
+    from app.services.execution import HeatmapExecution
 
     fixture_path = Path("fixtures") / fixture_name
     request_date = date.today() if forecast else date(2026, 8, 23)
@@ -189,7 +190,7 @@ def test_committed_fixtures_normalize_to_the_same_tile_schema(
 
 
 def test_empty_failed_and_malformed_fixtures_are_rejected() -> None:
-    from app.execution import HeatmapExecution
+    from app.services.execution import HeatmapExecution
 
     request = HeatmapRequest(AnalyticType.TCM, 29.4241, -98.4936, date(2026, 8, 23), forecast=False)
     for name in ("heatmap-empty.json", "heatmap-failed.json", "heatmap-malformed.json"):
@@ -198,7 +199,7 @@ def test_empty_failed_and_malformed_fixtures_are_rejected() -> None:
 
 
 def test_fixture_mode_must_match_forecast_or_historical_request() -> None:
-    from app.execution import HeatmapExecution
+    from app.services.execution import HeatmapExecution
 
     request = HeatmapRequest(AnalyticType.TCM, 29.4241, -98.4936, date.today(), forecast=True)
     with pytest.raises(ValueError, match="mode"):
@@ -206,7 +207,7 @@ def test_fixture_mode_must_match_forecast_or_historical_request() -> None:
 
 
 def test_fixture_request_identity_must_match_scenario() -> None:
-    from app.execution import HeatmapExecution
+    from app.services.execution import HeatmapExecution
 
     request = HeatmapRequest(AnalyticType.TCM, 30.2672, -97.7431, date(2026, 8, 23), forecast=False)
     with pytest.raises(ValueError, match="scenario"):
@@ -214,8 +215,8 @@ def test_fixture_request_identity_must_match_scenario() -> None:
 
 
 def test_live_failure_replays_matching_cache_as_stale_data() -> None:
-    from app.cache import CacheService
-    from app.execution import HeatmapExecution
+    from app.services.cache import CacheService
+    from app.services.execution import HeatmapExecution
 
     cache = CacheService()
     request = HeatmapRequest(AnalyticType.TCM, 29.4241, -98.4936, date(2026, 8, 23), forecast=False)
@@ -247,8 +248,8 @@ def test_live_failure_replays_matching_cache_as_stale_data() -> None:
 
 
 def test_live_result_preserves_activity_id_and_malformed_payload_uses_cache() -> None:
-    from app.cache import CacheService
-    from app.execution import HeatmapExecution, LiveHeatmapPayload
+    from app.services.cache import CacheService
+    from app.services.execution import HeatmapExecution, LiveHeatmapPayload
 
     cache = CacheService()
     request = HeatmapRequest(AnalyticType.TCM, 29.4241, -98.4936, date(2026, 8, 23), forecast=False)
@@ -271,7 +272,7 @@ def test_live_result_preserves_activity_id_and_malformed_payload_uses_cache() ->
 
 
 def test_live_provenance_uses_provider_freshness_date() -> None:
-    from app.execution import HeatmapExecution, LiveHeatmapPayload
+    from app.services.execution import HeatmapExecution, LiveHeatmapPayload
 
     payload = json.loads((Path("fixtures") / "heatmap-historical.json").read_text())
     result = HeatmapExecution(
@@ -282,8 +283,8 @@ def test_live_provenance_uses_provider_freshness_date() -> None:
 
 
 def test_live_failure_without_matching_cache_is_not_silently_successful() -> None:
-    from app.cache import CacheService
-    from app.execution import HeatmapExecution
+    from app.services.cache import CacheService
+    from app.services.execution import HeatmapExecution
 
     request = HeatmapRequest(AnalyticType.TCM, 29.4241, -98.4936, date(2026, 8, 23), forecast=False)
     with pytest.raises(ConnectionError, match="provider unavailable"):
@@ -295,7 +296,7 @@ def test_live_failure_without_matching_cache_is_not_silently_successful() -> Non
 
 
 def test_fixture_and_live_execution_share_normalized_schema(tmp_path: Path) -> None:
-    from app.execution import HeatmapExecution
+    from app.services.execution import HeatmapExecution
 
     fixture = tmp_path / "heatmap.json"
     fixture.write_text('{"mode": "historical", "request": {"analytic_type": "tcm", "latitude": 29.4241, "longitude": -98.4936, "start_date": "2026-08-23", "forecast": false, "threshold_celsius": null, "direction": null}, "features": [{"geometry": {"type": "Point", "coordinates": [1, 1]}, "properties": {"value": 35.5, "unit": "C", "valid_time": "2026-08-23T15:00:00+00:00"}}]}')
@@ -434,7 +435,7 @@ def test_client_emits_sanitized_structured_activity_events() -> None:
 
 
 def test_client_records_provider_reported_credits_in_ledger() -> None:
-    from app.ledger import CreditLedger
+    from app.domain.ledger import CreditLedger
 
     class Transport:
         def post(self, endpoint: str, payload: object, api_key: str) -> dict[str, object]:

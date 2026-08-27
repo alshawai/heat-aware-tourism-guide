@@ -5,15 +5,17 @@ from urllib.error import URLError
 
 import pytest
 
-from app.fortyguard import (
+from app.integrations.fortyguard.contracts import (
     AnalyticType,
     EnvParamsRequest,
     HeatmapRequest,
-    HttpFortyGuardTransport,
-    ProviderErrorKind,
-    classify_provider_error,
     normalize_env_params_response,
 )
+from app.integrations.fortyguard.errors import (
+    ProviderErrorKind,
+    classify_provider_error,
+)
+from app.integrations.fortyguard.transport import HttpFortyGuardTransport
 
 
 def test_heatmap_payload_preserves_forecast_history_and_threshold_contract() -> None:
@@ -61,7 +63,7 @@ def test_env_params_fixture_preserves_anchor_warning_and_heat_index_metric() -> 
 
 def test_area_request_rejects_unknown_analytic_members() -> None:
     with pytest.raises(ValueError, match="analytic types"):
-        from app.fortyguard import AreaHeatmapRequest
+        from app.integrations.fortyguard.contracts import AreaHeatmapRequest
 
         AreaHeatmapRequest(
             {"type": "Polygon", "coordinates": [[[1, 1], [2, 1], [2, 2], [1, 1]]]},
@@ -73,7 +75,7 @@ def test_area_request_rejects_unknown_analytic_members() -> None:
 
 
 def test_area_request_rejects_malformed_polygon_coordinates() -> None:
-    from app.fortyguard import AreaHeatmapRequest
+    from app.integrations.fortyguard.contracts import AreaHeatmapRequest
 
     with pytest.raises(ValueError, match="polygon geometry"):
         AreaHeatmapRequest(
@@ -86,7 +88,7 @@ def test_area_request_rejects_malformed_polygon_coordinates() -> None:
 
 
 def test_area_request_rejects_unclosed_polygon_ring() -> None:
-    from app.fortyguard import AreaHeatmapRequest
+    from app.integrations.fortyguard.contracts import AreaHeatmapRequest
 
     with pytest.raises(ValueError, match="polygon geometry"):
         AreaHeatmapRequest(
@@ -99,7 +101,7 @@ def test_area_request_rejects_unclosed_polygon_ring() -> None:
 
 
 def test_area_request_rejects_self_intersecting_polygon() -> None:
-    from app.fortyguard import AreaHeatmapRequest
+    from app.integrations.fortyguard.contracts import AreaHeatmapRequest
 
     with pytest.raises(ValueError, match="polygon geometry"):
         AreaHeatmapRequest(
@@ -112,7 +114,7 @@ def test_area_request_rejects_self_intersecting_polygon() -> None:
 
 
 def test_area_request_accepts_valid_multipolygon_coordinates() -> None:
-    from app.fortyguard import AreaHeatmapRequest
+    from app.integrations.fortyguard.contracts import AreaHeatmapRequest
 
     request = AreaHeatmapRequest(
         {"type": "MultiPolygon", "coordinates": [[[[1, 1], [2, 1], [2, 2], [1, 1]]]]},

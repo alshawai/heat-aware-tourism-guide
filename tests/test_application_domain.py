@@ -1,17 +1,16 @@
 from datetime import datetime, timezone
 import pytest
 
-from app.domain import (
-    CacheKey,
+from app.domain.analysis import extract_exposure, point_join_contract, polygon_join_contract
+from app.domain.provenance import CacheKey, Provenance
+from app.domain.readiness import (
+    EnrichmentOutcome,
     EnrichmentPlanner,
     EnrichmentRequest,
-    Provenance,
     ReadinessInput,
     readiness,
-    EnrichmentOutcome,
 )
-from app.cache import CacheService
-from app.analysis import extract_exposure, point_join_contract, polygon_join_contract
+from app.services.cache import CacheService
 
 
 def test_cache_key_separates_endpoint_and_schema_for_same_payload() -> None:
@@ -90,7 +89,7 @@ def test_enrichment_execution_preserves_ranked_output_after_partial_failure() ->
 
 
 def test_enrichment_execution_records_actual_provider_usage() -> None:
-    from app.ledger import CreditLedger
+    from app.domain.ledger import CreditLedger
 
     ledger = CreditLedger(5)
     result = EnrichmentPlanner(5).execute(

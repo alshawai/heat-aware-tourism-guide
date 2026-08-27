@@ -8,9 +8,14 @@ from pathlib import Path
 from typing import Callable, Mapping
 from dataclasses import dataclass
 
-from app.cache import CacheService
-from app.domain import CacheKey
-from app.fortyguard import HeatmapRequest, HeatmapResult, ProviderError, normalize_heatmap_response
+from app.domain.provenance import CacheKey
+from app.integrations.fortyguard.contracts import (
+    HeatmapRequest,
+    HeatmapResult,
+    normalize_heatmap_response,
+)
+from app.integrations.fortyguard.errors import ProviderError
+from app.services.cache import CacheService
 
 
 @dataclass(frozen=True)

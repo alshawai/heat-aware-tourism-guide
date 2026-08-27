@@ -16,9 +16,10 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from app.execution import HeatmapExecution
-from app.fortyguard import AnalyticType, HeatmapRequest, ProviderError
-from app.trip import HotelCandidate, HotelRanker, RouteCandidate, RouteComparator
+from app.domain.trip import HotelCandidate, HotelRanker, RouteCandidate, RouteComparator
+from app.integrations.fortyguard.contracts import AnalyticType, HeatmapRequest
+from app.integrations.fortyguard.errors import ProviderError
+from app.services.execution import HeatmapExecution
 
 
 def _result_json(result: Any) -> dict[str, object]:
