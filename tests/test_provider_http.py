@@ -147,7 +147,7 @@ def test_http_transport_sends_auth_json_and_classifies_http_errors() -> None:
     assert transport.post("/v1/heatmap", {"analytic_type": "tcm"}, "secret") == {"activity_id": "a1"}
     assert calls[0][0] == "https://api.example.test/v1/heatmap"
     assert calls[0][1] == {"analytic_type": "tcm"}
-    assert calls[0][2]["X-api-key"] == "secret"
+    assert calls[0][2]["Api-key"] == "secret"
 
     class ErrorResponse:
         status = 429

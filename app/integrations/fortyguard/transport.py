@@ -49,7 +49,7 @@ class HttpFortyGuardTransport:
         request = Request(
             f"{self.base_url}/{endpoint.lstrip('/')}",
             data=json.dumps(payload).encode() if payload is not None else None,
-            headers={"X-API-Key": api_key, "Content-Type": "application/json"},
+            headers={"api-key": api_key, "Content-Type": "application/json"},
             method="POST" if payload is not None else "GET",
         )
         try:
