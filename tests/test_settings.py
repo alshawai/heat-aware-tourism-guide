@@ -92,3 +92,24 @@ def test_polling_defaults_are_bounded() -> None:
 def test_polling_bounds_are_overridable() -> None:
     polling = FortyGuardPollingSettings(interval_seconds=1.0, max_polls=3, timeout_seconds=5.0, status_404_grace_checks=1)
     assert polling == FortyGuardPollingSettings(1.0, 3, 5.0, 1)
+
+
+def test_polling_overrides_are_read_from_environment() -> None:
+    settings = load_settings(
+        environ={
+            "FORTYGUARD_POLL_INTERVAL_SECONDS": "2.5",
+            "FORTYGUARD_MAX_POLLS": "9",
+            "FORTYGUARD_TIMEOUT_SECONDS": "12.0",
+            "FORTYGUARD_404_GRACE_CHECKS": "2",
+        }
+    )
+    assert settings.polling == FortyGuardPollingSettings(
+        interval_seconds=2.5, max_polls=9, timeout_seconds=12.0, status_404_grace_checks=2
+    )
+
+
+def test_invalid_polling_overrides_are_rejected() -> None:
+    with pytest.raises(SettingsError, match="FORTYGUARD_MAX_POLLS"):
+        load_settings(environ={"FORTYGUARD_MAX_POLLS": "0"})
+    with pytest.raises(SettingsError, match="FORTYGUARD_POLL_INTERVAL_SECONDS"):
+        load_settings(environ={"FORTYGUARD_POLL_INTERVAL_SECONDS": "fast"})

@@ -52,6 +52,39 @@ def load_dotenv(path: Path) -> dict[str, str]:
     return values
 
 
+def _polling_from_env(merged: Mapping[str, str]) -> FortyGuardPollingSettings:
+    def positive_int(name: str, default: int) -> int:
+        raw = merged.get(name, "").strip()
+        if not raw:
+            return default
+        try:
+            value = int(raw)
+        except ValueError:
+            raise SettingsError(f"{name} must be an integer") from None
+        if value < 1:
+            raise SettingsError(f"{name} must be a positive integer")
+        return value
+
+    def positive_float(name: str, default: float) -> float:
+        raw = merged.get(name, "").strip()
+        if not raw:
+            return default
+        try:
+            value = float(raw)
+        except ValueError:
+            raise SettingsError(f"{name} must be a number") from None
+        if not value > 0:
+            raise SettingsError(f"{name} must be a positive number")
+        return value
+
+    return FortyGuardPollingSettings(
+        interval_seconds=positive_float("FORTYGUARD_POLL_INTERVAL_SECONDS", 5.0),
+        max_polls=positive_int("FORTYGUARD_MAX_POLLS", 24),
+        timeout_seconds=positive_float("FORTYGUARD_TIMEOUT_SECONDS", 30.0),
+        status_404_grace_checks=positive_int("FORTYGUARD_404_GRACE_CHECKS", 3),
+    )
+
+
 def load_settings(
     *,
     environ: Mapping[str, str] | None = None,
@@ -81,5 +114,5 @@ def load_settings(
         allow_live=allow_live,
         fortyguard_api_key=api_key or None,
         fortyguard_base_url=base_url,
-        polling=polling or FortyGuardPollingSettings(),
+        polling=polling or _polling_from_env(merged),
     )
