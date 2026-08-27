@@ -101,7 +101,10 @@ def load_settings(
     if env_file is None and environ is None:
         env_file = _DEFAULT_ENV_FILE
     file_values = load_dotenv(env_file) if env_file is not None else {}
-    merged = {**file_values, **{key: value for key, value in process_env.items() if value != ""}}
+    # An explicitly set process variable overrides the env file even when empty:
+    # an empty value unsets whatever the file provided.
+    overrides = {key: value for key, value in process_env.items() if key in file_values or value != ""}
+    merged = {key: value for key, value in {**file_values, **overrides}.items() if value != ""}
     allow_live_raw = merged.get("ALLOW_LIVE", "false").strip().lower()
     if allow_live_raw not in {"true", "false"}:
         raise SettingsError("ALLOW_LIVE must be true or false")

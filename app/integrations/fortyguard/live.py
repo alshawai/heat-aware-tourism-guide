@@ -20,7 +20,6 @@ from app.services.execution import LiveEnvParamsPayload, LiveHeatmapPayload
 from app.settings import FortyGuardPollingSettings
 
 HISTORICAL_EARLIEST = date(2019, 1, 1)
-DEFAULT_AREA_GRANULARITY_M = 100
 _DEGREES_PER_METER = 1.0 / 111320.0
 
 
@@ -81,7 +80,12 @@ def _validate_documented_window(request: HeatmapRequest, *, today: date) -> None
                 ProviderErrorKind.VALIDATION,
                 detail="documented forecast window ends 12 hours ahead; full-day forecast heatmaps are limited to today",
             )
-    elif not HISTORICAL_EARLIEST <= request.start_date <= today:
+    else:
+        _validate_documented_date(request.start_date, today=today)
+
+
+def _validate_documented_date(start_date: date, *, today: date) -> None:
+    if not HISTORICAL_EARLIEST <= start_date <= today:
         raise ProviderError(
             ProviderErrorKind.VALIDATION,
             detail="historical start date must be between 2019-01-01 and today",
@@ -189,6 +193,11 @@ def request_transformations(request: HeatmapRequest) -> tuple[Transformation, ..
     return tuple(stamps)
 
 
+def env_params_transformations() -> tuple[Transformation, ...]:
+    """The inference stamps every live env-params result carries (ADR 0002)."""
+    return (Transformation("live_envelope_unwrapped", 1),)
+
+
 class LiveHeatmapAdapter:
     """Owns the live heatmap path: documented payload, submission, and translation."""
 
@@ -230,7 +239,11 @@ def build_documented_env_params_payload(request: EnvParamsRequest) -> dict[str, 
     ``analysis`` explicitly lists only the two consumed parameters so the
     request stays within the three-parameter plan limit (ADR 0001). An optional
     hour selects the single-hour filter; the default is the full-day series.
+    Out-of-contract dates are rejected before any billable submission, matching
+    the heatmap path (ADR 0001 §3). Env-params dates are validated as anchored
+    observations: between 2019-01-01 and today.
     """
+    _validate_documented_date(request.start_date, today=date.today())
     date_time: dict[str, object] = {"start_date": request.start_date.isoformat(), "filter_type": 1 if request.hour is not None else 3}
     if request.hour is not None:
         date_time["start_time"] = f"{request.hour:02d}:00"
@@ -267,4 +280,4 @@ class LiveEnvParamsAdapter:
             interval_seconds=self._polling.interval_seconds,
             status_404_grace_checks=self._polling.status_404_grace_checks,
         )
-        return LiveEnvParamsPayload(result, metadata.activity_id)
+        return LiveEnvParamsPayload(result, metadata.activity_id, env_params_transformations())

@@ -113,3 +113,11 @@ def test_invalid_polling_overrides_are_rejected() -> None:
         load_settings(environ={"FORTYGUARD_MAX_POLLS": "0"})
     with pytest.raises(SettingsError, match="FORTYGUARD_POLL_INTERVAL_SECONDS"):
         load_settings(environ={"FORTYGUARD_POLL_INTERVAL_SECONDS": "fast"})
+
+
+def test_empty_process_environment_value_still_overrides_env_file(tmp_path: Path) -> None:
+    env_file = tmp_path / ".env"
+    env_file.write_text("FORTYGUARD_API_KEY=file-key\nALLOW_LIVE=true\n", encoding="utf-8")
+    settings = load_settings(environ={"FORTYGUARD_API_KEY": "", "ALLOW_LIVE": ""}, env_file=env_file)
+    assert settings.fortyguard_api_key is None
+    assert settings.allow_live is False

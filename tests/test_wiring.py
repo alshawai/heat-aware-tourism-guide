@@ -1,7 +1,8 @@
+from datetime import date
 import json
 import logging
 from pathlib import Path
-from typing import Mapping
+from typing import Any, Mapping, cast
 
 import pytest
 from fastapi.testclient import TestClient
@@ -41,7 +42,12 @@ def test_env_params_route_serves_fixture_series() -> None:
     assert "not a real 24-hour forecast" in body["warning"]
     assert body["entries"][0]["heat_index_celsius"] == 33.2
     assert body["entries"][0]["humidity_percent"] == 21.5
-    assert body["provenance"] == {"source": "fixture", "stale": False, "activity_id": None}
+    assert body["provenance"] == {
+        "source": "fixture",
+        "stale": False,
+        "activity_id": None,
+        "transformations": [],
+    }
 
 
 def test_env_params_route_rejects_missing_anchor_and_bad_hour() -> None:
@@ -86,7 +92,12 @@ def test_env_params_route_uses_injected_live_loader() -> None:
     assert response.status_code == 200
     body = response.json()
     assert body["entries"][0]["heat_index_celsius"] == 31.0
-    assert body["provenance"] == {"source": "provider", "stale": False, "activity_id": "env-activity-1"}
+    assert body["provenance"] == {
+        "source": "provider",
+        "stale": False,
+        "activity_id": "env-activity-1",
+        "transformations": [],
+    }
 
 
 def test_env_params_live_without_loader_is_explicitly_unavailable() -> None:
@@ -187,3 +198,70 @@ def test_create_production_app_enables_live_only_with_settings() -> None:
     )
     live_client = TestClient(live)
     assert live_client.get("/health").json()["mode"] == "live"
+
+
+def test_heatmap_route_accepts_granularity_from_request_body() -> None:
+    from app.integrations.fortyguard.contracts import HeatmapRequest
+    from app.services.execution import HeatmapExecution
+
+    seen: list[HeatmapRequest] = []
+
+    def live_loader(request: HeatmapRequest) -> Mapping[str, object]:
+        seen.append(request)
+        return {
+            "mode": "historical",
+            "features": [
+                {
+                    "geometry": {"type": "Point", "coordinates": [1, 1]},
+                    "properties": {"value": 35.5, "unit": "C", "valid_time": "2026-08-23T15:00:00+00:00"},
+                }
+            ],
+        }
+
+    app = create_app(
+        FIXTURES / "heatmap-historical.json",
+        allow_live=True,
+        execution=HeatmapExecution(
+            fixture_path=FIXTURES / "heatmap-historical.json", live_loader=live_loader
+        ),
+    )
+    client = TestClient(app)
+    response = client.post(
+        "/api/heatmap",
+        json={
+            "analytic_type": "tcm",
+            "latitude": 29.4241,
+            "longitude": -98.4936,
+            "start_date": "2026-08-23",
+            "forecast": False,
+            "granularity": 100,
+            "execution_mode": "live",
+        },
+    )
+    assert response.status_code == 200
+    assert seen[0].granularity == 100
+    bad = client.post(
+        "/api/heatmap",
+        json={
+            "analytic_type": "tcm",
+            "latitude": 29.4241,
+            "longitude": -98.4936,
+            "start_date": "2026-08-23",
+            "forecast": False,
+            "granularity": 70,
+        },
+    )
+    assert bad.status_code == 400
+
+
+def test_env_params_live_loader_receives_documented_date_windows() -> None:
+    from app.integrations.fortyguard.live import build_documented_env_params_payload
+
+    request = EnvParamsRequest(29.4241, -98.4936, date(2026, 8, 24), 35.0)
+    payload = build_documented_env_params_payload(request)
+    date_time = cast(dict[str, Any], payload["date_time"])
+    assert date_time["filter_type"] == 3
+    assert payload["temperature"] == 35.0
+    assert payload["analysis"] == ["heat_index_celsius", "relative_humidity_percent"]
+    hourly = build_documented_env_params_payload(EnvParamsRequest(29.4241, -98.4936, date(2026, 8, 24), 35.0, hour=13))
+    assert hourly["date_time"] == {"start_date": "2026-08-24", "filter_type": 1, "start_time": "13:00"}

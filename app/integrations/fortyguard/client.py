@@ -53,8 +53,8 @@ class FortyGuardClient:
         payload: Mapping[str, object],
         *,
         sleep: Callable[[float], None] = default_sleep,
-        max_polls: int = 12,
-        interval_seconds: float = 1.0,
+        max_polls: int = 24,
+        interval_seconds: float = 5.0,
         status_404_grace_checks: int = 3,
     ) -> tuple[Mapping[str, object], ActivityMetadata]:
         response = self._transport.post(endpoint, payload, self._api_key)
@@ -111,8 +111,8 @@ def poll_activity(
     *,
     get_status: Callable[[str], Mapping[str, object]],
     sleep: Callable[[float], None] = default_sleep,
-    max_polls: int = 12,
-    interval_seconds: float = 1.0,
+    max_polls: int = 24,
+    interval_seconds: float = 5.0,
     status_404_grace_checks: int = 3,
     on_transition: Callable[[str], None] | None = None,
     on_event: Callable[[str, Mapping[str, object]], None] | None = None,

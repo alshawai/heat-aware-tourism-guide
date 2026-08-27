@@ -7,13 +7,16 @@ import pytest
 from app.integrations.fortyguard.client import FortyGuardClient, poll_activity
 from app.integrations.fortyguard.contracts import (
     AnalyticType,
+    EnvParamsRequest,
     HeatmapRequest,
     normalize_heatmap_response,
 )
 from app.integrations.fortyguard.errors import ProviderError, ProviderErrorKind
 from app.integrations.fortyguard.live import (
+    LiveEnvParamsAdapter,
     LiveFortyGuardTransport,
     LiveHeatmapAdapter,
+    build_documented_env_params_payload,
     build_documented_heatmap_payload,
     translate_heatmap_response,
 )
@@ -464,3 +467,71 @@ def test_adapter_uses_polling_settings_bounds() -> None:
     loaded = adapter.load(_tcm_request())
     assert loaded.activity_id == "a1"
     assert sleeps == [2.0]
+
+
+# --- Live env-params adapter: payload, validation, and stamps --- #
+
+
+def _env_request(**overrides: object) -> EnvParamsRequest:
+    defaults: dict[str, object] = {
+        "latitude": 29.4241,
+        "longitude": -98.4936,
+        "start_date": date(2026, 8, 24),
+        "temperature_anchor_celsius": 35.0,
+    }
+    defaults.update(overrides)
+    return EnvParamsRequest(**defaults)  # type: ignore[arg-type]
+
+
+def test_env_params_documented_payload_full_day_and_hourly() -> None:
+    payload = build_documented_env_params_payload(_env_request())
+    assert payload["date_time"] == {"start_date": "2026-08-24", "filter_type": 3}
+    assert payload["temperature"] == 35.0
+    assert payload["analysis"] == ["heat_index_celsius", "relative_humidity_percent"]
+    hourly = build_documented_env_params_payload(_env_request(hour=13))
+    assert hourly["date_time"] == {"start_date": "2026-08-24", "filter_type": 1, "start_time": "13:00"}
+
+
+def test_env_params_payload_rejects_out_of_contract_dates() -> None:
+    with pytest.raises(ProviderError) as early:
+        build_documented_env_params_payload(_env_request(start_date=date(2018, 12, 31)))
+    assert early.value.kind is ProviderErrorKind.VALIDATION
+    with pytest.raises(ProviderError) as late:
+        build_documented_env_params_payload(_env_request(start_date=date.today() + timedelta(days=30)))
+    assert late.value.kind is ProviderErrorKind.VALIDATION
+
+
+def test_env_params_adapter_load_stamps_envelope_transformation() -> None:
+    client, submissions = _adapter_client(
+        [
+            {"data": {"activity_id": "env-1"}},
+            {
+                "data": {
+                    "activity_id": "env-1",
+                    "status": "Completed",
+                    "result": {
+                        "timestamp": "2026-08-24T13:00:00-07:00",
+                        "timezone": "GMT-7",
+                        "count": 1,
+                        "heat_index_celsius": [31.0],
+                        "relative_humidity_percent": [40.0],
+                    },
+                }
+            },
+        ]
+    )
+    adapter = LiveEnvParamsAdapter(client, sleep=lambda _: None)
+    loaded = adapter.load(_env_request())
+    assert loaded.activity_id == "env-1"
+    assert submissions[0]["temperature"] == 35.0
+    assert cast(dict[str, Any], submissions[0]["date_time"])["filter_type"] == 3
+    assert [t.name for t in loaded.transformations] == ["live_envelope_unwrapped"]
+
+
+def test_env_params_adapter_rejects_bad_date_before_submission() -> None:
+    client, submissions = _adapter_client([{"data": {"activity_id": "env-1"}}])
+    adapter = LiveEnvParamsAdapter(client, sleep=lambda _: None)
+    with pytest.raises(ProviderError) as error:
+        adapter.load(_env_request(start_date=date(2015, 1, 1)))
+    assert error.value.kind is ProviderErrorKind.VALIDATION
+    assert submissions == []

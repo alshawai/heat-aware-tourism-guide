@@ -140,6 +140,9 @@ def create_app(
                     "source": outcome.source,
                     "stale": False,
                     "activity_id": outcome.activity_id,
+                    "transformations": [
+                        {"name": t.name, "version": t.version} for t in outcome.transformations
+                    ],
                 },
             }
         except (KeyError, TypeError, ValueError, OSError, RuntimeError, ProviderError) as error:
@@ -182,6 +185,11 @@ def _heatmap_request(body: dict[str, object]) -> HeatmapRequest:
     direction = body.get("direction")
     if direction is not None and not isinstance(direction, str):
         raise ValueError("direction must be a string")
+    granularity = body.get("granularity", 60)
+    if granularity is None:
+        granularity = 60
+    if isinstance(granularity, bool) or not isinstance(granularity, int):
+        raise ValueError("granularity must be an integer")
     return HeatmapRequest(
         AnalyticType(body["analytic_type"]),
         latitude,
@@ -190,6 +198,7 @@ def _heatmap_request(body: dict[str, object]) -> HeatmapRequest:
         _required_bool(body, "forecast", default=True),
         threshold,
         direction,
+        granularity,
     )
 
 

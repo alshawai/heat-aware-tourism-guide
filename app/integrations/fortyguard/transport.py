@@ -30,7 +30,7 @@ class HttpFortyGuardTransport:
         self,
         base_url: str,
         *,
-        timeout_seconds: float = 15,
+        timeout_seconds: float = 30,
         opener: Callable[..., object] = urlopen,
     ) -> None:
         self.base_url = base_url.rstrip("/")

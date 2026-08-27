@@ -142,6 +142,7 @@ def _fixture_data_date(payload: Mapping[str, object]) -> str:
 class LiveEnvParamsPayload:
     payload: Mapping[str, object]
     activity_id: str | None = None
+    transformations: tuple[Transformation, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -149,6 +150,7 @@ class EnvParamsOutcome:
     result: EnvParamsResult
     source: str
     activity_id: str | None = None
+    transformations: tuple[Transformation, ...] = ()
 
 
 class EnvParamsExecution:
@@ -170,10 +172,12 @@ class EnvParamsExecution:
             loaded = self.live_loader(request)
             payload = loaded.payload if isinstance(loaded, LiveEnvParamsPayload) else loaded
             activity_id = loaded.activity_id if isinstance(loaded, LiveEnvParamsPayload) else None
+            transformations = loaded.transformations if isinstance(loaded, LiveEnvParamsPayload) else ()
             return EnvParamsOutcome(
                 normalize_env_params_response(payload, request=request),
                 "provider",
                 activity_id,
+                transformations,
             )
         with self.fixture_path.open(encoding="utf-8") as fixture:
             payload = json.load(fixture)
