@@ -88,6 +88,14 @@ def test_trip_analysis_endpoint_returns_ranked_hotels_and_route_decision() -> No
     try:
         body = json.dumps(
             {
+                "origin_latitude": 29.4210,
+                "origin_longitude": -98.4906,
+                "destination_latitude": 29.4255,
+                "destination_longitude": -98.4836,
+                "landmark_name": "The Alamo",
+                "district_name": "Downtown San Antonio",
+                "date": "2026-08-23",
+                "hour": 14,
                 "heat_value": 38,
                 "heat_threshold": 35,
                 "corridor_heat_values": [34, 38],
@@ -125,7 +133,27 @@ def test_trip_analysis_rejects_untrusted_metric_and_provenance_fields() -> None:
     thread = Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:
-        body = json.dumps({"heat_metric": "heat_index_celsius"}).encode()
+        body = json.dumps({
+            "origin_latitude": 29.4210,
+            "origin_longitude": -98.4906,
+            "destination_latitude": 29.4255,
+            "destination_longitude": -98.4836,
+            "landmark_name": "The Alamo",
+            "district_name": "Downtown San Antonio",
+            "date": "2026-08-23",
+            "hour": 14,
+            "heat_metric": "heat_index_celsius",
+            "heat_value": 38,
+            "heat_threshold": 35,
+            "building_coverage": 0.9,
+            "hotels": [
+                {"identity": "a", "components": {"night": 30, "hot_hours": 5, "persistence": 2, "day": 32}},
+            ],
+            "routes": [
+                {"identity": "r1", "distance_m": 1000, "duration_s": 600},
+            ],
+            "shade": {"r1": 50},
+        }).encode()
         try:
             urlopen(Request(f"http://127.0.0.1:{server.server_port}/api/trip/analyze", data=body, method="POST"))
         except HTTPError as error:

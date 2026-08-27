@@ -16,6 +16,14 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
+from app.contracts import (
+    Coordinates,
+    HotelCandidateData,
+    Provenance,
+    RouteCandidateData,
+    TripAnalysisRequest,
+    TripMode,
+)
 from app.execution import HeatmapExecution
 from app.fortyguard import AnalyticType, HeatmapRequest, ProviderError
 from app.trip import HotelCandidate, HotelRanker, RouteCandidate, RouteComparator
@@ -159,43 +167,108 @@ def _heatmap_request(body: dict[str, object]) -> HeatmapRequest:
     )
 
 
+def _parse_trip_request(body: dict[str, object]) -> TripAnalysisRequest:
+    """Validate a raw request body against the shared trip-analysis contract.
+
+    Accepts both the full contract fields and the legacy compact format
+    used by existing tests and internal callers.
+    """
+    origin_lat = _finite_number(
+        body.get("origin_latitude", body.get("latitude")), "origin_latitude"
+    )
+    origin_lon = _finite_number(
+        body.get("origin_longitude", body.get("longitude")), "origin_longitude"
+    )
+    dest_lat = _finite_number(
+        body.get("destination_latitude", body.get("latitude")), "destination_latitude"
+    )
+    dest_lon = _finite_number(
+        body.get("destination_longitude", body.get("longitude")), "destination_longitude"
+    )
+    landmark = body.get("landmark_name", "")
+    district = body.get("district_name", "")
+    trip_date = body.get("date", body.get("start_date", ""))
+    hour = body.get("hour", 12)
+
+    hotels_raw = body.get("hotels")
+    routes_raw = body.get("routes")
+    shade_raw = body.get("shade")
+    if not isinstance(hotels_raw, list) or not hotels_raw:
+        raise ValueError("hotels must be a non-empty list")
+    if not isinstance(routes_raw, list) or not routes_raw:
+        raise ValueError("routes must be a non-empty list")
+    if not isinstance(shade_raw, dict):
+        raise ValueError("shade must be a dict mapping route identity to shade value")
+
+    hotels = tuple(
+        HotelCandidateData(
+            identity=item["identity"],
+            components=dict(item["components"]),
+        )
+        for item in hotels_raw
+    )
+    routes = tuple(
+        RouteCandidateData(
+            identity=item["identity"],
+            distance_m=float(item["distance_m"]),
+            duration_s=float(item["duration_s"]),
+        )
+        for item in routes_raw
+    )
+    shade = {str(k): float(v) for k, v in shade_raw.items()}
+
+    heat_metric = body.get("heat_metric", "tcm")
+    if not isinstance(heat_metric, str) or not heat_metric:
+        raise ValueError("heat_metric must be a non-empty string")
+
+    return TripAnalysisRequest(
+        mode=TripMode.CURATED,
+        origin=Coordinates(origin_lat, origin_lon),
+        destination=Coordinates(dest_lat, dest_lon),
+        landmark_name=landmark,
+        district_name=district,
+        date=trip_date,
+        hour=hour,
+        cautious=bool(body.get("cautious", False)),
+        heat_metric=heat_metric,
+        heat_value=_finite_number(body.get("heat_value"), "heat_value"),
+        heat_threshold=_finite_number(body.get("heat_threshold"), "heat_threshold"),
+        corridor_heat_values=tuple(
+            _finite_number(v, "corridor_heat_values entry")
+            for v in (body.get("corridor_heat_values") or [])
+        ),
+        building_coverage=_finite_number(body.get("building_coverage", 0), "building_coverage"),
+        hotels=hotels,
+        routes=routes,
+        shade=shade,
+    )
+
+
 def _trip_result(body: dict[str, object]) -> dict[str, object]:
+    """Run the trip analysis and return the product-shaped response.
+
+    Validates the request against the shared contract before computation.
+    """
+    _parse_trip_request(body)
+
     hotels = body.get("hotels")
     routes = body.get("routes")
     shade = body.get("shade")
-    if not isinstance(hotels, list) or not isinstance(routes, list) or not isinstance(shade, dict):
-        raise ValueError("trip analysis requires hotels, routes, and shade data")
     candidates = tuple(HotelCandidate(item["identity"], item["components"]) for item in hotels)
     route_candidates = tuple(RouteCandidate(item["identity"], item["distance_m"], item["duration_s"]) for item in routes)
     heat_metric = body.get("heat_metric", "tcm")
-    if heat_metric != "tcm":
-        raise ValueError("trip analysis currently accepts the tcm provider metric only")
-    building_coverage_value = body.get("building_coverage", 0)
-    heat_value = body.get("heat_value")
-    heat_threshold = body.get("heat_threshold")
+    building_coverage = _finite_number(body.get("building_coverage", 0), "building_coverage")
+    heat_value = _finite_number(body.get("heat_value"), "heat_value")
+    heat_threshold = _finite_number(body.get("heat_threshold"), "heat_threshold")
     corridor_values = body.get("corridor_heat_values", [])
-    if (
-        isinstance(building_coverage_value, bool)
-        or not isinstance(building_coverage_value, (int, float))
-        or isinstance(heat_value, bool)
-        or not isinstance(heat_value, (int, float))
-        or isinstance(heat_threshold, bool)
-        or not isinstance(heat_threshold, (int, float))
-        or not isinstance(corridor_values, list)
-        or any(isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) for value in corridor_values)
-        or not math.isfinite(float(building_coverage_value))
-        or not 0 <= float(building_coverage_value) <= 1
-        or not math.isfinite(float(heat_value))
-        or not math.isfinite(float(heat_threshold))
-    ):
-        raise ValueError("trip heat and coverage values must be numeric")
-    building_coverage = float(building_coverage_value)
+    shade_map = {str(k): float(v) for k, v in shade.items()}
+
     route_result = RouteComparator().compare(
         lambda: route_candidates,
-        heat_value=float(heat_value),
+        heat_value=heat_value,
         heat_values=tuple(float(value) for value in corridor_values),
-        heat_threshold=float(heat_threshold),
-        shade=lambda route: _finite_number(shade[route.identity], "shade"),
+        heat_threshold=heat_threshold,
+        shade=lambda route: shade_map[route.identity],
         building_coverage=building_coverage,
     )
     return {
@@ -204,7 +277,7 @@ def _trip_result(body: dict[str, object]) -> dict[str, object]:
             **asdict(route_result),
             "routes": [asdict(route) for route in route_candidates],
             "heat_metric": heat_metric,
-            "heat_status": "elevated" if route_result.corridor_heat_value > float(heat_threshold) else "not_elevated",
+            "heat_status": "elevated" if route_result.corridor_heat_value > heat_threshold else "not_elevated",
             "coverage": building_coverage,
             "confidence": "sufficient" if building_coverage >= 0.7 else "insufficient",
             "comparison_scope": "returned alternatives",
