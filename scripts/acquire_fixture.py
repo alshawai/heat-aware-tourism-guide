@@ -55,6 +55,7 @@ def main(argv: list[str] | None = None) -> int:
         settings = replace(settings, ledger_path=args.ledger_path)
 
     ledger = build_ledger(settings)
+    credits_before = ledger.total_used
     client = build_live_client(settings, ledger=ledger)
     if args.scenario in HEATMAP_SCENARIOS:
         outcome = acquire_heatmap_fixture(
@@ -71,11 +72,19 @@ def main(argv: list[str] | None = None) -> int:
             polling=settings.polling,
         )
     print(f"acquired {args.scenario}: {outcome.fixture_path}")
-    print(
-        f"activity {outcome.record.activity_id}, "
-        f"data date {outcome.record.data_date}, "
-        f"credits recorded to {settings.ledger_path or 'in-memory ledger'}"
-    )
+    credits_recorded = ledger.total_used > credits_before
+    if credits_recorded:
+        print(
+            f"activity {outcome.record.activity_id}, "
+            f"data date {outcome.record.data_date}, "
+            f"credits recorded to {settings.ledger_path or 'in-memory ledger'}"
+        )
+    else:
+        print(
+            f"activity {outcome.record.activity_id}, "
+            f"data date {outcome.record.data_date}, "
+            f"no credits reported by provider (ledger not updated)"
+        )
     return 0
 
 
