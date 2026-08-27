@@ -12,10 +12,10 @@ from typing import Callable, Mapping, Sequence
 
 from app.domain.provenance import Transformation
 from app.integrations.fortyguard.client import FortyGuardClient
-from app.integrations.fortyguard.contracts import AnalyticType, HeatmapRequest
+from app.integrations.fortyguard.contracts import AnalyticType, EnvParamsRequest, HeatmapRequest
 from app.integrations.fortyguard.errors import ProviderError, ProviderErrorKind
 from app.integrations.fortyguard.transport import HttpFortyGuardTransport
-from app.services.execution import LiveHeatmapPayload
+from app.services.execution import LiveEnvParamsPayload, LiveHeatmapPayload
 
 HISTORICAL_EARLIEST = date(2019, 1, 1)
 DEFAULT_AREA_GRANULARITY_M = 100
@@ -208,3 +208,35 @@ class LiveHeatmapAdapter:
             metadata.activity_id,
             request_transformations(request),
         )
+
+
+def build_documented_env_params_payload(request: EnvParamsRequest) -> dict[str, object]:
+    """Build the documented /v1/env_params payload for a single-point series request.
+
+    The caller-supplied Celsius anchor is the documented ``temperature`` input;
+    ``analysis`` explicitly lists only the two consumed parameters so the
+    request stays within the three-parameter plan limit (ADR 0001). An optional
+    hour selects the single-hour filter; the default is the full-day series.
+    """
+    date_time: dict[str, object] = {"start_date": request.start_date.isoformat(), "filter_type": 1 if request.hour is not None else 3}
+    if request.hour is not None:
+        date_time["start_time"] = f"{request.hour:02d}:00"
+    return {
+        "latitude": request.latitude,
+        "longitude": request.longitude,
+        "temperature": request.temperature_anchor_celsius,
+        "date_time": date_time,
+        "analysis": ["heat_index_celsius", "relative_humidity_percent"],
+    }
+
+
+class LiveEnvParamsAdapter:
+    """Owns the live environmental-parameters path."""
+
+    def __init__(self, client: FortyGuardClient) -> None:
+        self._client = client
+
+    def load(self, request: EnvParamsRequest) -> LiveEnvParamsPayload:
+        payload = build_documented_env_params_payload(request)
+        result, metadata = self._client.submit_and_poll("/v1/env_params", payload)
+        return LiveEnvParamsPayload(result, metadata.activity_id)

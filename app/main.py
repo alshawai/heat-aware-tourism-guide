@@ -1,21 +1,11 @@
-"""Run the fixture-backed Heat-Aware Tourism Guide API."""
+"""Production entry point: settings load and live-stack composition at import."""
 
-import os
+from __future__ import annotations
+
 from pathlib import Path
 
-import uvicorn
+from app.wiring import create_production_app
 
-from app.api import create_app
+ROOT = Path(__file__).resolve().parents[1]
 
-
-ROOT = Path(__file__).resolve().parent.parent
-
-app = create_app(
-    ROOT / "fixtures/heatmap-historical.json",
-    allow_live=os.getenv("ALLOW_LIVE", "false").lower() == "true",
-    frontend_dist=ROOT / "frontend/dist",
-)
-
-
-if __name__ == "__main__":
-    uvicorn.run("app.main:app", host="127.0.0.1", port=8000, reload=True)
+app = create_production_app(frontend_dist=ROOT / "frontend" / "dist")

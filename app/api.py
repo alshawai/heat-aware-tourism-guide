@@ -17,9 +17,9 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.domain.trip import HotelCandidate, HotelRanker, RouteCandidate, RouteComparator
-from app.integrations.fortyguard.contracts import AnalyticType, HeatmapRequest
+from app.integrations.fortyguard.contracts import AnalyticType, EnvParamsRequest, HeatmapRequest
 from app.integrations.fortyguard.errors import ProviderError
-from app.services.execution import HeatmapExecution
+from app.services.execution import EnvParamsExecution, HeatmapExecution
 
 
 def _result_json(result: Any) -> dict[str, object]:
@@ -86,15 +86,26 @@ def create_fixture_server(
     return ThreadingHTTPServer(("127.0.0.1", 0), Handler)
 
 
+def _unavailable(error: Exception) -> HTTPException:
+    detail: dict[str, object] = {"status": "unavailable", "error": str(error)}
+    if isinstance(error, ProviderError):
+        detail["error_kind"] = error.kind.value
+    return HTTPException(status_code=400, detail=detail)
+
+
 def create_app(
     fixture_path: Path,
     *,
     execution: HeatmapExecution | None = None,
+    env_params_execution: EnvParamsExecution | None = None,
     allow_live: bool = False,
     frontend_dist: Path | None = None,
 ) -> FastAPI:
     """Create the server-owned product API used by local runs and deployment."""
     configured_execution: HeatmapExecution = execution or HeatmapExecution(fixture_path=fixture_path)
+    configured_env_params: EnvParamsExecution = env_params_execution or EnvParamsExecution(
+        fixture_path=fixture_path.parent / "env-params.json"
+    )
     app = FastAPI(title="Heat-Aware Tourism Guide")
 
     @app.get("/health")
@@ -110,14 +121,36 @@ def create_app(
                 raise ValueError("requested execution mode is unavailable")
             return _result_json(configured_execution.run(request, live=mode == "live"))
         except (KeyError, TypeError, ValueError, OSError, RuntimeError, ProviderError) as error:
-            raise HTTPException(status_code=400, detail={"status": "unavailable", "error": str(error)}) from error
+            raise _unavailable(error) from error
+
+    @app.post("/api/env-params")
+    def env_params(body: dict[str, object]) -> dict[str, object]:
+        try:
+            request = _env_params_request(body)
+            mode = body.get("execution_mode", "fixture")
+            if mode not in {"fixture", "live"} or mode == "live" and not allow_live:
+                raise ValueError("requested execution mode is unavailable")
+            outcome = configured_env_params.run(request, live=mode == "live")
+            return {
+                "entries": [asdict(entry) for entry in outcome.result.entries],
+                "timezone": outcome.result.timezone,
+                "forecast": outcome.result.forecast,
+                "warning": outcome.result.warning,
+                "provenance": {
+                    "source": outcome.source,
+                    "stale": False,
+                    "activity_id": outcome.activity_id,
+                },
+            }
+        except (KeyError, TypeError, ValueError, OSError, RuntimeError, ProviderError) as error:
+            raise _unavailable(error) from error
 
     @app.post("/api/trip/analyze")
     def trip_analyze(body: dict[str, object]) -> dict[str, object]:
         try:
             return _trip_result(body)
         except (KeyError, TypeError, ValueError) as error:
-            raise HTTPException(status_code=400, detail={"status": "unavailable", "error": str(error)}) from error
+            raise _unavailable(error) from error
 
     if frontend_dist is not None and frontend_dist.is_dir():
         app.mount("/assets", StaticFiles(directory=frontend_dist / "assets"), name="assets")
@@ -157,6 +190,28 @@ def _heatmap_request(body: dict[str, object]) -> HeatmapRequest:
         _required_bool(body, "forecast", default=True),
         threshold,
         direction,
+    )
+
+
+def _env_params_request(body: dict[str, object]) -> EnvParamsRequest:
+    latitude = _finite_number(body.get("latitude"), "latitude")
+    longitude = _finite_number(body.get("longitude"), "longitude")
+    start_date = body.get("start_date")
+    if not isinstance(start_date, str):
+        raise ValueError("start_date must be a date string")
+    anchor = body.get("temperature_anchor_celsius")
+    if anchor is not None:
+        anchor = _finite_number(anchor, "temperature_anchor_celsius")
+    hour = body.get("hour")
+    if hour is not None:
+        if isinstance(hour, bool) or not isinstance(hour, int):
+            raise ValueError("hour must be an integer")
+    return EnvParamsRequest(
+        latitude,
+        longitude,
+        date.fromisoformat(start_date),
+        anchor,
+        hour=hour,
     )
 
 

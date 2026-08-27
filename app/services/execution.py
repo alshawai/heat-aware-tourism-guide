@@ -10,8 +10,11 @@ from dataclasses import dataclass
 
 from app.domain.provenance import CacheKey, Transformation
 from app.integrations.fortyguard.contracts import (
+    EnvParamsRequest,
+    EnvParamsResult,
     HeatmapRequest,
     HeatmapResult,
+    normalize_env_params_response,
     normalize_heatmap_response,
 )
 from app.integrations.fortyguard.errors import ProviderError
@@ -133,3 +136,51 @@ def _fixture_data_date(payload: Mapping[str, object]) -> str:
             if isinstance(valid_time, str):
                 return valid_time[:10]
     raise ValueError("fixture is missing data date freshness metadata")
+
+
+@dataclass(frozen=True)
+class LiveEnvParamsPayload:
+    payload: Mapping[str, object]
+    activity_id: str | None = None
+
+
+@dataclass(frozen=True)
+class EnvParamsOutcome:
+    result: EnvParamsResult
+    source: str
+    activity_id: str | None = None
+
+
+class EnvParamsExecution:
+    """Fixture/live execution for the environmental-parameters series."""
+
+    def __init__(
+        self,
+        *,
+        fixture_path: Path,
+        live_loader: Callable[[EnvParamsRequest], Mapping[str, object] | LiveEnvParamsPayload] | None = None,
+    ) -> None:
+        self.fixture_path = fixture_path
+        self.live_loader = live_loader
+
+    def run(self, request: EnvParamsRequest, *, live: bool = False) -> EnvParamsOutcome:
+        if live:
+            if self.live_loader is None:
+                raise RuntimeError("live execution is not configured")
+            loaded = self.live_loader(request)
+            payload = loaded.payload if isinstance(loaded, LiveEnvParamsPayload) else loaded
+            activity_id = loaded.activity_id if isinstance(loaded, LiveEnvParamsPayload) else None
+            return EnvParamsOutcome(
+                normalize_env_params_response(payload, request=request),
+                "provider",
+                activity_id,
+            )
+        with self.fixture_path.open(encoding="utf-8") as fixture:
+            payload = json.load(fixture)
+        if not isinstance(payload, Mapping):
+            raise ValueError("fixture must contain a JSON object")
+        return EnvParamsOutcome(
+            normalize_env_params_response(payload, request=request),
+            "fixture",
+            None,
+        )
