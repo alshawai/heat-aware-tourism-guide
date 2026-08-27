@@ -1,7 +1,13 @@
 {
-  "temperature_anchor_celsius": 35.0,
-  "heat_index_celsius": 38.1,
-  "humidity_percent": 55,
-  "valid_time": "2026-08-23T15:00:00+00:00",
-  "forecast": false
+  "timestamp": "2026-08-24T13:00:00-07:00",
+  "timezone": "GMT-7",
+  "offset": -7,
+  "interval": "1h",
+  "count": 1,
+  "heat_index_celsius": [33.2],
+  "apparent_temperature_celsius": [40.5],
+  "relative_humidity_percent": [21.5],
+  "precipitation_mm": [0.0],
+  "cloud_cover_octas": [8.0],
+  "wet_bulb_temperature_celsius": [22.3]
 }

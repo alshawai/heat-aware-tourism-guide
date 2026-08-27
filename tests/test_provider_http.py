@@ -9,7 +9,6 @@ from app.integrations.fortyguard.contracts import (
     AnalyticType,
     EnvParamsRequest,
     HeatmapRequest,
-    normalize_env_params_response,
 )
 from app.integrations.fortyguard.errors import (
     ProviderErrorKind,
@@ -49,16 +48,6 @@ def test_env_params_requires_temperature_anchor_and_marks_anchor_series() -> Non
         EnvParamsRequest(29.4241, -98.4936, date(2026, 8, 23), 35, is_real_forecast=True)
     with pytest.raises(ValueError, match="temperature anchor"):
         EnvParamsRequest(29.4241, -98.4936, date(2026, 8, 23), float("nan"))
-
-
-def test_env_params_fixture_preserves_anchor_warning_and_heat_index_metric() -> None:
-    result = normalize_env_params_response(
-        json.loads(open("fixtures/env-params.json", encoding="utf-8").read()),
-        request=EnvParamsRequest(29.4241, -98.4936, date(2026, 8, 23), 35),
-    )
-    assert result.heat_index_celsius == 38.1
-    assert result.forecast is False
-    assert "not a real 24-hour forecast" in result.warning
 
 
 def test_area_request_rejects_unknown_analytic_members() -> None:

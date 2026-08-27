@@ -70,6 +70,7 @@ class EnvParamsRequest:
     start_date: date
     temperature_anchor_celsius: float | None
     is_real_forecast: bool = False
+    hour: int | None = None
 
     def __post_init__(self) -> None:
         _validate_us_coordinates(self.latitude, self.longitude)
@@ -77,9 +78,12 @@ class EnvParamsRequest:
             raise ValueError("caller-supplied temperature anchor is required")
         if self.is_real_forecast:
             raise ValueError("fixed-anchor env_params cannot be a real forecast")
+        if self.hour is not None:
+            if isinstance(self.hour, bool) or not isinstance(self.hour, int) or not 0 <= self.hour <= 23:
+                raise ValueError("hour must be an integer between 0 and 23")
 
     def to_payload(self) -> dict[str, object]:
-        return {
+        payload: dict[str, object] = {
             "latitude": self.latitude,
             "longitude": self.longitude,
             "start_date": self.start_date.isoformat(),
@@ -87,6 +91,9 @@ class EnvParamsRequest:
             "forecast": False,
             "warning": "fixed temperature anchor; not a real 24-hour forecast",
         }
+        if self.hour is not None:
+            payload["hour"] = self.hour
+        return payload
 
 
 @dataclass(frozen=True)
@@ -120,36 +127,127 @@ class AreaHeatmapRequest:
 
 
 @dataclass(frozen=True)
-class EnvParamsResult:
+class EnvParamsEntry:
+    """One hour of the environmental series; missing values stay None, never zero."""
+
+    valid_time: datetime
     heat_index_celsius: float | None
     humidity_percent: float | None
-    valid_time: datetime
+
+
+@dataclass(frozen=True)
+class EnvParamsResult:
+    entries: tuple[EnvParamsEntry, ...]
+    timezone: str
     forecast: bool
     warning: str
+
+
+def _series_value(value: object, field: str) -> float | None:
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+        raise ValueError(f"invalid {field} series value")
+    numeric = float(value)
+    return None if numeric == -999 else numeric
+
+
+def _series_list(series: object, field: str) -> list[object]:
+    if not isinstance(series, Sequence) or isinstance(series, (str, bytes)):
+        raise ValueError(f"missing {field} series")
+    return list(series)
 
 
 def normalize_env_params_response(
     payload: Mapping[str, object], *, request: EnvParamsRequest
 ) -> EnvParamsResult:
-    heat_index = payload.get("heat_index_celsius")
-    humidity = payload.get("humidity_percent")
-    valid_time = payload.get("valid_time")
-    if isinstance(heat_index, bool) or (heat_index is not None and (not isinstance(heat_index, (int, float)) or not math.isfinite(heat_index))):
-        raise ValueError("invalid heat index")
-    if isinstance(humidity, bool) or (humidity is not None and (not isinstance(humidity, (int, float)) or not math.isfinite(humidity))):
-        raise ValueError("invalid humidity")
-    if not isinstance(valid_time, str):
-        raise ValueError("missing freshness metadata")
-    parsed_time = _parse_datetime(valid_time)
     if payload.get("forecast") is True:
         raise ValueError("fixed-anchor env_params response cannot be a real forecast")
+    timestamps, timezone, series = _env_params_series(payload)
+    entries = tuple(
+        EnvParamsEntry(
+            _parse_datetime(timestamp),
+            _series_value(heat, "heat index"),
+            _series_value(humidity, "humidity"),
+        )
+        for timestamp, heat, humidity in zip(timestamps, series["heat"], series["humidity"], strict=True)
+    )
+    if not entries:
+        raise ValueError("env params response contains no entries")
     return EnvParamsResult(
-        float(heat_index) if heat_index is not None else None,
-        float(humidity) if humidity is not None else None,
-        parsed_time,
+        entries,
+        timezone,
         False,
         "caller-supplied temperature anchor; not a real 24-hour forecast",
     )
+
+
+def _env_params_series(payload: Mapping[str, object]) -> tuple[Sequence[object], str, dict[str, list[object]]]:
+    """Extract timestamps, timezone, and the consumed series from either provider shape.
+
+    Two provider shapes are reality: the documented ``metadata`` + ``locations``
+    envelope and the flat series observed live during issue #7 validation
+    (``timestamp``/``timezone``/``count`` with top-level arrays). Both are
+    normalized into the same internal series.
+    """
+    metadata = payload.get("metadata")
+    if isinstance(metadata, Mapping):
+        return _documented_series(payload, metadata)
+    return _flat_series(payload)
+
+
+def _documented_series(
+    payload: Mapping[str, object], metadata: Mapping[str, object]
+) -> tuple[Sequence[object], str, dict[str, list[object]]]:
+    timestamps = metadata.get("timestamps")
+    if not isinstance(timestamps, Sequence) or isinstance(timestamps, (str, bytes)):
+        raise ValueError("missing freshness metadata")
+    timezone = metadata.get("timezone")
+    if not isinstance(timezone, str) or not timezone:
+        raise ValueError("missing timezone metadata")
+    locations = payload.get("locations")
+    if not isinstance(locations, Sequence) or isinstance(locations, (str, bytes)) or len(locations) != 1:
+        raise ValueError("single-point env params requires exactly one location")
+    location = locations[0]
+    if not isinstance(location, Mapping):
+        raise ValueError("malformed env params location")
+    parameters = location.get("parameters")
+    if not isinstance(parameters, Mapping):
+        raise ValueError("malformed env params parameters")
+    series = {
+        "heat": _series_list(parameters.get("heat_index_celsius"), "heat index"),
+        "humidity": _series_list(parameters.get("relative_humidity_percent"), "humidity"),
+    }
+    _require_aligned(series, timestamps)
+    return timestamps, timezone, series
+
+
+def _flat_series(payload: Mapping[str, object]) -> tuple[Sequence[object], str, dict[str, list[object]]]:
+    timezone = payload.get("timezone")
+    if not isinstance(timezone, str) or not timezone:
+        raise ValueError("missing timezone metadata")
+    raw_timestamps = payload.get("timestamps")
+    timestamps: Sequence[object] | None = None
+    if isinstance(raw_timestamps, Sequence) and not isinstance(raw_timestamps, (str, bytes)):
+        timestamps = raw_timestamps
+    if timestamps is None:
+        single = payload.get("timestamp")
+        count = payload.get("count")
+        if isinstance(single, str) and count == 1:
+            timestamps = [single]
+        else:
+            raise ValueError("missing freshness metadata")
+    series = {
+        "heat": _series_list(payload.get("heat_index_celsius"), "heat index"),
+        "humidity": _series_list(payload.get("relative_humidity_percent"), "humidity"),
+    }
+    _require_aligned(series, timestamps)
+    return timestamps, timezone, series
+
+
+def _require_aligned(series: dict[str, list[object]], timestamps: Sequence[object]) -> None:
+    if any(len(values) != len(timestamps) for values in series.values()):
+        raise ValueError("env params series must be time-aligned with timestamps")
 
 
 @dataclass(frozen=True)
