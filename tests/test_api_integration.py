@@ -107,10 +107,10 @@ def test_trip_analysis_endpoint_returns_ranked_hotels_and_route_decision() -> No
     try:
         body = json.dumps(
             {
-                "origin_latitude": 29.4210,
-                "origin_longitude": -98.491,
-                "destination_latitude": 29.425,
-                "destination_longitude": -98.484,
+                "origin_latitude": 29.4245914,
+                "origin_longitude": -98.4864288,
+                "destination_latitude": 29.425833,
+                "destination_longitude": -98.485833,
                 "mode": "curated",
                 "landmark_name": "The Alamo",
                 "district_name": "Downtown San Antonio",
@@ -154,10 +154,10 @@ def test_trip_analysis_endpoint_returns_unavailable_for_unmatched_hour() -> None
     try:
         body = json.dumps(
             {
-                "origin_latitude": 29.421,
-                "origin_longitude": -98.491,
-                "destination_latitude": 29.425,
-                "destination_longitude": -98.484,
+                "origin_latitude": 29.4245914,
+                "origin_longitude": -98.4864288,
+                "destination_latitude": 29.425833,
+                "destination_longitude": -98.485833,
                 "mode": "curated",
                 "landmark_name": "The Alamo",
                 "district_name": "Downtown San Antonio",
@@ -195,10 +195,10 @@ def test_trip_analysis_returns_explicit_unavailable_contract() -> None:
             {
                 "mode": "exploratory",
                 "execution_mode": "fixture",
-                "origin_latitude": 29.421,
-                "origin_longitude": -98.491,
-                "destination_latitude": 29.425,
-                "destination_longitude": -98.484,
+                "origin_latitude": 29.4245914,
+                "origin_longitude": -98.4864288,
+                "destination_latitude": 29.425833,
+                "destination_longitude": -98.485833,
                 "landmark_name": "The Alamo",
                 "district_name": "Downtown San Antonio",
                 "date": "2026-08-23",
@@ -237,10 +237,10 @@ def test_trip_analysis_rejects_untrusted_metric_and_provenance_fields() -> None:
     try:
         body = json.dumps(
             {
-                "origin_latitude": 29.4210,
-                "origin_longitude": -98.4906,
-                "destination_latitude": 29.4255,
-                "destination_longitude": -98.4836,
+                "origin_latitude": 29.4245915,
+                "origin_longitude": -98.4864287,
+                "destination_latitude": 29.4258331,
+                "destination_longitude": -98.4858332,
                 "mode": "curated",
                 "landmark_name": "The Alamo",
                 "district_name": "Downtown San Antonio",
@@ -288,10 +288,10 @@ def test_trip_analysis_rejects_malformed_adapter_response() -> None:
     try:
         body = json.dumps(
             {
-                "origin_latitude": 29.421,
-                "origin_longitude": -98.491,
-                "destination_latitude": 29.425,
-                "destination_longitude": -98.484,
+                "origin_latitude": 29.4245914,
+                "origin_longitude": -98.4864288,
+                "destination_latitude": 29.425833,
+                "destination_longitude": -98.485833,
                 "mode": "curated",
                 "landmark_name": "The Alamo",
                 "district_name": "Downtown San Antonio",

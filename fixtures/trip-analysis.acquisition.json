@@ -7,12 +7,12 @@
     "date": "2026-08-23",
     "hour": 8,
     "origin": {
-      "latitude": 29.421,
-      "longitude": -98.491
+      "latitude": 29.4245914,
+      "longitude": -98.4864288
     },
     "destination": {
-      "latitude": 29.425,
-      "longitude": -98.484
+      "latitude": 29.425833,
+      "longitude": -98.485833
     }
   },
   "retrieved_at": null,

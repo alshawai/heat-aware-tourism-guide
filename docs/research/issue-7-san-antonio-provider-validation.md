@@ -52,6 +52,17 @@ origin `-98.4861,29.4259` and destination `-98.4853,29.4225`; OSRM snapped
 them to `[-98.48598,29.426406]` (57.3 m) and `[-98.48533,29.422409]` (10.5 m).
 Those are response observations, not official landmark geocodes.
 
+> **Correction, 2026-08-28 (Issue #40 research):** the request coordinates
+> above do not depict the canonical journey. The recorded "origin"
+> `-98.4861,29.4259` lies on the Alamo Church itself (about 20 m from its
+> centroid) and the "destination" is about 366 m south of the Alamo, so the
+> request walked roughly 600 m in the wrong direction; the true
+> Menger-to-Alamo journey is a roughly 130-150 m northward walk. The
+> authoritative coordinates for both landmarks are documented in
+> [issue-40 coordinate research](issue-40-menger-alamo-coordinates.md).
+> The values recorded here are preserved unmodified as historical live-call
+> evidence.
+
 ## FortyGuard Evidence
 
 ### Current documented contract and source mismatch

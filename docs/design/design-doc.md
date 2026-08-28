@@ -54,11 +54,21 @@ Antonio fails the live validation gates.
 
 The canonical scenario is:
 
-- Origin: Menger Hotel.
-- Destination: The Alamo.
+- Origin: Menger Hotel (latitude 29.4245914, longitude -98.4864288 —
+  OpenStreetMap relation 1204761 centroid, WGS84).
+- Destination: The Alamo (latitude 29.425833, longitude -98.485833 — UNESCO
+  World Heritage San Antonio Missions component 006 "Mission Valero / The
+  Alamo" central point).
 - Hotel district: Downtown San Antonio / Alamo Plaza.
 - Optional visual context: River Walk and La Villita.
 - Date and visit hour: one historical date captured in the committed fixture.
+
+The pinned coordinates are the identity used by the curated trip request and
+the committed trip fixture; fixture matching requires the request to carry
+these same values.
+Provenance and rejected alternatives are documented in
+[issue-40 coordinate research](../research/issue-40-menger-alamo-coordinates.md).
+Neither value is a routing-snap observation.
 
 The city is configurable in code, but multi-city support is out of scope for
 the product. The final city is locked only after these checks pass:
