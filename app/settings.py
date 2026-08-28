@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Mapping
 
 DEFAULT_BASE_URL = "https://api.fortyguard.com"
+DEFAULT_LEDGER_PATH = Path("data/ledger.jsonl")
 _DEFAULT_ENV_FILE = Path(".env")
 
 
@@ -42,6 +43,8 @@ class AppSettings:
     fortyguard_base_url: str
     polling: FortyGuardPollingSettings = FortyGuardPollingSettings()
     area: FortyGuardAreaSettings = FortyGuardAreaSettings()
+    call_budget: int | None = None
+    ledger_path: Path | None = DEFAULT_LEDGER_PATH
 
 
 def load_dotenv(path: Path) -> dict[str, str]:
@@ -168,4 +171,30 @@ def load_settings(
         fortyguard_base_url=base_url,
         polling=polling or _polling_from_env(merged),
         area=area or _area_from_env(merged),
+        call_budget=_call_budget_from_env(merged),
+        ledger_path=_ledger_path_from_env(process_env, file_values),
     )
+
+
+def _call_budget_from_env(merged: Mapping[str, str]) -> int | None:
+    raw = merged.get("FORTYGUARD_CALL_BUDGET", "").strip()
+    if not raw:
+        return None
+    try:
+        value = int(raw)
+    except ValueError:
+        raise SettingsError("FORTYGUARD_CALL_BUDGET must be an integer") from None
+    if value < 0:
+        raise SettingsError("FORTYGUARD_CALL_BUDGET must be non-negative")
+    return value
+
+
+def _ledger_path_from_env(
+    process_env: Mapping[str, str], file_values: Mapping[str, str]
+) -> Path | None:
+    """Resolve the ledger path; an explicit empty value selects in-memory only."""
+    key = "FORTYGUARD_LEDGER_PATH"
+    if key not in process_env and key not in file_values:
+        return DEFAULT_LEDGER_PATH
+    raw = process_env.get(key, file_values.get(key, "")).strip()
+    return Path(raw) if raw else None

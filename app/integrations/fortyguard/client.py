@@ -57,6 +57,8 @@ class FortyGuardClient:
         interval_seconds: float = 5.0,
         status_404_grace_checks: int = 3,
     ) -> tuple[Mapping[str, object], ActivityMetadata]:
+        if self._ledger is not None:
+            self._ledger.authorize_call()
         response = self._transport.post(endpoint, payload, self._api_key)
         status_code = response.get("status_code")
         if isinstance(status_code, int) and status_code >= 400:
@@ -93,11 +95,19 @@ class FortyGuardClient:
             _response_metadata(result),
         )
         credits_used = result.get("credits_used")
-        if credits_used is not None:
-            if isinstance(credits_used, bool) or not isinstance(credits_used, int) or credits_used < 0:
-                raise ProviderError(ProviderErrorKind.MALFORMED_RESPONSE, detail="invalid credit usage metadata")
-            if self._ledger is not None:
-                self._ledger.record(UsageRecord(activity_id, endpoint, credits_used, self._clock(), "completed"))
+        if credits_used is not None and (
+            isinstance(credits_used, bool) or not isinstance(credits_used, int) or credits_used < 0
+        ):
+            raise ProviderError(
+                ProviderErrorKind.MALFORMED_RESPONSE, detail="invalid credit usage metadata"
+            )
+        if self._ledger is not None:
+            # The call happened, so it is logged whether or not the provider
+            # priced it. A silent provider means unknown cost, not zero cost
+            # (ADR 0004 §5); credits are reconciled from the account endpoint.
+            self._ledger.record(
+                UsageRecord(activity_id, endpoint, credits_used, self._clock(), "completed")
+            )
         self._emit("fortyguard.completed", {"activity_id": activity_id, **_response_metadata(result)})
         return result, metadata
 

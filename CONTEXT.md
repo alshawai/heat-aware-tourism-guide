@@ -51,12 +51,38 @@ directly.
   returned tiles (polygon joins use a projected CRS and report coverage;
   point lookups distinguish containing tile / boundary / outside-AOI /
   fallback). Weak coverage is surfaced, never hidden.
-- **Credit ledger** — Budget accounting for billable provider usage;
-  `plan_optional` is separate from actual spend.
+- **Credit ledger** — Append-only log of billable provider activity;
+  `plan_optional` is separate from actual spend. Persists as JSONL
+  (`data/ledger.jsonl`), loaded at startup, holding two record kinds:
+  **call records** (one per completed provider call, keyed by activity ID,
+  `credits_used` null when the provider did not price it) and
+  **reconciliation records** (authoritative account credit totals for a date
+  window). The optional `FORTYGUARD_CALL_BUDGET` enforces an all-time **call
+  count** before each call (record-only when unset) — the enforced unit is
+  calls, because the provider prices per account window, not per call. Budget
+  windowing belongs to issue #22 (ADR 0004 §5).
+- **Reconciliation** — Appending the provider's authoritative credit total for
+  a date window to the ledger, via `scripts/reconcile_ledger.py` querying
+  `/v1/system/fetch-api-key-custom-usage`. The only trustworthy source of
+  credit cost; the breakdown is aggregated by activity name with no activity
+  IDs, so per-call credit attribution is impossible (ADR 0004 §5).
+- **Acquisition record** — The sidecar JSON (`<stem>.acquisition.json`) beside
+  every committed fixture: source (`provider` or `synthesized`), endpoint,
+  request configuration, retrieval time, data date, status, schema version,
+  provider configuration version, safe activity ID, and transformations. The
+  single authoritative fixture match identity (ADR 0004). Synthesized
+  fixtures carry `null` activity IDs and retrieval times, never fabricated
+  ones.
+- **Provider configuration version** — The explicit constant
+  (`fortyguard-config-v1`) naming the provider/request-construction semantics
+  a response was produced under. Fourth component of cache identity alongside
+  endpoint, schema version, and complete request payload (ADR 0004).
 - **Degradation rule** — On a live-path failure the execution layer replays a
-  matching cache entry when one exists, otherwise raises an explicit
-  unavailable error. Stale/cached data is never presented as a current
-  forecast.
+  matching cache entry (exact key), then a matching fixture (sidecar match;
+  date-relaxed for forecast mode only), otherwise raises an explicit
+  unavailable error. Every replay is labelled (`source="cache"/"fixture"`,
+  `stale=True`, true data date) and never presented as a current forecast
+  (ADR 0004).
 - **Source of truth for provider behavior** — The official FortyGuard docs
   (reconciled in `docs/research/issue-7-san-antonio-provider-validation.md`
   and ADR 0001), with the quickstart repo as reference only.
@@ -66,8 +92,10 @@ directly.
 - ADR 0001 — live provider adapter boundary, sync submit/poll model, wiring.
 - ADR 0002 — unit/freshness inference and transformation stamping.
 - ADR 0003 — bounded polling, 404 tolerance window, submit-once.
+- ADR 0004 — fixture acquisition sidecars, cache identity, degradation
+  chain, JSONL cost ledger.
 - `docs/design/fortyguard-extraction.md` — extraction contract from issue #6.
-- Layout: `app/domain/` (pure contracts), `app/services/` (cache, ledger,
-  execution, sanitization), `app/integrations/fortyguard/` (provider client
-  stack + live adapter), `app/api.py` + `app/main.py` + `app/settings.py`
-  (composition root).
+- Layout: `app/domain/` (pure contracts), `app/services/` (cache, execution,
+  acquisition, sidecars, ledger store), `app/integrations/fortyguard/`
+  (provider client stack + live adapter), `app/api.py` + `app/main.py` +
+  `app/settings.py` (composition root).

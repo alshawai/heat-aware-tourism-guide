@@ -12,3 +12,4 @@ coverage/
 data/lidar-prototype/
 settings.json
 opencode.json
+data/ledger.jsonl

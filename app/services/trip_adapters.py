@@ -28,6 +28,7 @@ from app.domain.contracts import (
     TripAnalysisResponse,
     UnavailableResult,
 )
+from app.services.sidecars import load_acquisition_record
 
 
 class FixtureTripAnalysisAdapter:
@@ -47,8 +48,8 @@ class FixtureTripAnalysisAdapter:
             raise ValueError("trip fixture must contain an object")
         if payload.get("unavailable") is not None:
             return normalize_trip_analysis(payload, request, ExecutionMode.FIXTURE)
-        scenario = _mapping(payload.get("scenario"), "scenario")
-        if not _fixture_matches(scenario, request):
+        scenario = _fixture_scenario(self.fixture_path, payload)
+        if scenario is None or not _fixture_matches(scenario, request):
             return TripAnalysisResponse(
                 request_identity=_request_identity(request),
                 mode=request.mode,
@@ -59,6 +60,19 @@ class FixtureTripAnalysisAdapter:
                 ),
             )
         return normalize_trip_analysis(payload, request, ExecutionMode.FIXTURE)
+
+
+def _fixture_scenario(
+    fixture_path: Path, payload: Mapping[str, object]
+) -> Mapping[str, object] | None:
+    """The authoritative match identity: acquisition sidecar, else the embedded block."""
+    record = load_acquisition_record(fixture_path)
+    if record is not None:
+        if not record.replayable:
+            return None
+        return record.request_configuration or None
+    embedded = payload.get("scenario")
+    return embedded if isinstance(embedded, Mapping) else None
 
 
 class LiveTripAnalysisAdapter:

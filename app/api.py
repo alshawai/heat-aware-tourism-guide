@@ -24,9 +24,10 @@ from app.domain.contracts import (
     TripAnalysisResponse,
     TripMode,
 )
+from app.domain.ledger import BudgetExceededError
 from app.integrations.fortyguard.contracts import AnalyticType, EnvParamsRequest, HeatmapRequest
 from app.integrations.fortyguard.errors import ProviderError
-from app.services.execution import EnvParamsExecution, HeatmapExecution
+from app.services.execution import EnvParamsExecution, HeatmapExecution, UnavailableError
 
 
 def _result_json(result: Any) -> dict[str, object]:
@@ -42,6 +43,32 @@ def _json_default(value: object) -> object:
     if isinstance(value, Enum):
         return value.value
     raise TypeError(f"cannot serialize {type(value).__name__}")
+
+
+def _error_kind(error: BaseException) -> str | None:
+    if isinstance(error, BudgetExceededError):
+        return "budget_exceeded"
+    if isinstance(error, ProviderError):
+        return error.kind.value
+    if isinstance(error, UnavailableError):
+        return error.error_kind
+    return None
+
+
+def _error_response(error: Exception) -> tuple[int, dict[str, object]]:
+    """Three-way failure split: 400 client error, 503 unavailable, 503 budget (ADR 0004)."""
+    if isinstance(error, (KeyError, TypeError, ValueError)):
+        return 400, {"status": "error", "error": str(error)}
+    detail: dict[str, object] = {"status": "unavailable", "error": str(error)}
+    kind = _error_kind(error)
+    if kind is not None:
+        detail["error_kind"] = kind
+    return 503, detail
+
+
+def _http_error(error: Exception) -> HTTPException:
+    status_code, detail = _error_response(error)
+    return HTTPException(status_code=status_code, detail=detail)
 
 
 def create_fixture_server(
@@ -87,9 +114,19 @@ def create_fixture_server(
                     raise ValueError("live execution is not enabled for this server")
                 response = json.dumps(_result_json(configured_execution.run(request, live=live)), default=_json_default).encode()
                 self.send_response(200)
-            except (KeyError, TypeError, ValueError, OSError, RuntimeError, ProviderError, json.JSONDecodeError) as error:
-                response = json.dumps({"error": str(error), "status": "unavailable"}).encode()
-                self.send_response(400)
+            except (
+                BudgetExceededError,
+                KeyError,
+                TypeError,
+                ValueError,
+                OSError,
+                RuntimeError,
+                ProviderError,
+                json.JSONDecodeError,
+            ) as error:
+                status_code, error_payload = _error_response(error)
+                response = json.dumps(error_payload).encode()
+                self.send_response(status_code)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(response)))
             self.end_headers()
@@ -99,13 +136,6 @@ def create_fixture_server(
             return
 
     return ThreadingHTTPServer(("127.0.0.1", 0), Handler)
-
-
-def _unavailable(error: Exception) -> HTTPException:
-    detail: dict[str, object] = {"status": "unavailable", "error": str(error)}
-    if isinstance(error, ProviderError):
-        detail["error_kind"] = error.kind.value
-    return HTTPException(status_code=400, detail=detail)
 
 
 def create_app(
@@ -136,8 +166,16 @@ def create_app(
             if mode not in {"fixture", "live"} or mode == "live" and not allow_live:
                 raise ValueError("requested execution mode is unavailable")
             return _result_json(configured_execution.run(request, live=mode == "live"))
-        except (KeyError, TypeError, ValueError, OSError, RuntimeError, ProviderError) as error:
-            raise _unavailable(error) from error
+        except (
+            BudgetExceededError,
+            KeyError,
+            TypeError,
+            ValueError,
+            OSError,
+            RuntimeError,
+            ProviderError,
+        ) as error:
+            raise _http_error(error) from error
 
     @app.post("/api/env-params")
     def env_params(body: dict[str, object]) -> dict[str, object]:
@@ -154,15 +192,27 @@ def create_app(
                 "warning": outcome.result.warning,
                 "provenance": {
                     "source": outcome.source,
-                    "stale": False,
+                    "stale": outcome.stale,
                     "activity_id": outcome.activity_id,
+                    "retrieved_at": (
+                        outcome.retrieved_at.isoformat() if outcome.retrieved_at is not None else None
+                    ),
+                    "data_date": outcome.data_date,
                     "transformations": [
                         {"name": t.name, "version": t.version} for t in outcome.transformations
                     ],
                 },
             }
-        except (KeyError, TypeError, ValueError, OSError, RuntimeError, ProviderError) as error:
-            raise _unavailable(error) from error
+        except (
+            BudgetExceededError,
+            KeyError,
+            TypeError,
+            ValueError,
+            OSError,
+            RuntimeError,
+            ProviderError,
+        ) as error:
+            raise _http_error(error) from error
 
     @app.post("/api/trip/analyze")
     def trip_analyze(body: dict[str, object]) -> dict[str, object]:
@@ -173,7 +223,7 @@ def create_app(
                 trip_adapter=trip_adapter,
             )
         except (KeyError, TypeError, ValueError) as error:
-            raise _unavailable(error) from error
+            raise _http_error(error) from error
 
     if frontend_dist is not None and frontend_dist.is_dir():
         app.mount("/assets", StaticFiles(directory=frontend_dist / "assets"), name="assets")

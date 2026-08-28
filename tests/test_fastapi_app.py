@@ -36,4 +36,4 @@ def test_fastapi_app_does_not_allow_public_live_mode() -> None:
         },
     )
     assert response.status_code == 400
-    assert response.json()["detail"]["status"] == "unavailable"
+    assert response.json()["detail"]["status"] == "error"

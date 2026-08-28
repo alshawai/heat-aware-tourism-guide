@@ -141,3 +141,26 @@ def test_area_settings_overrides_are_read_from_environment() -> None:
         max_vertices=150,
     )
 
+
+
+def test_call_budget_defaults_to_record_only_and_is_overridable() -> None:
+
+    assert load_settings(environ={}).call_budget is None
+    settings = load_settings(environ={"FORTYGUARD_CALL_BUDGET": "500"})
+    assert settings.call_budget == 500
+
+
+def test_invalid_call_budget_is_rejected() -> None:
+    with pytest.raises(SettingsError, match="FORTYGUARD_CALL_BUDGET"):
+        load_settings(environ={"FORTYGUARD_CALL_BUDGET": "-1"})
+    with pytest.raises(SettingsError, match="FORTYGUARD_CALL_BUDGET"):
+        load_settings(environ={"FORTYGUARD_CALL_BUDGET": "many"})
+
+
+def test_ledger_path_defaults_to_data_ledger_and_empty_selects_memory(tmp_path: Path) -> None:
+    assert load_settings(environ={}).ledger_path == Path("data/ledger.jsonl")
+    env_file = tmp_path / ".env"
+    env_file.write_text("FORTYGUARD_LEDGER_PATH=/tmp/custom.jsonl\n", encoding="utf-8")
+    assert load_settings(environ={}, env_file=env_file).ledger_path == Path("/tmp/custom.jsonl")
+    empty_process = load_settings(environ={"FORTYGUARD_LEDGER_PATH": ""}, env_file=env_file)
+    assert empty_process.ledger_path is None

@@ -23,13 +23,27 @@ from app.integrations.fortyguard.client import FortyGuardClient
 from app.integrations.fortyguard.contracts import AnalyticType, EnvParamsRequest, HeatmapRequest
 from app.integrations.fortyguard.errors import ProviderError, ProviderErrorKind
 from app.integrations.fortyguard.transport import HttpFortyGuardTransport
-from app.services.execution import LiveEnvParamsPayload, LiveHeatmapPayload
 from app.settings import FortyGuardPollingSettings
 
 logger = logging.getLogger(__name__)
 
 HISTORICAL_EARLIEST = date(2019, 1, 1)
 _DEGREES_PER_METER = 1.0 / 111320.0
+
+
+@dataclass(frozen=True)
+class LivePayload:
+    """A completed live provider result with its activity identity and inference stamps."""
+
+    payload: Mapping[str, object]
+    activity_id: str | None = None
+    transformations: tuple[Transformation, ...] = ()
+
+
+# The heatmap and env-params loaders share one payload shape; the two names
+# keep call sites and type annotations honest about which path produced them.
+LiveHeatmapPayload = LivePayload
+LiveEnvParamsPayload = LivePayload
 
 
 class LiveFortyGuardTransport(HttpFortyGuardTransport):

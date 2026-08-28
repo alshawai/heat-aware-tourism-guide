@@ -1,0 +1,21 @@
+{
+  "source": "synthesized",
+  "endpoint": "/v1/heatmap",
+  "request_configuration": {
+    "analytic_type": "tcm",
+    "latitude": 29.4241,
+    "longitude": -98.4936,
+    "start_date": "2026-08-25",
+    "forecast": true,
+    "threshold_celsius": null,
+    "direction": null,
+    "granularity": 60
+  },
+  "retrieved_at": null,
+  "data_date": "2026-08-25",
+  "status": "ok",
+  "schema_version": "v1",
+  "provider_config_version": null,
+  "activity_id": null,
+  "transformations": []
+}
