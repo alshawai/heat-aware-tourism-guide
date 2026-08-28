@@ -12,6 +12,25 @@ directly.
 
 ## Glossary
 
+- **Canonical trip** — The validated demonstration journey from Menger Hotel
+  to The Alamo, with hotel decisions scoped to Downtown San Antonio / Alamo
+  Plaza. Synonyms to avoid: "default walk", "demo location".
+- **Trip setup** — The traveler-selected inputs shared by the best-time, hotel,
+  and route decisions for one trip. It is one setup, not separate walk and
+  hotel configurations.
+- **Curated trip** — A trip whose places are fixed to the canonical trip while
+  the traveler may choose its date, hour, and guidance preference. An
+  **exploratory trip** permits place selection and is outside the curated flow.
+- **Cautious guidance** — An optional traveler preference requesting the
+  product's more conservative heat interpretation. The interpretation policy
+  belongs to the heat-classification domain; trip setup only captures the
+  preference. Synonym to avoid: "cautious mode".
+- **Trip analysis request** — One product-level request containing a complete
+  trip setup and asking for the connected best-time, hotel, and route
+  decisions. It is not a collection of traveler-visible provider requests.
+- **Supported live-data geography** — The United States, the geographic area
+  in which the product may request live provider data. This is distinct from
+  the canonical trip's San Antonio location and from fixture replay.
 - **Activity** — One asynchronous FortyGuard job. Submission returns an
   `activity_id`; the result is polled from `GET /v1/status/{activity_id}`.
   A heatmap activity is billable on completion. Synonyms to avoid: "task",

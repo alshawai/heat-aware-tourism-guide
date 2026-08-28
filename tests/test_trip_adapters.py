@@ -1,5 +1,5 @@
 from copy import deepcopy
-from dataclasses import asdict
+from dataclasses import asdict, replace
 import json
 from pathlib import Path
 
@@ -28,7 +28,7 @@ def _request() -> TripAnalysisRequest:
         landmark_name="The Alamo",
         district_name="Downtown San Antonio",
         date="2026-08-23",
-        hour=14,
+        hour=8,
         cautious=False,
     )
 
@@ -45,9 +45,7 @@ def test_fixture_and_live_adapters_return_the_same_domain_shape() -> None:
     fixture = FixtureTripAnalysisAdapter(Path("fixtures/trip-analysis.json")).analyze(
         _request(), ExecutionMode.FIXTURE
     )
-    live = LiveTripAnalysisAdapter(lambda request: payload).analyze(
-        _request(), ExecutionMode.LIVE
-    )
+    live = LiveTripAnalysisAdapter(lambda request: payload).analyze(_request(), ExecutionMode.LIVE)
 
     fixture_dict = asdict(fixture)
     live_dict = asdict(live)
@@ -64,6 +62,16 @@ def test_fixture_and_live_adapters_return_the_same_domain_shape() -> None:
     assert live.best_time.provenance.source == "live"
 
 
+def test_fixture_adapter_returns_unavailable_for_unmatched_hour() -> None:
+    response = FixtureTripAnalysisAdapter(Path("fixtures/trip-analysis.json")).analyze(
+        replace(_request(), hour=9), ExecutionMode.FIXTURE
+    )
+
+    assert response.state is ResultState.UNAVAILABLE
+    assert response.unavailable is not None
+    assert response.unavailable.reason == "no matching fixture for the requested trip"
+
+
 def test_live_adapter_rejects_non_object_payload() -> None:
     adapter = LiveTripAnalysisAdapter(lambda request: [])  # type: ignore[arg-type,return-value]
     with pytest.raises(ValueError, match="must return an object"):
@@ -78,9 +86,7 @@ def test_live_adapter_rejects_non_object_payload() -> None:
         ("routes", "recommended_id"),
     ],
 )
-def test_serialized_required_strings_are_not_coerced(
-    section: str, field: str
-) -> None:
+def test_serialized_required_strings_are_not_coerced(section: str, field: str) -> None:
     payload = _payload()
     section_payload = payload[section]
     assert isinstance(section_payload, dict)

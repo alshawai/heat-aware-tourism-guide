@@ -6,10 +6,12 @@ import {
   type ReactNode,
 } from "react";
 import type {
+  CuratedTripSetup,
   HotelResponse,
   LocationSelection,
   MockMode,
   TripResponse,
+  TripAnalysisResponse,
 } from "../types";
 
 type AppState = {
@@ -19,6 +21,8 @@ type AppState = {
   hotelLocation: LocationSelection | null;
   ranking: HotelResponse | null;
   mode: MockMode;
+  tripAnalysis: TripAnalysisResponse | null;
+  curatedTripSetup: CuratedTripSetup;
 };
 type AppContextValue = AppState & {
   setWalkLocation: (value: LocationSelection) => void;
@@ -27,6 +31,8 @@ type AppContextValue = AppState & {
   setHotelLocation: (value: LocationSelection) => void;
   setRanking: (value: HotelResponse | null) => void;
   setMode: (value: MockMode) => void;
+  setTripAnalysis: (value: TripAnalysisResponse | null) => void;
+  setCuratedTripSetup: (value: CuratedTripSetup) => void;
 };
 const AppContext = createContext<AppContextValue | null>(null);
 
@@ -41,6 +47,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     hotelLocation: null,
     ranking: null,
     mode: queryMode ?? "success",
+    tripAnalysis: null,
+    curatedTripSetup: { date: "2026-08-23", hour: 8, cautious: false },
   });
   const value = useMemo<AppContextValue>(
     () => ({
@@ -59,6 +67,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
           mode,
           trip: null,
           ranking: null,
+        })),
+      setTripAnalysis: (tripAnalysis) =>
+        setState((current) => ({ ...current, tripAnalysis })),
+      setCuratedTripSetup: (curatedTripSetup) =>
+        setState((current) => ({
+          ...current,
+          curatedTripSetup,
+          tripAnalysis: null,
         })),
     }),
     [state]

@@ -13,7 +13,7 @@ import {
   WalkDateScreen,
   WalkLocationScreen,
 } from "../features/walk/WalkScreens";
-import { WelcomeScreen } from "../screens/WelcomeScreen";
+import { TripSetupScreen } from "../screens/TripSetupScreen";
 
 export function App() {
   return (
@@ -21,7 +21,7 @@ export function App() {
       <AppProvider>
         <Routes>
           <Route element={<AppShell />}>
-            <Route index element={<WelcomeScreen />} />
+            <Route index element={<TripSetupScreen />} />
             <Route path="walk/location" element={<WalkLocationScreen />} />
             <Route path="walk/date" element={<WalkDateScreen />} />
             <Route path="walk/result" element={<BestTimeScreen />} />

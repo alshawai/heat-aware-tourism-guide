@@ -69,3 +69,37 @@ export type RequestOptions = {
   mode?: MockMode;
   signal?: AbortSignal;
 };
+
+export type ExecutionMode = "fixture" | "live";
+
+export type TripAnalysisRequest = {
+  mode: "curated";
+  origin_latitude: number;
+  origin_longitude: number;
+  destination_latitude: number;
+  destination_longitude: number;
+  landmark_name: "The Alamo";
+  district_name: "Downtown San Antonio";
+  date: string;
+  hour: number;
+  cautious: boolean;
+  execution_mode: ExecutionMode;
+};
+
+export type TripAnalysisResponse = {
+  request_identity: string;
+  mode: "curated";
+  execution_mode: ExecutionMode;
+  state: "success" | "degraded" | "unavailable" | "error";
+  best_time: Record<string, unknown> | null;
+  hotels: Record<string, unknown> | null;
+  routes: Record<string, unknown> | null;
+  unavailable: { reason: string; recoverable: boolean } | null;
+  degraded_reasons: Record<string, string> | null;
+};
+
+export type CuratedTripSetup = {
+  date: string;
+  hour: number;
+  cautious: boolean;
+};

@@ -76,9 +76,7 @@ def _fixture_scenario(
 
 
 class LiveTripAnalysisAdapter:
-    def __init__(
-        self, loader: Callable[[TripAnalysisRequest], Mapping[str, object]]
-    ) -> None:
+    def __init__(self, loader: Callable[[TripAnalysisRequest], Mapping[str, object]]) -> None:
         self.loader = loader
 
     def analyze(
@@ -146,9 +144,21 @@ def normalize_trip_analysis(
     _require_section_reason("hotels", hotel_value, degraded_reasons)
     _require_section_reason("routes", route_value, degraded_reasons)
 
-    best_time = _best_time(_mapping(best_value, "best_time"), execution_mode, request.date) if best_value is not None else None
-    hotels = _hotels(_mapping(hotel_value, "hotels"), execution_mode, request.date) if hotel_value is not None else None
-    routes = _routes(_mapping(route_value, "routes"), execution_mode, request.date) if route_value is not None else None
+    best_time = (
+        _best_time(_mapping(best_value, "best_time"), execution_mode, request.date)
+        if best_value is not None
+        else None
+    )
+    hotels = (
+        _hotels(_mapping(hotel_value, "hotels"), execution_mode, request.date)
+        if hotel_value is not None
+        else None
+    )
+    routes = (
+        _routes(_mapping(route_value, "routes"), execution_mode, request.date)
+        if route_value is not None
+        else None
+    )
     expected_reasons = {
         name
         for name, value in (
@@ -207,7 +217,9 @@ def _best_time(
     return BestTimeResult(
         hourly=hourly,
         recommendation_hour=_integer(best_payload["recommendation_hour"], "recommendation_hour"),
-        recommendation_reason=_string(best_payload["recommendation_reason"], "recommendation_reason"),
+        recommendation_reason=_string(
+            best_payload["recommendation_reason"], "recommendation_reason"
+        ),
         metric_label=metric_label,
         provenance=best_provenance,
         hourly_coverage=_number(best_payload["hourly_coverage"], "hourly_coverage"),
@@ -284,7 +296,9 @@ def _routes(
         confidence=confidence,
         comparison_scope="returned alternatives",
         provenance=route_provenance,
-        fallback_reason=_string(fallback_reason, "fallback_reason") if fallback_reason is not None else None,
+        fallback_reason=_string(fallback_reason, "fallback_reason")
+        if fallback_reason is not None
+        else None,
     )
 
 
@@ -307,18 +321,22 @@ def _route_option(
         heat_unit=unit,
         heat_metric=metric,
         heat_status=status,
-        modeled_shade_percent=_number(shade, "modeled_shade_percent") if shade is not None else None,
+        modeled_shade_percent=_number(shade, "modeled_shade_percent")
+        if shade is not None
+        else None,
         shade_confidence=confidence if shade is not None else None,
         building_coverage=_number(item["building_coverage"], "building_coverage"),
         recommended=identity == recommended_id,
-        recommendation_reason=_string(item["recommendation_reason"], "recommendation_reason") if item.get("recommendation_reason") is not None else None,
-        shade_model_label="modeled shade estimate based on OSM building data" if shade is not None else None,
+        recommendation_reason=_string(item["recommendation_reason"], "recommendation_reason")
+        if item.get("recommendation_reason") is not None
+        else None,
+        shade_model_label="modeled shade estimate based on OSM building data"
+        if shade is not None
+        else None,
     )
 
 
-def _provenance(
-    section: Mapping[str, object], execution_mode: ExecutionMode
-) -> Provenance:
+def _provenance(section: Mapping[str, object], execution_mode: ExecutionMode) -> Provenance:
     raw = _mapping(section.get("provenance"), "provenance")
     return Provenance(
         source=execution_mode.value,
@@ -328,7 +346,9 @@ def _provenance(
         retrieved_at=_string(raw["retrieved_at"], "retrieved_at"),
         transformation_version=_string(raw["transformation_version"], "transformation_version"),
         provider=_string(raw["provider"], "provider"),
-        activity_id=_string(raw["activity_id"], "activity_id") if raw.get("activity_id") is not None else None,
+        activity_id=_string(raw["activity_id"], "activity_id")
+        if raw.get("activity_id") is not None
+        else None,
         response_status=_string(raw["response_status"], "response_status"),
         request_configuration=dict(_mapping(raw["request_configuration"], "request_configuration")),
         fresh=_boolean(raw["fresh"], "fresh"),
@@ -342,9 +362,7 @@ def _mapping(value: object, field: str) -> Mapping[str, object]:
     return value
 
 
-def _require_section_reason(
-    name: str, value: object, reasons: dict[str, str]
-) -> None:
+def _require_section_reason(name: str, value: object, reasons: dict[str, str]) -> None:
     if value is None and name not in reasons:
         raise ValueError(f"missing {name} without degraded reason")
 
@@ -394,19 +412,21 @@ def _request_identity(request: TripAnalysisRequest) -> str:
     return f"{request.mode.value}:{request.date}:{request.hour}"
 
 
-def _fixture_matches(
-    scenario: Mapping[str, object], request: TripAnalysisRequest
-) -> bool:
+def _fixture_matches(scenario: Mapping[str, object], request: TripAnalysisRequest) -> bool:
     origin = _mapping(scenario.get("origin"), "scenario origin")
     destination = _mapping(scenario.get("destination"), "scenario destination")
     return (
-        _string(scenario.get("landmark_name"), "scenario landmark_name")
-        == request.landmark_name
+        _string(scenario.get("landmark_name"), "scenario landmark_name") == request.landmark_name
         and _string(scenario.get("district_name"), "scenario district_name")
         == request.district_name
         and _string(scenario.get("date"), "scenario date") == request.date
-        and math.isclose(_number(origin.get("latitude"), "origin latitude"), request.origin.latitude)
-        and math.isclose(_number(origin.get("longitude"), "origin longitude"), request.origin.longitude)
+        and _integer(scenario.get("hour"), "scenario hour") == request.hour
+        and math.isclose(
+            _number(origin.get("latitude"), "origin latitude"), request.origin.latitude
+        )
+        and math.isclose(
+            _number(origin.get("longitude"), "origin longitude"), request.origin.longitude
+        )
         and math.isclose(
             _number(destination.get("latitude"), "destination latitude"),
             request.destination.latitude,
