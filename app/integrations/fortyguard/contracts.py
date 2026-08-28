@@ -20,6 +20,7 @@ from app.domain.analysis import (
     join_point_to_tiles,
     join_polygon_to_tiles,
 )
+from app.domain.environment import TimeWindow
 from app.domain.provenance import Provenance, Transformation
 from app.domain.security import sanitize_payload
 from app.integrations.fortyguard.client import ActivityMetadata
@@ -44,6 +45,8 @@ class HeatmapRequest:
     threshold_celsius: float | None = None
     direction: str | None = None
     granularity: int = 60
+    start_hour: int | None = None
+    end_hour: int | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.analytic_type, AnalyticType):
@@ -70,6 +73,22 @@ class HeatmapRequest:
             or self.granularity not in (60, 80, 100)
         ):
             raise ValueError("granularity must be 60, 80, or 100 meters")
+        _validate_hour_window(self.start_hour, self.end_hour)
+
+    @property
+    def window(self) -> TimeWindow | None:
+        """The validated traveler window, or ``None`` for a full-day request.
+
+        Re-deriving from the validated hours hands callers the domain type (with
+        its ``start_time``/``end_time`` rendering) instead of raw integers.
+        """
+        return _validate_hour_window(self.start_hour, self.end_hour)
+
+    @property
+    def hours(self) -> range | None:
+        """The hours covered by the window, or ``None`` for a full-day request."""
+        window = self.window
+        return window.hours if window is not None else None
 
     def to_payload(self) -> dict[str, object]:
         payload: dict[str, object] = {
@@ -84,7 +103,25 @@ class HeatmapRequest:
             payload["threshold_celsius"] = self.threshold_celsius
         if self.direction is not None:
             payload["direction"] = self.direction
+        if self.start_hour is not None and self.end_hour is not None:
+            payload["start_hour"] = self.start_hour
+            payload["end_hour"] = self.end_hour
         return payload
+
+
+def _validate_hour_window(start_hour: int | None, end_hour: int | None) -> TimeWindow | None:
+    """Validate an optional whole-hour window by delegating to the domain rule.
+
+    The one-day / whole-hours / at-most-twelve-hours rule lives in
+    :class:`app.domain.environment.TimeWindow`; this helper only maps the
+    all-or-nothing field contract onto it. Both bounds must be set together or
+    neither — a single bound is a caller mistake, not a full-day request.
+    """
+    if start_hour is None and end_hour is None:
+        return None
+    if (start_hour is None) != (end_hour is None):
+        raise ValueError("start_hour and end_hour must be set together")
+    return TimeWindow(start_hour or 0, end_hour or 0)
 
 
 @dataclass(frozen=True)
@@ -95,6 +132,8 @@ class EnvParamsRequest:
     temperature_anchor_celsius: float | None
     is_real_forecast: bool = False
     hour: int | None = None
+    start_hour: int | None = None
+    end_hour: int | None = None
 
     def __post_init__(self) -> None:
         _validate_us_coordinates(self.latitude, self.longitude)
@@ -114,6 +153,14 @@ class EnvParamsRequest:
                 or not 0 <= self.hour <= 23
             ):
                 raise ValueError("hour must be an integer between 0 and 23")
+        if self.hour is not None and (self.start_hour is not None or self.end_hour is not None):
+            raise ValueError("hour and start_hour/end_hour must not be set together")
+        _validate_hour_window(self.start_hour, self.end_hour)
+
+    @property
+    def window(self) -> TimeWindow | None:
+        """The validated traveler window, or ``None`` for full-day/single-hour requests."""
+        return _validate_hour_window(self.start_hour, self.end_hour)
 
     def to_payload(self) -> dict[str, object]:
         payload: dict[str, object] = {
@@ -126,6 +173,9 @@ class EnvParamsRequest:
         }
         if self.hour is not None:
             payload["hour"] = self.hour
+        if self.start_hour is not None and self.end_hour is not None:
+            payload["start_hour"] = self.start_hour
+            payload["end_hour"] = self.end_hour
         return payload
 
 

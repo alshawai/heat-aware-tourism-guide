@@ -18,6 +18,7 @@ from shapely.geometry import LineString, Polygon, mapping as shapely_mapping
 from shapely.geometry.base import BaseGeometry
 from shapely.ops import transform as shapely_ops_transform
 
+from app.domain.environment import TimeWindow
 from app.domain.provenance import Transformation
 from app.integrations.fortyguard.client import ActivityMetadata, FortyGuardClient
 from app.integrations.fortyguard.contracts import AnalyticType, EnvParamsRequest, HeatmapRequest
@@ -85,6 +86,11 @@ def build_documented_heatmap_payload(
     semantics are expressed purely by the date window, so full-day forecast
     requests are limited to today (the documented horizon is 12 hours ahead)
     and historical requests must fall between 2019-01-01 and today.
+
+    A request carrying a validated traveler window (``start_hour``/``end_hour``)
+    is submitted as the documented range-of-hours filter (``filter_type`` 2 with
+    ``start_time``/``end_time``); without one it stays a full-day request
+    (``filter_type`` 3), preserving every existing caller.
     """
     current = date.today() if today is None else today
     _validate_documented_window(
@@ -94,7 +100,7 @@ def build_documented_heatmap_payload(
         "polygon_aoi": _point_square_feature_collection(
             request.latitude, request.longitude, side_m=request.granularity
         ),
-        "date_time": {"start_date": request.start_date.isoformat(), "filter_type": 3},
+        "date_time": _date_time_filter(start_date=request.start_date, window=request.window),
         "granularity": request.granularity,
         "analytic_type": request.analytic_type.value,
     }
@@ -103,6 +109,24 @@ def build_documented_heatmap_payload(
     if request.direction is not None:
         payload["direction"] = request.direction
     return payload
+
+
+def _date_time_filter(*, start_date: date, window: TimeWindow | None) -> dict[str, object]:
+    """Render the documented ``date_time`` filter block for a request.
+
+    A traveler window becomes the documented range filter (``filter_type`` 2
+    with ``start_time``/``end_time`` as ``"HH:00"`` strings); without one the
+    request keeps its full-day shape (``filter_type`` 3), which is how
+    full-day heatmap and env-params calls are made today (ADR 0001).
+    """
+    date_time: dict[str, object] = {
+        "start_date": start_date.isoformat(),
+        "filter_type": 2 if window is not None else 3,
+    }
+    if window is not None:
+        date_time["start_time"] = window.start_time()
+        date_time["end_time"] = window.end_time()
+    return date_time
 
 
 def _validate_documented_window(*, start_date: date, forecast: bool, today: date) -> None:
@@ -638,14 +662,23 @@ def build_documented_env_params_payload(request: EnvParamsRequest) -> dict[str, 
     Out-of-contract dates are rejected before any billable submission, matching
     the heatmap path (ADR 0001 §3). Env-params dates are validated as anchored
     observations: between 2019-01-01 and today.
+
+    The filter mirrors the request it was built from: a single ``hour`` stays
+    the single-hour filter (``filter_type`` 1), a traveler window
+    (``start_hour``/``end_hour``) becomes the range filter (``filter_type`` 2
+    with ``start_time``/``end_time``), and neither is the full-day series
+    (``filter_type`` 3). The window and the chained heatmap request therefore
+    always carry an identical ``date_time`` block (issue #44).
     """
     _validate_documented_date(request.start_date, today=date.today())
-    date_time: dict[str, object] = {
-        "start_date": request.start_date.isoformat(),
-        "filter_type": 1 if request.hour is not None else 3,
-    }
     if request.hour is not None:
-        date_time["start_time"] = f"{request.hour:02d}:00"
+        date_time: dict[str, object] = {
+            "start_date": request.start_date.isoformat(),
+            "filter_type": 1,
+            "start_time": f"{request.hour:02d}:00",
+        }
+    else:
+        date_time = _date_time_filter(start_date=request.start_date, window=request.window)
     return {
         "latitude": request.latitude,
         "longitude": request.longitude,

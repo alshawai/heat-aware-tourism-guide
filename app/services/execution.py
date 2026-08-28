@@ -288,7 +288,7 @@ def _request_identity_matches(
 
 def heatmap_request_payload(request: HeatmapRequest) -> dict[str, object]:
     """The complete request identity for heatmap cache keys and fixture matching."""
-    return {
+    payload: dict[str, object] = {
         "analytic_type": request.analytic_type.value,
         "latitude": request.latitude,
         "longitude": request.longitude,
@@ -298,6 +298,10 @@ def heatmap_request_payload(request: HeatmapRequest) -> dict[str, object]:
         "direction": request.direction,
         "granularity": request.granularity,
     }
+    if request.start_hour is not None and request.end_hour is not None:
+        payload["start_hour"] = request.start_hour
+        payload["end_hour"] = request.end_hour
+    return payload
 
 
 def _fixture_data_date(payload: Mapping[str, object]) -> str:
@@ -470,13 +474,17 @@ class EnvParamsExecution:
 
 def env_params_request_payload(request: EnvParamsRequest) -> dict[str, object]:
     """The complete request identity for env-params cache keys and fixture matching."""
-    return {
+    payload: dict[str, object] = {
         "latitude": request.latitude,
         "longitude": request.longitude,
         "start_date": request.start_date.isoformat(),
         "temperature_anchor_celsius": request.temperature_anchor_celsius,
         "hour": request.hour,
     }
+    if request.start_hour is not None and request.end_hour is not None:
+        payload["start_hour"] = request.start_hour
+        payload["end_hour"] = request.end_hour
+    return payload
 
 
 def _env_data_date(payload: Mapping[str, object]) -> str | None:
