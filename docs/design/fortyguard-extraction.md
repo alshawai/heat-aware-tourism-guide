@@ -11,9 +11,10 @@ immediately. The client never resubmits a billable activity.
 All heat values are stored in Celsius. `tcm` is a provider temperature metric and
 is not silently labeled as NOAA Heat Index. Forecast and historical results retain
 separate status in the request and normalized provenance. Normalized tiles require
-geometry, Celsius units, and a `valid_time` freshness field. The raw sanitized
-provider payload is retained on the result for fixture/debugging use and is not
-ordinary log output.
+geometry, a provider-supplied or explicitly caller-declared unit, and a timezone-aware
+`valid_time` freshness field. Converted values retain their source value and unit;
+caller-declared units are marked inferred. The raw sanitized provider payload is
+retained on the result for fixture/debugging use and is not ordinary log output.
 
 `app.cache.CacheService` hashes the complete canonical request payload together
 with endpoint and schema version. Cache hits are explicitly marked `source=cache`
@@ -21,8 +22,13 @@ and `stale=true`; a replay is never presented as a current forecast. Activity ID
 retrieval timestamps, and data dates remain available in provenance.
 
 Spatial joins are behind an adapter boundary. Polygon joins must be area-weighted
-in a projected CRS and report coverage. Point joins distinguish containing-tile,
-boundary, outside-AOI, and nearest-distance fallback results. The base product
+in a projected CRS, avoid double-counting overlapping tiles, and report coverage.
+Conflicting values in overlapping tiles produce no aggregate value and report
+`conflicting_overlap` quality with separate conflict coverage. Contributors must
+also agree on freshness, source, activity, and conversion provenance; otherwise
+the lookup produces no aggregate value and reports `mixed_provenance` quality.
+Point joins require the requested AOI so they can distinguish containing-tile,
+boundary, coverage gaps, outside-AOI, and nearest-distance fallback results. The base product
 flow does not depend on optional enrichment: `EnrichmentPlanner` bounds selection
 by top-N and available credits, and readiness reason codes are deterministic local
 logic.

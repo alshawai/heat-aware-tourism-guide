@@ -317,6 +317,66 @@ def test_trip_analysis_rejects_malformed_adapter_response() -> None:
         thread.join(timeout=2)
 
 
+def test_heatmap_response_includes_complete_activity_metadata() -> None:
+    from datetime import datetime, timezone
+    from app.integrations.fortyguard.client import ActivityMetadata
+    from app.integrations.fortyguard.live import LiveHeatmapPayload
+    from app.services.execution import HeatmapExecution
+
+    payload = json.loads(Path("fixtures/heatmap-historical.json").read_text())
+    activity = ActivityMetadata(
+        "act-42",
+        datetime(2026, 8, 23, 14, tzinfo=timezone.utc),
+        "/v1/heatmap",
+        ("analytic_type", "latitude"),
+        ("Processing", "Completed"),
+        {"request_id": "req-1"},
+    )
+    execution = HeatmapExecution(
+        fixture_path=Path("fixtures/heatmap-historical.json"),
+        live_loader=lambda _: LiveHeatmapPayload(payload, activity=activity),
+    )
+    server = create_fixture_server(
+        Path("fixtures/heatmap-historical.json"),
+        execution=execution,
+        allow_live=True,
+    )
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        body = json.dumps(
+            {
+                "analytic_type": "tcm",
+                "latitude": 29.4241,
+                "longitude": -98.4936,
+                "start_date": "2026-08-23",
+                "forecast": False,
+                "execution_mode": "live",
+            }
+        ).encode()
+        response = urlopen(
+            Request(
+                f"http://127.0.0.1:{server.server_port}/api/heatmap",
+                data=body,
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+        )
+        result = json.load(response)
+        assert "activity" in result
+        act = result["activity"]
+        assert act["activity_id"] == "act-42"
+        assert act["endpoint"] == "/v1/heatmap"
+        assert act["request_fields"] == ["analytic_type", "latitude"]
+        assert act["status_transitions"] == ["Processing", "Completed"]
+        assert act["response_metadata"] == {"request_id": "req-1"}
+        assert "submitted_at" in act
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+
 def test_missing_fixture_returns_service_unavailable_not_client_error() -> None:
     server = create_fixture_server(Path("fixtures/missing.json"))
     thread = Thread(target=server.serve_forever, daemon=True)

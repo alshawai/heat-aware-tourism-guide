@@ -31,10 +31,13 @@ from app.services.execution import EnvParamsExecution, HeatmapExecution, Unavail
 
 
 def _result_json(result: Any) -> dict[str, object]:
-    return {
+    payload: dict[str, object] = {
         "tiles": [asdict(tile) for tile in result.tiles],
         "provenance": asdict(result.provenance),
     }
+    if result.activity is not None:
+        payload["activity"] = asdict(result.activity)
+    return payload
 
 
 def _json_default(value: object) -> object:

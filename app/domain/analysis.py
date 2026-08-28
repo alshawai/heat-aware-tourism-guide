@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import math
 from typing import Mapping, Sequence
 
@@ -10,6 +10,7 @@ from pyproj import CRS, Transformer
 from shapely.ops import transform
 from shapely.geometry import LineString, Point
 from shapely.geometry.base import BaseGeometry
+from shapely.ops import polygonize, unary_union
 
 
 @dataclass(frozen=True)
@@ -52,6 +53,7 @@ def extract_exposure(
         raise ValueError("exposure response is missing freshness")
     if forecast:
         raise ValueError("historical exposure context cannot be forecast")
+
     expected_unit = "C" if metric == "tcm" else "hours"
     if payload.get("unit") != expected_unit:
         raise ValueError(f"{metric} exposure must use {expected_unit}")
@@ -70,11 +72,29 @@ def extract_exposure(
 
 
 @dataclass(frozen=True)
+class SpatialMetadata:
+    metric: str | None = None
+    unit: str | None = None
+    source: str | None = None
+    valid_time: str | None = None
+    forecast: bool | None = None
+    threshold_celsius: float | None = None
+    direction: str | None = None
+    activity_id: str | None = None
+    unit_source: str | None = None
+    source_value: float | None = None
+    source_unit: str | None = None
+    converted: bool | None = None
+
+
+@dataclass(frozen=True)
 class SpatialMatch:
     value: float | None
     coverage: float
     quality: str
     projected_crs: str
+    conflict_coverage: float = 0.0
+    metadata: SpatialMetadata | None = None
 
 
 def polygon_join_contract(
@@ -103,6 +123,7 @@ class PointMatch:
     value: float | None
     quality: str
     distance_m: float | None
+    metadata: SpatialMetadata | None = None
 
 
 @dataclass(frozen=True)
@@ -110,6 +131,7 @@ class TileGeometry:
     identity: str
     geometry: BaseGeometry
     value: float
+    metadata: SpatialMetadata = SpatialMetadata()
 
 
 def point_join_contract(
@@ -141,59 +163,186 @@ def _project(geometry: BaseGeometry, crs: CRS) -> BaseGeometry:
     return transform(transformer.transform, geometry)
 
 
+def _merged_metadata(tiles: Sequence[TileGeometry]) -> SpatialMetadata | None:
+    if not tiles:
+        return None
+    metadata = tiles[0].metadata
+    comparable = replace(metadata, source_value=None)
+    if any(replace(tile.metadata, source_value=None) != comparable for tile in tiles[1:]):
+        return None
+    source_value = metadata.source_value
+    if any(tile.metadata.source_value != source_value for tile in tiles[1:]):
+        source_value = None
+    return replace(metadata, source_value=source_value)
+
+
 def join_polygon_to_tiles(target: BaseGeometry, tiles: Sequence[TileGeometry]) -> SpatialMatch:
     if not target.is_valid or target.is_empty or target.area == 0:
         raise ValueError("target geometry is invalid")
     crs = _local_crs(target)
     projected_target = _project(target, crs)
-    weighted_value = 0.0
-    overlap_area = 0.0
-    for tile in tiles:
+    intersections: list[tuple[BaseGeometry, float, TileGeometry]] = []
+    for tile in _unique_tiles(tiles):
         if not tile.geometry.is_valid or tile.geometry.is_empty:
             raise ValueError(f"tile {tile.identity} geometry is invalid")
-        intersection_area = projected_target.intersection(_project(tile.geometry, crs)).area
-        if intersection_area > 0:
-            weighted_value += tile.value * intersection_area
-            overlap_area += intersection_area
-    if overlap_area == 0:
+        intersection = projected_target.intersection(_project(tile.geometry, crs))
+        if intersection.area > 0:
+            intersections.append((intersection, tile.value, tile))
+    if not intersections:
         return SpatialMatch(None, 0.0, "no_overlap", crs.to_string())
-    coverage = min(1.0, overlap_area / projected_target.area)
+    covered = unary_union([intersection for intersection, _, _ in intersections])
+    weighted_value = 0.0
+    weighted_source_value = 0.0
+    has_aggregate_source_value = True
+    conflict_area = 0.0
+    for region in _coverage_regions([(i, v) for i, v, _ in intersections]):
+        covering_tiles = [
+            (value, tile)
+            for intersection, value, tile in intersections
+            if intersection.covers(region.representative_point())
+        ]
+        covering_values = [value for value, _ in covering_tiles]
+        if len(set(covering_values)) > 1:
+            conflict_area += region.area
+        else:
+            weighted_value += covering_values[0] * region.area
+            source_value = covering_tiles[0][1].metadata.source_value
+            if source_value is None or any(
+                tile.metadata.source_value != source_value for _, tile in covering_tiles[1:]
+            ):
+                has_aggregate_source_value = False
+            else:
+                weighted_source_value += source_value * region.area
+    coverage = min(1.0, max(0.0, covered.area / projected_target.area))
+    conflict_coverage = min(1.0, max(0.0, conflict_area / projected_target.area))
+    if conflict_area > 0:
+        return SpatialMatch(
+            None,
+            coverage,
+            "conflicting_overlap",
+            crs.to_string(),
+            conflict_coverage,
+        )
     quality = "complete" if coverage >= 0.95 else "partial"
-    return SpatialMatch(weighted_value / overlap_area, coverage, quality, crs.to_string())
+    metadata = _merged_metadata([tile for _, _, tile in intersections])
+    if metadata is None:
+        return SpatialMatch(None, coverage, "mixed_provenance", crs.to_string())
+    if has_aggregate_source_value:
+        metadata = replace(metadata, source_value=weighted_source_value / covered.area)
+    return SpatialMatch(
+        weighted_value / covered.area,
+        coverage,
+        quality,
+        crs.to_string(),
+        metadata=metadata,
+    )
+
+
+def _coverage_regions(intersections: Sequence[tuple[BaseGeometry, float]]) -> list[BaseGeometry]:
+    covered = unary_union([intersection for intersection, _ in intersections])
+    boundaries = unary_union([intersection.boundary for intersection, _ in intersections])
+    return [
+        region for region in polygonize(boundaries) if covered.covers(region.representative_point())
+    ]
+
+
+def _unique_tiles(tiles: Sequence[TileGeometry]) -> list[TileGeometry]:
+    unique: list[TileGeometry] = []
+    identities: dict[str, TileGeometry] = {}
+    for tile in tiles:
+        existing = identities.get(tile.identity)
+        if existing is not None and (
+            not existing.geometry.equals(tile.geometry)
+            or existing.value != tile.value
+            or existing.metadata != tile.metadata
+        ):
+            raise ValueError(f"tile {tile.identity} has conflicting duplicates")
+        identities[tile.identity] = tile
+        if not any(
+            existing.geometry.equals(tile.geometry)
+            and existing.value == tile.value
+            and existing.metadata == tile.metadata
+            for existing in unique
+        ):
+            unique.append(tile)
+    return unique
 
 
 def join_point_to_tiles(
     point: Point,
     tiles: Sequence[TileGeometry],
     *,
+    aoi: BaseGeometry,
     nearest_max_distance_m: float | None = None,
 ) -> PointMatch:
-    if not point.is_valid or point.is_empty:
+    if nearest_max_distance_m is not None and (
+        not math.isfinite(nearest_max_distance_m) or nearest_max_distance_m < 0
+    ):
+        raise ValueError("nearest fallback distance must be finite and non-negative")
+    if not isinstance(point, Point) or not point.is_valid or point.is_empty:
         raise ValueError("point geometry is invalid")
-    for tile in tiles:
-        if not tile.geometry.is_valid:
+    if not aoi.is_valid or aoi.is_empty or aoi.area == 0:
+        raise ValueError("AOI geometry is invalid")
+    if not aoi.covers(point):
+        return PointMatch(None, "outside_aoi", None)
+    boundary_tiles: list[TileGeometry] = []
+    containing_tiles: list[TileGeometry] = []
+    unique_tiles = _unique_tiles(tiles)
+    for tile in unique_tiles:
+        if not tile.geometry.is_valid or tile.geometry.is_empty:
             raise ValueError(f"tile {tile.identity} geometry is invalid")
         if tile.geometry.boundary.covers(point):
-            return PointMatch(tile.value, "boundary", 0.0)
+            boundary_tiles.append(tile)
         if tile.geometry.contains(point):
-            return PointMatch(tile.value, "containing_tile", 0.0)
-    if nearest_max_distance_m is None or not tiles:
-        return PointMatch(None, "outside_aoi", None)
+            containing_tiles.append(tile)
+    matched_values = [t.value for t in containing_tiles] + [t.value for t in boundary_tiles]
+    all_matched = containing_tiles + boundary_tiles
+    if boundary_tiles:
+        value = matched_values[0] if len(set(matched_values)) == 1 else None
+        metadata = _merged_metadata(all_matched) if value is not None else None
+        quality = "mixed_provenance" if value is not None and metadata is None else "boundary"
+        return PointMatch(value if metadata is not None else None, quality, 0.0, metadata)
+    if containing_tiles:
+        value = (
+            containing_tiles[0].value if len(set(t.value for t in containing_tiles)) == 1 else None
+        )
+        quality = "containing_tile" if value is not None else "overlapping_tiles"
+        metadata = _merged_metadata(containing_tiles) if value is not None else None
+        if value is not None and metadata is None:
+            return PointMatch(None, "mixed_provenance", 0.0)
+        return PointMatch(value, quality, 0.0, metadata)
+    if nearest_max_distance_m is None or not unique_tiles:
+        return PointMatch(None, "no_match", None)
     crs = _local_crs(point)
     projected_point = _project(point, crs)
-    nearest_tile, distance = min(
-        ((tile, projected_point.distance(_project(tile.geometry, crs))) for tile in tiles),
-        key=lambda match: match[1],
-    )
+    distances = [
+        (tile, projected_point.distance(_project(tile.geometry, crs))) for tile in unique_tiles
+    ]
+    distance = min(candidate_distance for _, candidate_distance in distances)
     if distance <= nearest_max_distance_m:
-        return PointMatch(nearest_tile.value, "nearest_fallback", distance)
-    return PointMatch(None, "outside_aoi", distance)
+        nearest_tiles = [
+            tile
+            for tile, candidate_distance in distances
+            if math.isclose(candidate_distance, distance, abs_tol=1e-6)
+        ]
+        nearest_values = {tile.value for tile in nearest_tiles}
+        if len(nearest_values) > 1:
+            return PointMatch(None, "nearest_fallback_ambiguous", distance)
+        metadata = _merged_metadata(nearest_tiles)
+        if metadata is None:
+            return PointMatch(None, "mixed_provenance", distance)
+        return PointMatch(nearest_values.pop(), "nearest_fallback", distance, metadata)
+    return PointMatch(None, "no_match", distance)
 
 
 def build_aoi(points: Sequence[Point], *, buffer_m: float, corridor: bool = False) -> BaseGeometry:
     if not points or buffer_m <= 0:
         raise ValueError("AOI requires points and a positive buffer")
-    source: BaseGeometry = LineString(points) if corridor else LineString(points).convex_hull
+    if corridor and len(points) < 2:
+        raise ValueError("corridor AOI requires at least two points")
+    source: BaseGeometry = LineString(points) if len(points) > 1 else points[0]
+    if not corridor and len(points) > 1:
+        source = source.convex_hull
     crs = _local_crs(source)
     projected = _project(source, crs).buffer(buffer_m)
     inverse = Transformer.from_crs(crs, "EPSG:4326", always_xy=True)

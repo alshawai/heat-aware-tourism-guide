@@ -19,7 +19,7 @@ from shapely.geometry.base import BaseGeometry
 from shapely.ops import transform as shapely_ops_transform
 
 from app.domain.provenance import Transformation
-from app.integrations.fortyguard.client import FortyGuardClient
+from app.integrations.fortyguard.client import ActivityMetadata, FortyGuardClient
 from app.integrations.fortyguard.contracts import AnalyticType, EnvParamsRequest, HeatmapRequest
 from app.integrations.fortyguard.errors import ProviderError, ProviderErrorKind
 from app.integrations.fortyguard.transport import HttpFortyGuardTransport
@@ -38,6 +38,8 @@ class LivePayload:
     payload: Mapping[str, object]
     activity_id: str | None = None
     transformations: tuple[Transformation, ...] = ()
+    activity: ActivityMetadata | None = None
+    inferred_unit: str | None = None
 
 
 # The heatmap and env-params loaders share one payload shape; the two names
@@ -280,6 +282,7 @@ class LiveHeatmapAdapter:
             translated,
             metadata.activity_id,
             request_transformations(request),
+            metadata,
         )
 
 

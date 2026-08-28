@@ -6,7 +6,7 @@
     "format:check": "prettier --check .",
     "python:format:check": "uv run ruff format --check app tests",
     "python:lint": "uv run ruff check app tests",
-    "python:test": "uv run python -m pytest -q -m 'not integration'",
+    "python:test": "uv run python -m pytest -q -m \"not integration\"",
     "python:test:integration": "uv run python -m pytest -q -m integration",
     "python:typecheck": "uv run mypy app tests",
     "frontend:format:check": "prettier --check frontend",

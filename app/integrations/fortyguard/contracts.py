@@ -6,12 +6,23 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from enum import Enum
 import math
-from typing import Mapping, Sequence
+from typing import Literal, Mapping, Sequence
 
-from shapely.geometry import shape
+from shapely.geometry import Point, shape
+from shapely.geometry.base import BaseGeometry
 
+from app.conversion import normalize_temperature
+from app.domain.analysis import (
+    PointMatch,
+    SpatialMatch,
+    SpatialMetadata,
+    TileGeometry,
+    join_point_to_tiles,
+    join_polygon_to_tiles,
+)
 from app.domain.provenance import Provenance, Transformation
 from app.domain.security import sanitize_payload
+from app.integrations.fortyguard.client import ActivityMetadata
 
 PROVIDER_CONFIG_VERSION = "fortyguard-config-v1"
 """Provider/request-construction semantics a response was produced under (ADR 0004)."""
@@ -301,18 +312,79 @@ class Tile:
     threshold_celsius: float | None = None
     direction: str | None = None
     activity_id: str | None = None
+    unit_source: Literal["explicit", "inferred"] = "explicit"
+    source_value: float | None = None
+    source_unit: str | None = None
+    converted: bool = False
 
 
 @dataclass(frozen=True)
 class HeatmapResult:
     tiles: tuple[Tile, ...]
     provenance: Provenance
+    activity: ActivityMetadata | None = None
+
+    def _spatial_tiles(self) -> list[TileGeometry]:
+        return [
+            TileGeometry(
+                tile.identity,
+                _tile_shape(tile),
+                tile.metric_value,
+                SpatialMetadata(
+                    metric=tile.metric.value,
+                    unit=tile.unit,
+                    source=tile.source,
+                    valid_time=tile.valid_time.isoformat(),
+                    forecast=tile.forecast,
+                    threshold_celsius=tile.threshold_celsius,
+                    direction=tile.direction,
+                    activity_id=tile.activity_id,
+                    unit_source=tile.unit_source,
+                    source_value=tile.source_value,
+                    source_unit=tile.source_unit,
+                    converted=tile.converted,
+                ),
+            )
+            for tile in self.tiles
+        ]
+
+    def point_lookup(
+        self,
+        point: Point,
+        *,
+        aoi: BaseGeometry,
+        nearest_max_distance_m: float | None = None,
+    ) -> PointMatch:
+        """Look up one point without making another provider request."""
+        return join_point_to_tiles(
+            point,
+            self._spatial_tiles(),
+            aoi=aoi,
+            nearest_max_distance_m=nearest_max_distance_m,
+        )
+
+    def polygon_lookup(self, target: BaseGeometry) -> SpatialMatch:
+        """Return an area-weighted lookup for a polygon in a local projected CRS."""
+        return join_polygon_to_tiles(target, self._spatial_tiles())
+
+
+def _tile_shape(tile: Tile) -> BaseGeometry:
+    try:
+        return shape(tile.geometry)
+    except (TypeError, ValueError):
+        raise ValueError(f"tile {tile.identity} geometry is invalid") from None
 
 
 def _parse_datetime(value: object) -> datetime:
     if not isinstance(value, str):
         raise ValueError("missing freshness metadata")
-    return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        raise ValueError("malformed freshness metadata") from None
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        raise ValueError("malformed freshness metadata")
+    return parsed
 
 
 def normalize_heatmap_response(
@@ -321,6 +393,8 @@ def normalize_heatmap_response(
     request: HeatmapRequest,
     retrieved_at: datetime,
     activity_id: str | None = None,
+    activity: ActivityMetadata | None = None,
+    inferred_unit: str | None = None,
     source: str = "provider",
     data_date: str | None = None,
     transformations: tuple[Transformation, ...] = (),
@@ -332,7 +406,20 @@ def normalize_heatmap_response(
     stale-labelled fixture fallbacks and date-relaxed forecast replays
     (ADR 0004).
     """
-    features = payload.get("features")
+    if activity is not None:
+        if activity_id is not None and activity_id != activity.activity_id:
+            raise ValueError("activity metadata does not match activity id")
+        activity_id = activity.activity_id
+    map_data = payload.get("map_data")
+    if map_data is not None and not isinstance(map_data, Mapping):
+        raise ValueError("malformed heatmap map data")
+    feature_collection = map_data if isinstance(map_data, Mapping) else payload
+    if map_data is not None:
+        if feature_collection.get("type") != "FeatureCollection":
+            raise ValueError("malformed heatmap feature collection")
+    elif feature_collection.get("type") not in (None, "FeatureCollection"):
+        raise ValueError("malformed heatmap feature collection")
+    features = feature_collection.get("features")
     if not isinstance(features, Sequence) or isinstance(features, (str, bytes)) or not features:
         raise ValueError("heatmap response contains no features")
     payload_mode = payload.get("mode")
@@ -344,6 +431,15 @@ def normalize_heatmap_response(
     units: set[str] = set()
     for index, feature in enumerate(features):
         if not isinstance(feature, Mapping):
+            raise ValueError("malformed heatmap feature")
+        if map_data is not None and feature.get("type") != "Feature":
+            raise ValueError("malformed heatmap feature")
+        if map_data is None and "type" in feature and feature.get("type") != "Feature":
+            raise ValueError("malformed heatmap feature")
+        if (
+            feature_collection.get("type") == "FeatureCollection"
+            and feature.get("type") != "Feature"
+        ):
             raise ValueError("malformed heatmap feature")
         geometry = feature.get("geometry")
         properties = feature.get("properties")
@@ -359,19 +455,30 @@ def normalize_heatmap_response(
         metric = properties.get("metric", request.analytic_type.value)
         if metric != request.analytic_type.value:
             raise ValueError("unknown or mismatched metric")
-        value = properties.get("value")
-        unit = properties.get("unit")
+        valid_time = _parse_datetime(properties.get("valid_time"))
+        value, unit, unit_source = _metric_value(properties, request.analytic_type, inferred_unit)
         expected_unit = "C" if request.analytic_type is AnalyticType.TCM else "hours"
         if (
             isinstance(value, bool)
             or not isinstance(value, (int, float))
             or not math.isfinite(value)
-            or unit != expected_unit
         ):
             raise ValueError("mixed or unsupported units")
-        valid_time = _parse_datetime(properties.get("valid_time"))
-        units.add(unit)
         numeric_value = float(value)
+        source_value = numeric_value
+        source_unit = _canonical_unit(unit, request.analytic_type)
+        converted = False
+        if request.analytic_type is AnalyticType.TCM and source_unit == "F":
+            conversion = normalize_temperature(
+                numeric_value,
+                source_unit=source_unit,
+                unit_provenance=unit_source,
+            )
+            numeric_value = conversion.normalized_value
+            converted = conversion.converted
+        elif source_unit != expected_unit:
+            raise ValueError("mixed or unsupported units")
+        units.add(source_unit)
         tiles.append(
             Tile(
                 str(properties.get("id", index)),
@@ -379,13 +486,17 @@ def normalize_heatmap_response(
                 request.analytic_type,
                 numeric_value if request.analytic_type is AnalyticType.TCM else None,
                 numeric_value,
-                unit,
+                expected_unit,
                 source,
                 valid_time,
                 request.forecast,
                 request.threshold_celsius,
                 request.direction,
                 activity_id,
+                unit_source,
+                source_value,
+                source_unit,
+                converted,
             )
         )
     if len(units) != 1:
@@ -405,7 +516,65 @@ def normalize_heatmap_response(
             sanitized_payload,
             transformations,
         ),
+        activity,
     )
+
+
+def _metric_value(
+    properties: Mapping[str, object],
+    analytic_type: AnalyticType,
+    inferred_unit: str | None,
+) -> tuple[object, object, Literal["explicit", "inferred"]]:
+    value = properties.get("value")
+    temperature_present = analytic_type is AnalyticType.TCM and "temperature" in properties
+    temperature = properties.get("temperature") if temperature_present else None
+    if temperature_present and (
+        isinstance(temperature, bool)
+        or not isinstance(temperature, (int, float))
+        or not math.isfinite(temperature)
+    ):
+        raise ValueError("malformed properties.temperature")
+    if value is not None and temperature_present:
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, (int, float))
+            or not math.isfinite(value)
+        ):
+            raise ValueError("conflicting properties.value and properties.temperature")
+        if value != temperature:
+            raise ValueError("conflicting properties.value and properties.temperature")
+    if value is None and temperature_present:
+        value = temperature
+    if value is None:
+        raise ValueError("malformed heatmap metric")
+    temperature_unit = properties.get("temperature_unit")
+    ordinary_unit = properties.get("unit")
+    if temperature_unit is not None and ordinary_unit is not None:
+        if _canonical_unit(temperature_unit, analytic_type) != _canonical_unit(
+            ordinary_unit, analytic_type
+        ):
+            raise ValueError("conflicting metric units")
+    unit = temperature_unit if temperature_unit is not None else ordinary_unit
+    if unit is None:
+        if inferred_unit is None:
+            raise ValueError("missing metric unit")
+        return value, inferred_unit, "inferred"
+    if not isinstance(unit, str) or not unit.strip():
+        raise ValueError("mixed or unsupported units")
+    return value, unit, "explicit"
+
+
+def _canonical_unit(unit: object, analytic_type: AnalyticType) -> str:
+    if not isinstance(unit, str):
+        raise ValueError("mixed or unsupported units")
+    normalized = unit.strip().lower().replace("°", "")
+    if analytic_type is AnalyticType.TCM and normalized in {"c", "celsius"}:
+        return "C"
+    if analytic_type is AnalyticType.TCM and normalized in {"f", "fahrenheit"}:
+        return "F"
+    if analytic_type is not AnalyticType.TCM and normalized == "hours":
+        return "hours"
+    raise ValueError("mixed or unsupported units")
 
 
 def _valid_geometry_coordinates(geometry: Mapping[str, object]) -> bool:
