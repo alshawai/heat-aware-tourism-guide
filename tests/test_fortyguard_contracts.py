@@ -5,7 +5,7 @@ from typing import Iterator
 
 import pytest
 
-from app.integrations.fortyguard.client import FortyGuardClient, poll_activity
+from app.integrations.fortyguard.client import ActivityMetadata, FortyGuardClient, poll_activity
 from app.integrations.fortyguard.contracts import (
     AnalyticType,
     HeatmapRequest,
@@ -89,6 +89,381 @@ def test_normalizer_accepts_valid_multipolygon_geometry() -> None:
         retrieved_at=datetime.now(timezone.utc),
     )
     assert result.tiles[0].geometry["type"] == "MultiPolygon"
+
+
+def test_normalizer_accepts_flat_analytic_value_and_preserves_conversion() -> None:
+    request = HeatmapRequest(AnalyticType.TCM, 29.4241, -98.4936, date.today())
+    result = normalize_heatmap_response(
+        {
+            "features": [
+                {
+                    "geometry": {"type": "Point", "coordinates": [-98.49, 29.42]},
+                    "properties": {
+                        "metric": "tcm",
+                        "value": 95,
+                        "unit": "F",
+                        "valid_time": "2026-08-23T15:00:00+00:00",
+                    },
+                }
+            ]
+        },
+        request=request,
+        retrieved_at=datetime.now(timezone.utc),
+    )
+    assert result.tiles[0].value_celsius == pytest.approx((95 - 32) * 5 / 9)
+    assert result.tiles[0].unit == "C"
+    assert result.tiles[0].unit_source == "explicit"
+    assert result.tiles[0].source_value == 95
+    assert result.tiles[0].source_unit == "F"
+    assert result.tiles[0].converted is True
+
+
+def test_normalizer_rejects_missing_temperature_unit_instead_of_inferring() -> None:
+    request = HeatmapRequest(AnalyticType.TCM, 29.4241, -98.4936, date.today())
+    with pytest.raises(ValueError, match="unit"):
+        normalize_heatmap_response(
+            {
+                "features": [
+                    {
+                        "geometry": {"type": "Point", "coordinates": [1, 1]},
+                        "properties": {"value": 35, "valid_time": "2026-08-23T15:00:00+00:00"},
+                    }
+                ]
+            },
+            request=request,
+            retrieved_at=datetime.now(timezone.utc),
+        )
+
+
+def test_normalizer_marks_caller_declared_unit_as_inferred() -> None:
+    request = HeatmapRequest(AnalyticType.TCM, 29.4241, -98.4936, date.today())
+    result = normalize_heatmap_response(
+        {
+            "features": [
+                {
+                    "geometry": {"type": "Point", "coordinates": [1, 1]},
+                    "properties": {"value": 35, "valid_time": "2026-08-23T15:00:00Z"},
+                }
+            ]
+        },
+        request=request,
+        retrieved_at=datetime.now(timezone.utc),
+        inferred_unit="C",
+    )
+    assert result.tiles[0].unit_source == "inferred"
+    assert result.tiles[0].converted is False
+
+
+def test_normalizer_rejects_mixed_temperature_source_units() -> None:
+    request = HeatmapRequest(AnalyticType.TCM, 29.4241, -98.4936, date.today())
+    features = [
+        {
+            "geometry": {"type": "Point", "coordinates": [1, 1]},
+            "properties": {"value": 35, "unit": "C", "valid_time": "2026-08-23T15:00:00Z"},
+        },
+        {
+            "geometry": {"type": "Point", "coordinates": [2, 2]},
+            "properties": {"value": 95, "unit": "F", "valid_time": "2026-08-23T15:00:00Z"},
+        },
+    ]
+    with pytest.raises(ValueError, match="mixed"):
+        normalize_heatmap_response(
+            {"features": features},
+            request=request,
+            retrieved_at=datetime.now(timezone.utc),
+        )
+
+
+def test_normalizer_rejects_conflicting_unit_fields_on_one_feature() -> None:
+    request = HeatmapRequest(AnalyticType.TCM, 29.4241, -98.4936, date.today())
+    properties = {
+        "value": 35,
+        "unit": "F",
+        "temperature_unit": "C",
+        "valid_time": "2026-08-23T15:00:00Z",
+    }
+    with pytest.raises(ValueError, match="conflicting metric units"):
+        normalize_heatmap_response(
+            {
+                "features": [
+                    {"geometry": {"type": "Point", "coordinates": [1, 1]}, "properties": properties}
+                ]
+            },
+            request=request,
+            retrieved_at=datetime.now(timezone.utc),
+        )
+
+
+def test_normalizer_accepts_equivalent_unit_fields_on_one_feature() -> None:
+    request = HeatmapRequest(AnalyticType.TCM, 29.4241, -98.4936, date.today())
+    result = normalize_heatmap_response(
+        {
+            "features": [
+                {
+                    "geometry": {"type": "Point", "coordinates": [1, 1]},
+                    "properties": {
+                        "value": 35,
+                        "unit": "Celsius",
+                        "temperature_unit": "°C",
+                        "valid_time": "2026-08-23T15:00:00Z",
+                    },
+                }
+            ]
+        },
+        request=request,
+        retrieved_at=datetime.now(timezone.utc),
+    )
+    assert result.tiles[0].source_unit == "C"
+
+
+def test_normalizer_reads_recorded_map_data_temperature_shape() -> None:
+    request = HeatmapRequest(AnalyticType.TCM, 29.4241, -98.4936, date.today())
+    result = normalize_heatmap_response(
+        {
+            "map_data": {
+                "type": "FeatureCollection",
+                "features": [
+                    {
+                        "type": "Feature",
+                        "geometry": {
+                            "type": "Polygon",
+                            "coordinates": [[[1, 1], [2, 1], [2, 2], [1, 1]]],
+                        },
+                        "properties": {
+                            "temperature": 36.71,
+                            "unit": "C",
+                            "valid_time": "2026-08-23T15:00:00Z",
+                        },
+                    }
+                ],
+            }
+        },
+        request=request,
+        retrieved_at=datetime.now(timezone.utc),
+    )
+    assert result.tiles[0].metric_value == 36.71
+
+
+def test_recorded_map_data_without_provider_unit_or_freshness_is_rejected() -> None:
+    request = HeatmapRequest(AnalyticType.TCM, 29.4241, -98.4936, date.today())
+    payload = {
+        "map_data": {
+            "type": "FeatureCollection",
+            "features": [
+                {
+                    "type": "Feature",
+                    "geometry": {
+                        "type": "Polygon",
+                        "coordinates": [[[1, 1], [2, 1], [2, 2], [1, 1]]],
+                    },
+                    "properties": {"temperature": 36.71},
+                }
+            ],
+        }
+    }
+    with pytest.raises(ValueError, match="freshness"):
+        normalize_heatmap_response(
+            payload, request=request, retrieved_at=datetime.now(timezone.utc)
+        )
+
+
+def test_map_data_rejects_non_feature_members() -> None:
+    request = HeatmapRequest(AnalyticType.TCM, 29.4241, -98.4936, date.today())
+    payload = {
+        "map_data": {
+            "type": "FeatureCollection",
+            "features": [
+                {
+                    "type": "Garbage",
+                    "geometry": {"type": "Point", "coordinates": [1, 1]},
+                    "properties": {
+                        "temperature": 35,
+                        "unit": "C",
+                        "valid_time": "2026-08-23T15:00:00Z",
+                    },
+                }
+            ],
+        }
+    }
+    with pytest.raises(ValueError, match="feature"):
+        normalize_heatmap_response(
+            payload, request=request, retrieved_at=datetime.now(timezone.utc)
+        )
+
+
+def test_map_data_requires_feature_collection_type() -> None:
+    request = HeatmapRequest(AnalyticType.TCM, 29.4241, -98.4936, date.today())
+    map_data: dict[str, object] = {
+        "features": [
+            {
+                "type": "Feature",
+                "geometry": {"type": "Point", "coordinates": [1, 1]},
+                "properties": {"value": 35, "unit": "C", "valid_time": "2026-08-23T15:00:00Z"},
+            }
+        ],
+    }
+    payload: dict[str, object] = {"map_data": map_data}
+    with pytest.raises(ValueError, match="feature collection"):
+        normalize_heatmap_response(
+            payload, request=request, retrieved_at=datetime.now(timezone.utc)
+        )
+    map_data["type"] = "NotAFeatureCollection"
+    with pytest.raises(ValueError, match="feature collection"):
+        normalize_heatmap_response(
+            payload, request=request, retrieved_at=datetime.now(timezone.utc)
+        )
+
+
+def test_normalizer_rejects_conflicting_value_and_temperature() -> None:
+    request = HeatmapRequest(AnalyticType.TCM, 29.4241, -98.4936, date.today())
+    payload = {
+        "features": [
+            {
+                "geometry": {"type": "Point", "coordinates": [1, 1]},
+                "properties": {
+                    "value": 35,
+                    "temperature": 37,
+                    "unit": "C",
+                    "valid_time": "2026-08-23T15:00:00Z",
+                },
+            }
+        ]
+    }
+    with pytest.raises(ValueError, match="conflicting properties.value and properties.temperature"):
+        normalize_heatmap_response(
+            payload, request=request, retrieved_at=datetime.now(timezone.utc)
+        )
+
+
+def test_normalizer_accepts_matching_value_and_temperature() -> None:
+    request = HeatmapRequest(AnalyticType.TCM, 29.4241, -98.4936, date.today())
+    result = normalize_heatmap_response(
+        {
+            "features": [
+                {
+                    "geometry": {"type": "Point", "coordinates": [1, 1]},
+                    "properties": {
+                        "value": 35,
+                        "temperature": 35,
+                        "unit": "C",
+                        "valid_time": "2026-08-23T15:00:00Z",
+                    },
+                }
+            ]
+        },
+        request=request,
+        retrieved_at=datetime.now(timezone.utc),
+    )
+    assert result.tiles[0].metric_value == 35
+
+
+@pytest.mark.parametrize("temperature", [None, "35", {"value": 35}, [35]])  # type: ignore[misc]
+def test_normalizer_rejects_malformed_temperature_when_value_is_present(
+    temperature: object,
+) -> None:
+    request = HeatmapRequest(AnalyticType.TCM, 29.4241, -98.4936, date.today())
+    payload = {
+        "features": [
+            {
+                "geometry": {"type": "Point", "coordinates": [1, 1]},
+                "properties": {
+                    "value": 35,
+                    "temperature": temperature,
+                    "unit": "C",
+                    "valid_time": "2026-08-23T15:00:00Z",
+                },
+            }
+        ]
+    }
+    with pytest.raises(ValueError, match="properties.temperature"):
+        normalize_heatmap_response(
+            payload,
+            request=request,
+            retrieved_at=datetime.now(timezone.utc),
+        )
+
+
+@pytest.mark.parametrize("feature_type", ["Garbage", None])  # type: ignore[misc]
+def test_root_features_reject_present_non_feature_type(feature_type: object) -> None:
+    request = HeatmapRequest(AnalyticType.TCM, 29.4241, -98.4936, date.today())
+    payload = {
+        "features": [
+            {
+                "type": feature_type,
+                "geometry": {"type": "Point", "coordinates": [1, 1]},
+                "properties": {"value": 35, "unit": "C", "valid_time": "2026-08-23T15:00:00Z"},
+            }
+        ]
+    }
+    with pytest.raises(ValueError, match="feature"):
+        normalize_heatmap_response(
+            payload, request=request, retrieved_at=datetime.now(timezone.utc)
+        )
+
+
+def test_normalizer_rejects_missing_freshness_and_unknown_temperature_unit() -> None:
+    request = HeatmapRequest(AnalyticType.TCM, 29.4241, -98.4936, date.today())
+    base = {
+        "geometry": {"type": "Point", "coordinates": [1, 1]},
+        "properties": {"value": 35, "unit": "K"},
+    }
+    with pytest.raises(ValueError, match="freshness"):
+        normalize_heatmap_response(
+            {"features": [base]}, request=request, retrieved_at=datetime.now(timezone.utc)
+        )
+    base = {
+        "geometry": {"type": "Point", "coordinates": [1, 1]},
+        "properties": {"value": 35, "unit": "K", "valid_time": "2026-08-23T15:00:00+00:00"},
+    }
+    with pytest.raises(ValueError, match="units"):
+        normalize_heatmap_response(
+            {"features": [base]}, request=request, retrieved_at=datetime.now(timezone.utc)
+        )
+
+
+@pytest.mark.parametrize("valid_time", ["2026-08-23T15:00:00", "not-a-date"])  # type: ignore[misc]
+def test_normalizer_rejects_ambiguous_or_malformed_freshness(valid_time: str) -> None:
+    request = HeatmapRequest(AnalyticType.TCM, 29.4241, -98.4936, date.today())
+    with pytest.raises(ValueError, match="freshness"):
+        normalize_heatmap_response(
+            {
+                "features": [
+                    {
+                        "geometry": {"type": "Point", "coordinates": [1, 1]},
+                        "properties": {"value": 35, "unit": "C", "valid_time": valid_time},
+                    }
+                ]
+            },
+            request=request,
+            retrieved_at=datetime.now(timezone.utc),
+        )
+
+
+def test_normalizer_preserves_complete_activity_metadata() -> None:
+    request = HeatmapRequest(AnalyticType.TCM, 29.4241, -98.4936, date.today())
+    activity = ActivityMetadata(
+        "activity-1",
+        datetime(2026, 8, 23, 14, tzinfo=timezone.utc),
+        "/v1/heatmap",
+        ("analytic_type",),
+        ("Processing", "Completed"),
+        {"request_id": "request-1"},
+    )
+    result = normalize_heatmap_response(
+        {
+            "features": [
+                {
+                    "geometry": {"type": "Point", "coordinates": [1, 1]},
+                    "properties": {"value": 35, "unit": "C", "valid_time": "2026-08-23T15:00:00Z"},
+                }
+            ]
+        },
+        request=request,
+        retrieved_at=datetime.now(timezone.utc),
+        activity=activity,
+    )
+    assert result.activity == activity
+    assert result.tiles[0].activity_id == "activity-1"
 
 
 def test_heatmap_request_rejects_unknown_analytic_type() -> None:
@@ -345,6 +720,91 @@ def test_live_result_preserves_activity_id_and_malformed_payload_uses_cache() ->
         cache=cache,
     ).run(request, live=True)
     assert replayed.provenance.source == "cache"
+
+
+def test_cache_replay_preserves_complete_activity_metadata() -> None:
+    from app.integrations.fortyguard.live import LiveHeatmapPayload
+    from app.services.cache import CacheService
+    from app.services.execution import HeatmapExecution
+
+    payload = json.loads((Path("fixtures") / "heatmap-historical.json").read_text())
+    activity = ActivityMetadata(
+        "live-1",
+        datetime(2026, 8, 23, tzinfo=timezone.utc),
+        "/v1/heatmap",
+        ("analytic_type",),
+        ("Completed",),
+    )
+    request = HeatmapRequest(AnalyticType.TCM, 29.4241, -98.4936, date(2026, 8, 23), forecast=False)
+    cache = CacheService()
+    execution = HeatmapExecution(
+        fixture_path=Path("fixtures") / "heatmap-historical.json",
+        live_loader=lambda _: LiveHeatmapPayload(payload, activity=activity),
+        cache=cache,
+    )
+    assert execution.run(request, live=True).activity == activity
+    execution.live_loader = lambda _: (_ for _ in ()).throw(ConnectionError("offline"))
+    assert execution.run(request, live=True).activity == activity
+
+
+def test_live_map_data_inferred_unit_survives_cache_replay() -> None:
+    from app.integrations.fortyguard.live import LiveHeatmapPayload
+    from app.services.cache import CacheService
+    from app.services.execution import HeatmapExecution
+
+    payload = {
+        "map_data": {
+            "type": "FeatureCollection",
+            "features": [
+                {
+                    "type": "Feature",
+                    "geometry": {
+                        "type": "Polygon",
+                        "coordinates": [[[1, 1], [2, 1], [2, 2], [1, 1]]],
+                    },
+                    "properties": {"temperature": 36.71, "valid_time": "2026-08-23T15:00:00Z"},
+                }
+            ],
+        }
+    }
+    request = HeatmapRequest(AnalyticType.TCM, 29.4241, -98.4936, date(2026, 8, 23), forecast=False)
+    execution = HeatmapExecution(
+        fixture_path=Path("fixtures") / "heatmap-historical.json",
+        live_loader=lambda _: LiveHeatmapPayload(payload, inferred_unit="C"),
+        cache=CacheService(),
+    )
+    assert execution.run(request, live=True).tiles[0].unit_source == "inferred"
+    execution.live_loader = lambda _: (_ for _ in ()).throw(ConnectionError("offline"))
+    assert execution.run(request, live=True).tiles[0].unit_source == "inferred"
+
+
+def test_live_execution_rejects_conflicting_provider_unit_fields() -> None:
+    from app.services.execution import HeatmapExecution, UnavailableError
+
+    payload = {
+        "map_data": {
+            "type": "FeatureCollection",
+            "features": [
+                {
+                    "type": "Feature",
+                    "geometry": {"type": "Point", "coordinates": [-98.4936, 29.4241]},
+                    "properties": {
+                        "temperature": 35,
+                        "temperature_unit": "C",
+                        "unit": "F",
+                        "valid_time": "2026-08-23T15:00:00Z",
+                    },
+                }
+            ],
+        }
+    }
+    execution = HeatmapExecution(
+        fixture_path=Path("fixtures") / "missing.json",
+        live_loader=lambda _: payload,
+    )
+    request = HeatmapRequest(AnalyticType.TCM, 29.4241, -98.4936, date(2026, 8, 23), forecast=False)
+    with pytest.raises(UnavailableError, match="live heatmap request failed"):
+        execution.run(request, live=True)
 
 
 def test_live_provenance_uses_provider_freshness_date() -> None:

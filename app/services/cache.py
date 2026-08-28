@@ -8,12 +8,15 @@ from typing import Any, Mapping
 
 from app.domain.provenance import CacheKey, Provenance
 from app.domain.security import sanitize_payload
+from app.integrations.fortyguard.client import ActivityMetadata
 
 
 @dataclass(frozen=True)
 class CacheEntry:
     payload: Mapping[str, Any]
     provenance: Provenance
+    activity: ActivityMetadata | None = None
+    inferred_unit: str | None = None
 
 
 class CacheService:
@@ -30,16 +33,24 @@ class CacheService:
         retrieved_at: datetime,
         data_date: str,
         activity_id: str | None = None,
+        activity: ActivityMetadata | None = None,
+        inferred_unit: str | None = None,
         forecast: bool = False,
         provider_config_version: str,
     ) -> CacheKey:
         key = CacheKey.create(endpoint, schema_version, request_payload, provider_config_version)
         sanitized = sanitize_payload(response_payload)
+        if activity is not None:
+            if activity_id is not None and activity_id != activity.activity_id:
+                raise ValueError("activity metadata does not match activity id")
+            activity_id = activity.activity_id
         self._entries[key.value] = CacheEntry(
             sanitized,
             Provenance(
                 "provider", retrieved_at, data_date, False, forecast, activity_id, sanitized
             ),
+            activity,
+            inferred_unit,
         )
         return key
 
@@ -56,4 +67,6 @@ class CacheService:
                 raw_payload=entry.provenance.raw_payload,
                 forecast=entry.provenance.forecast,
             ),
+            entry.activity,
+            entry.inferred_unit,
         )

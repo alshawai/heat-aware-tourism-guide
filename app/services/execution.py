@@ -106,11 +106,15 @@ class HeatmapExecution:
             transformations = (
                 loaded.transformations if isinstance(loaded, LiveHeatmapPayload) else ()
             )
+            activity = loaded.activity if isinstance(loaded, LiveHeatmapPayload) else None
+            inferred_unit = loaded.inferred_unit if isinstance(loaded, LiveHeatmapPayload) else None
             result = normalize_heatmap_response(
                 payload,
                 request=request,
                 retrieved_at=datetime.now().astimezone(),
                 activity_id=activity_id,
+                activity=activity,
+                inferred_unit=inferred_unit,
                 source="provider",
                 data_date=_fixture_data_date(payload),
                 transformations=transformations,
@@ -132,6 +136,8 @@ class HeatmapExecution:
                 retrieved_at=result.provenance.retrieved_at,
                 data_date=result.provenance.data_date,
                 activity_id=result.provenance.activity_id,
+                activity=result.activity,
+                inferred_unit=inferred_unit,
                 forecast=request.forecast,
                 provider_config_version=self.provider_config_version,
             )
@@ -155,6 +161,8 @@ class HeatmapExecution:
                     request=request,
                     retrieved_at=cached.provenance.retrieved_at,
                     activity_id=cached.provenance.activity_id,
+                    activity=cached.activity,
+                    inferred_unit=cached.inferred_unit,
                     source="cache",
                     data_date=cached.provenance.data_date,
                 )
@@ -296,7 +304,9 @@ def _fixture_data_date(payload: Mapping[str, object]) -> str:
     data_date = payload.get("data_date")
     if isinstance(data_date, str):
         return data_date
-    features = payload.get("features")
+    map_data = payload.get("map_data")
+    feature_collection = map_data if isinstance(map_data, Mapping) else payload
+    features = feature_collection.get("features")
     if isinstance(features, list) and features and isinstance(features[0], Mapping):
         properties = features[0].get("properties")
         if isinstance(properties, Mapping) and isinstance(properties.get("valid_time"), str):
