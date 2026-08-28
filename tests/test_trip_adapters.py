@@ -23,8 +23,8 @@ from app.services.trip_adapters import (
 def _request() -> TripAnalysisRequest:
     return TripAnalysisRequest(
         mode=TripMode.CURATED,
-        origin=Coordinates(29.421, -98.491),
-        destination=Coordinates(29.425, -98.484),
+        origin=Coordinates(29.4245914, -98.4864288),
+        destination=Coordinates(29.425833, -98.485833),
         landmark_name="The Alamo",
         district_name="Downtown San Antonio",
         date="2026-08-23",
@@ -60,6 +60,33 @@ def test_fixture_and_live_adapters_return_the_same_domain_shape() -> None:
     assert live.execution_mode is ExecutionMode.LIVE
     assert fixture.best_time.provenance.source == "fixture"
     assert live.best_time.provenance.source == "live"
+
+
+def test_canonical_menger_to_alamo_identity_matches_committed_fixture() -> None:
+    request = _request()
+    assert request.origin == Coordinates(29.4245914, -98.4864288)
+    assert request.destination == Coordinates(29.425833, -98.485833)
+    response = FixtureTripAnalysisAdapter(Path("fixtures/trip-analysis.json")).analyze(
+        request, ExecutionMode.FIXTURE
+    )
+
+    assert response.state is ResultState.SUCCESS
+    assert response.best_time is not None
+    assert response.hotels is not None
+    assert response.routes is not None
+
+
+def test_route_distances_reflect_observed_canonical_osrm_response() -> None:
+    response = FixtureTripAnalysisAdapter(Path("fixtures/trip-analysis.json")).analyze(
+        _request(), ExecutionMode.FIXTURE
+    )
+
+    assert response.routes is not None
+    by_identity = {route.identity: route for route in response.routes.alternatives}
+    assert by_identity["short"].distance_m == 193.1
+    assert by_identity["short"].duration_s == 154.7
+    assert by_identity["shady"].distance_m == 245.0
+    assert by_identity["shady"].duration_s == 196.0
 
 
 def test_fixture_adapter_returns_unavailable_for_unmatched_hour() -> None:

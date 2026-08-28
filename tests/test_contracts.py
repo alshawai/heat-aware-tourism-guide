@@ -608,10 +608,10 @@ class TestApiContractValidation:
     def test_full_contract_body_accepted(self) -> None:
         from app.api import _parse_trip_request
         request = _parse_trip_request({
-            "origin_latitude": 29.421,
-            "origin_longitude": -98.491,
-            "destination_latitude": 29.425,
-            "destination_longitude": -98.484,
+            "origin_latitude": 29.4245914,
+            "origin_longitude": -98.4864288,
+            "destination_latitude": 29.425833,
+            "destination_longitude": -98.485833,
             "mode": "exploratory",
             "landmark_name": "The Alamo",
             "district_name": "Downtown San Antonio",

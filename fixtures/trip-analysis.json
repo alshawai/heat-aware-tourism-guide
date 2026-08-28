@@ -4,8 +4,8 @@
     "district_name": "Downtown San Antonio",
     "date": "2026-08-23",
     "hour": 8,
-    "origin": { "latitude": 29.421, "longitude": -98.491 },
-    "destination": { "latitude": 29.425, "longitude": -98.484 }
+    "origin": { "latitude": 29.4245914, "longitude": -98.4864288 },
+    "destination": { "latitude": 29.425833, "longitude": -98.485833 }
   },
   "best_time": {
     "metric_name": "tcm",
@@ -88,16 +88,16 @@
     "alternatives": [
       {
         "identity": "short",
-        "distance_m": 1000,
-        "duration_s": 600,
+        "distance_m": 193.1,
+        "duration_s": 154.7,
         "heat_value": 38,
         "modeled_shade_percent": 20,
         "building_coverage": 0.9
       },
       {
         "identity": "shady",
-        "distance_m": 1200,
-        "duration_s": 700,
+        "distance_m": 245.0,
+        "duration_s": 196.0,
         "heat_value": 38,
         "modeled_shade_percent": 80,
         "building_coverage": 0.9,

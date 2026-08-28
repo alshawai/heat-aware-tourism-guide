@@ -73,9 +73,18 @@ width.
 
 Live verification was performed against the production FortyGuard API (`https://api.fortyguard.com`) using live maintainer credentials from `.env`.
 
+> **Coordinate provenance note (2026-08-28):** these 2026-08-27 validations used
+> the Issue-#7-era observation point `(29.4259, -98.4861)` — adjacent to the
+> Alamo Church — and a southward five-point polyline from it. That point is a
+> provider-observation anchor, not an official landmark geocode, and the
+> polyline does not depict the canonical Menger Hotel → The Alamo journey. The
+> corrected canonical identity is documented in
+> [issue-40 coordinate research](../research/issue-40-menger-alamo-coordinates.md)
+> and pinned in [the design doc](design-doc.md).
+
 ### 1. Point Heatmap Validation (`LiveHeatmapAdapter`)
 
-- **Request**: Landmark `(29.4259, -98.4861)` (The Alamo, San Antonio), `TCM` analytic type, `granularity=100`.
+- **Request**: Landmark `(29.4259, -98.4861)` (observation point adjacent to the Alamo Church), `TCM` analytic type, `granularity=100`.
 - **Activity ID**: `07736420-f70c-4247-8bea-7c91aebff538`
 - **Response**: Completed HTTP 200 after polling.
 - **Returned Tiles**: 1 tile (`31.6053 °C`, `valid_time: 2024-07-15T00:00:00+00:00`).
@@ -83,7 +92,7 @@ Live verification was performed against the production FortyGuard API (`https://
 
 ### 2. Area Heatmap Validation (`LiveAreaHeatmapAdapter`)
 
-- **Request**: 5-point San Antonio route polyline (`Menger Hotel` to `Alamo Plaza`), `buffer_m=25`, `granularity=100`.
+- **Request**: 5-point southward San Antonio polyline anchored at the observation point adjacent to the Alamo Church (recorded as "Menger Hotel to Alamo Plaza" at call time; that label was wrong — see the provenance note above), `buffer_m=25`, `granularity=100`.
 - **Activity ID**: `88f8b050-d342-4f7c-90cf-ea4b351736c5`
 - **Response**: Completed HTTP 200 after polling.
 - **Returned Tiles**: 2 tiles (`31.6996 °C`, `valid_time: 2024-07-15T00:00:00+00:00`).
@@ -135,8 +144,8 @@ client = FortyGuardClient(transport, api_key="YOUR_API_KEY")
 # Build point request (e.g., The Alamo in San Antonio)
 request = HeatmapRequest(
     analytic_type=AnalyticType.TCM,
-    latitude=29.4259,
-    longitude=-98.4861,
+    latitude=29.425833,
+    longitude=-98.485833,
     start_date=date(2026, 8, 27),
     forecast=True,
     granularity=60,  # 60m expansion square
@@ -163,13 +172,15 @@ from app.integrations.fortyguard.live import LiveFortyGuardTransport, LiveAreaHe
 transport = LiveFortyGuardTransport("https://api.fortyguard.com")
 client = FortyGuardClient(transport, api_key="YOUR_API_KEY")
 
-# Sequence of (lat, lng) coordinates along the route
+# Sequence of (lat, lng) coordinates along the canonical route:
+# Menger Hotel (29.4245914, -98.4864288) to The Alamo (29.425833, -98.485833),
+# sampled from the observed FOSSGIS foot route (193.1 m)
 route_coords = [
-    (29.4259, -98.4861),
-    (29.4250, -98.4858),
-    (29.4241, -98.4853),
-    (29.4232, -98.4850),
-    (29.4225, -98.4847),
+    (29.4246420, -98.4866120),
+    (29.4256120, -98.4862580),
+    (29.4257390, -98.4858120),
+    (29.4257670, -98.4858080),
+    (29.4258310, -98.4858240),
 ]
 
 # Set use_bounding_box=True to submit a full rectangular route envelope
