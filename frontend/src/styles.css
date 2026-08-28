@@ -627,6 +627,198 @@ dd {
 .validation-message {
   color: var(--accent);
 }
+.trip-setup {
+  max-width: 1120px;
+  margin: 0 auto;
+}
+.trip-setup-heading {
+  max-width: 720px;
+  margin-bottom: 34px;
+}
+.trip-setup-heading h1 {
+  font-size: clamp(42px, 6vw, 68px);
+}
+.trip-setup-heading p {
+  max-width: 620px;
+  font-size: 17px;
+}
+.setup-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.55fr) minmax(270px, 0.85fr);
+  gap: 22px;
+  align-items: start;
+}
+.setup-card,
+.mode-card,
+.setup-outcome {
+  min-width: 0;
+  padding: clamp(22px, 4vw, 34px);
+  border: 1px solid var(--line);
+  background: var(--panel);
+}
+.setup-card {
+  display: grid;
+  gap: 26px;
+}
+.curated-trip {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  border-top: 1px solid var(--line);
+  border-left: 1px solid var(--line);
+}
+.curated-trip > div {
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+  padding: 17px;
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+.curated-trip > div:last-child {
+  grid-column: 1 / -1;
+}
+.curated-trip span,
+.mode-label {
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.curated-trip strong,
+.setup-outcome p,
+.setup-outcome li,
+.mode-card p {
+  overflow-wrap: anywhere;
+}
+.setup-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+.field {
+  min-width: 0;
+  display: grid;
+  gap: 8px;
+}
+.field input,
+.field select {
+  min-height: 46px;
+}
+.field-error {
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 700;
+}
+.cautious-option {
+  align-items: flex-start;
+  padding: 18px;
+  border: 1px solid var(--line);
+  background: #f7f8f2;
+  cursor: pointer;
+}
+.cautious-option input {
+  width: 20px;
+  height: 20px;
+  margin: 2px 4px 0 0;
+  flex: none;
+  accent-color: var(--accent);
+}
+.cautious-option span {
+  display: grid;
+  gap: 5px;
+}
+.setup-card > button,
+.busy-status {
+  min-height: 48px;
+  display: grid;
+  place-items: center;
+}
+.busy-status {
+  background: var(--ink);
+  color: #fff;
+  font-weight: 750;
+}
+.mode-card {
+  display: grid;
+  gap: 15px;
+  border-top: 4px solid var(--ink);
+}
+.mode-card p {
+  margin: 0;
+  font-size: 14px;
+}
+.mode-value {
+  display: flex;
+  gap: 9px;
+  align-items: center;
+  padding: 14px;
+  background: #edf2eb;
+  color: var(--ink);
+}
+.mode-value.live {
+  background: #e5f1f0;
+  color: #1f655b;
+}
+.mode-unavailable {
+  display: grid;
+  gap: 10px;
+  color: var(--accent);
+}
+.mode-unavailable button {
+  margin-top: 3px;
+}
+.geography-note {
+  display: grid;
+  gap: 8px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+.setup-outcome {
+  display: flex;
+  gap: 16px;
+  margin-top: 22px;
+  border-left: 4px solid #287158;
+}
+.setup-outcome > svg {
+  flex: none;
+  color: #287158;
+}
+.setup-outcome > div {
+  min-width: 0;
+}
+.setup-outcome h2 {
+  margin: 0 0 8px;
+}
+.setup-outcome p {
+  margin: 0 0 14px;
+}
+.setup-outcome ul {
+  margin: 10px 0 18px;
+  padding-left: 20px;
+  color: var(--muted);
+}
+.setup-outcome.degraded {
+  border-left-color: #c18320;
+  background: #fffaf0;
+}
+.setup-outcome.degraded > svg {
+  color: #c18320;
+}
+.setup-outcome.unavailable,
+.setup-outcome.error,
+.setup-outcome.failed {
+  border-left-color: var(--accent);
+  background: var(--accent-soft);
+}
+.setup-outcome.unavailable > svg,
+.setup-outcome.error > svg,
+.setup-outcome.failed > svg {
+  color: var(--accent);
+}
+.setup-outcome button {
+  min-height: 44px;
+}
 .dev-panel {
   position: fixed;
   right: 14px;
@@ -696,5 +888,30 @@ dd {
   .provenance dl {
     display: grid;
     grid-template-columns: 1fr 1fr;
+  }
+  .trip-setup {
+    padding-top: 42px;
+    padding-bottom: 54px;
+  }
+  .setup-layout,
+  .setup-fields,
+  .curated-trip {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .curated-trip > div:last-child {
+    grid-column: auto;
+  }
+  .setup-card,
+  .mode-card,
+  .setup-outcome {
+    padding: 20px;
+  }
+  .setup-outcome {
+    align-items: flex-start;
+  }
+  .setup-card > button,
+  .setup-outcome button,
+  .mode-unavailable button {
+    width: 100%;
   }
 }

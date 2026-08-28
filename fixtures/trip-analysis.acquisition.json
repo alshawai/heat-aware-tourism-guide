@@ -5,6 +5,7 @@
     "landmark_name": "The Alamo",
     "district_name": "Downtown San Antonio",
     "date": "2026-08-23",
+    "hour": 8,
     "origin": {
       "latitude": 29.421,
       "longitude": -98.491

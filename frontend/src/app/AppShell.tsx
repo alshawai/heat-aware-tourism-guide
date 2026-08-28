@@ -1,4 +1,4 @@
-import { ArrowLeft, Footprints, Hotel, MapPin, SunMedium } from "lucide-react";
+import { ArrowLeft, MapPin, SunMedium } from "lucide-react";
 import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useAppState } from "./AppState";
 import type { MockMode } from "../types";
@@ -21,14 +21,6 @@ export function AppShell() {
           </span>
           <span>Heat-Aware Tourism Guide</span>
         </Link>
-        <nav aria-label="Primary navigation">
-          <Link to="/walk/location">
-            <Footprints size={16} /> Plan a walk
-          </Link>
-          <Link to="/hotels/location">
-            <Hotel size={16} /> Rank hotels
-          </Link>
-        </nav>
       </header>
       {!isHome && (
         <div className="context-bar">
@@ -49,7 +41,7 @@ export function AppShell() {
       <main>
         <Outlet />
       </main>
-      {import.meta.env.DEV && (
+      {import.meta.env.DEV && !isHome && (
         <aside className="dev-panel" aria-label="Development data state">
           <label htmlFor="mock-state">Preview state</label>
           <select
