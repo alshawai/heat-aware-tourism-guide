@@ -134,7 +134,9 @@ def test_http_transport_sends_auth_json_and_classifies_http_errors() -> None:
         return Response()
 
     transport = HttpFortyGuardTransport("https://api.example.test", opener=opener)
-    assert transport.post("/v1/heatmap", {"analytic_type": "tcm"}, "secret") == {"activity_id": "a1"}
+    assert transport.post("/v1/heatmap", {"analytic_type": "tcm"}, "secret") == {
+        "activity_id": "a1"
+    }
     assert calls[0][0] == "https://api.example.test/v1/heatmap"
     assert calls[0][1] == {"analytic_type": "tcm"}
     assert calls[0][2]["Api-key"] == "secret"
@@ -173,5 +175,7 @@ def test_wrapped_socket_timeout_is_classified_as_timeout() -> None:
         raise URLError(socket.timeout("timed out"))
 
     with pytest.raises(Exception) as error:
-        HttpFortyGuardTransport("https://api.example.test", opener=opener).get("/v1/status/a1", "secret")
+        HttpFortyGuardTransport("https://api.example.test", opener=opener).get(
+            "/v1/status/a1", "secret"
+        )
     assert error.value.kind is ProviderErrorKind.TIMEOUT

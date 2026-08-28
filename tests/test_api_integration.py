@@ -10,6 +10,8 @@ import pytest
 from app.api import create_fixture_server
 from app.services.trip_adapters import FixtureTripAnalysisAdapter
 
+pytestmark = pytest.mark.integration
+
 
 class MalformedTripAdapter:
     def analyze(self, request: object, execution_mode: object) -> object:

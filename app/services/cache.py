@@ -37,7 +37,9 @@ class CacheService:
         sanitized = sanitize_payload(response_payload)
         self._entries[key.value] = CacheEntry(
             sanitized,
-            Provenance("provider", retrieved_at, data_date, False, forecast, activity_id, sanitized),
+            Provenance(
+                "provider", retrieved_at, data_date, False, forecast, activity_id, sanitized
+            ),
         )
         return key
 
@@ -45,10 +47,13 @@ class CacheService:
         entry = self._entries.get(key.value)
         if entry is None:
             return None
-        return CacheEntry(entry.payload, Provenance.cached(
-            retrieved_at=entry.provenance.retrieved_at,
-            data_date=entry.provenance.data_date,
-            activity_id=entry.provenance.activity_id,
-            raw_payload=entry.provenance.raw_payload,
-            forecast=entry.provenance.forecast,
-        ))
+        return CacheEntry(
+            entry.payload,
+            Provenance.cached(
+                retrieved_at=entry.provenance.retrieved_at,
+                data_date=entry.provenance.data_date,
+                activity_id=entry.provenance.activity_id,
+                raw_payload=entry.provenance.raw_payload,
+                forecast=entry.provenance.forecast,
+            ),
+        )

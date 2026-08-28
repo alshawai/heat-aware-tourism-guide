@@ -27,7 +27,9 @@ def _records() -> Iterator[tuple[Path, AcquisitionRecord]]:
 
 
 def test_every_committed_fixture_has_an_acquisition_sidecar() -> None:
-    fixtures = [path for path in _committed_json_files() if not path.name.endswith(".acquisition.json")]
+    fixtures = [
+        path for path in _committed_json_files() if not path.name.endswith(".acquisition.json")
+    ]
     assert len(fixtures) >= 11
     for path in fixtures:
         sidecar = path.with_name(f"{path.stem}.acquisition.json")

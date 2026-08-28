@@ -109,9 +109,10 @@ def test_cache_hit_is_marked_as_replayed_and_cache_miss_is_none() -> None:
     assert hit.provenance.source == "cache"
     assert hit.provenance.stale is True
     assert hit.provenance.raw_payload == {"value": 35}
-    assert service.get(
-        CacheKey.create("heatmap", "v1", {"metric": "other"}, "fortyguard-config-v1")
-    ) is None
+    assert (
+        service.get(CacheKey.create("heatmap", "v1", {"metric": "other"}, "fortyguard-config-v1"))
+        is None
+    )
 
 
 def test_cache_hit_requires_matching_provider_configuration_version() -> None:
@@ -219,17 +220,45 @@ def test_historical_exposure_is_explicit_supporting_context() -> None:
 def test_exposure_rejects_forecast_and_missing_freshness() -> None:
     payload = {"value": 6, "unit": "C", "valid_from": "start", "valid_to": "end"}
     with pytest.raises(ValueError, match="freshness"):
-        extract_exposure(payload, metric="exceedance", threshold_celsius=35, direction="above", source="fortyguard", forecast=False)
+        extract_exposure(
+            payload,
+            metric="exceedance",
+            threshold_celsius=35,
+            direction="above",
+            source="fortyguard",
+            forecast=False,
+        )
     with pytest.raises(ValueError, match="historical"):
-        extract_exposure({**payload, "fresh_at": "fresh"}, metric="persistence", threshold_celsius=35, direction="above", source="fortyguard", forecast=True)
+        extract_exposure(
+            {**payload, "fresh_at": "fresh"},
+            metric="persistence",
+            threshold_celsius=35,
+            direction="above",
+            source="fortyguard",
+            forecast=True,
+        )
 
 
 def test_exposure_rejects_boolean_and_non_finite_values() -> None:
     base = {"unit": "hours", "valid_from": "start", "valid_to": "end", "fresh_at": "fresh"}
     with pytest.raises(ValueError, match="value"):
-        extract_exposure({**base, "value": True}, metric="exceedance", threshold_celsius=35, direction="above", source="fortyguard", forecast=False)
+        extract_exposure(
+            {**base, "value": True},
+            metric="exceedance",
+            threshold_celsius=35,
+            direction="above",
+            source="fortyguard",
+            forecast=False,
+        )
     with pytest.raises(ValueError, match="value"):
-        extract_exposure({**base, "value": float("nan")}, metric="persistence", threshold_celsius=35, direction="above", source="fortyguard", forecast=False)
+        extract_exposure(
+            {**base, "value": float("nan")},
+            metric="persistence",
+            threshold_celsius=35,
+            direction="above",
+            source="fortyguard",
+            forecast=False,
+        )
 
 
 def test_readiness_returns_deterministic_reason_codes() -> None:
@@ -244,7 +273,13 @@ def test_spatial_contract_reports_partial_polygon_coverage_and_point_fallback() 
     polygon = polygon_join_contract([(30, 2), (40, 1)], coverage=0.75, projected_crs="EPSG:32614")
     assert polygon.value == 100 / 3
     assert polygon.quality == "partial"
-    point = point_join_contract(containing_value=None, boundary=False, outside_aoi=True, nearest_value=35, nearest_distance_m=12)
+    point = point_join_contract(
+        containing_value=None,
+        boundary=False,
+        outside_aoi=True,
+        nearest_value=35,
+        nearest_distance_m=12,
+    )
     assert point.quality == "nearest_fallback"
     assert point.distance_m == 12
 
@@ -254,7 +289,9 @@ def test_provenance_transformations_default_to_empty_and_serialize_structured() 
 
     from app.domain.provenance import Provenance, Transformation
 
-    plain = Provenance("fixture", datetime(2026, 8, 27, tzinfo=timezone.utc), "2026-08-27", False, True)
+    plain = Provenance(
+        "fixture", datetime(2026, 8, 27, tzinfo=timezone.utc), "2026-08-27", False, True
+    )
     assert plain.transformations == ()
 
     stamped = Provenance(

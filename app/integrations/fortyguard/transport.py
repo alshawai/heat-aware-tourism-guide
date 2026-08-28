@@ -16,7 +16,9 @@ from app.integrations.fortyguard.errors import (
 
 
 class FortyGuardTransport(Protocol):
-    def post(self, endpoint: str, payload: Mapping[str, object], api_key: str) -> Mapping[str, object]: ...
+    def post(
+        self, endpoint: str, payload: Mapping[str, object], api_key: str
+    ) -> Mapping[str, object]: ...
 
     def get(self, endpoint: str, api_key: str) -> Mapping[str, object]: ...
 
@@ -37,7 +39,9 @@ class HttpFortyGuardTransport:
         self.timeout_seconds = timeout_seconds
         self._opener = opener
 
-    def post(self, endpoint: str, payload: Mapping[str, object], api_key: str) -> Mapping[str, object]:
+    def post(
+        self, endpoint: str, payload: Mapping[str, object], api_key: str
+    ) -> Mapping[str, object]:
         return self._request(endpoint, api_key, payload)
 
     def get(self, endpoint: str, api_key: str) -> Mapping[str, object]:
@@ -57,7 +61,9 @@ class HttpFortyGuardTransport:
                 parsed = json.loads(response.read())
         except self.HttpError as error:
             status = getattr(error.response, "status", None)
-            if payload is None and (status in (404, 408, 429) or isinstance(status, int) and status >= 500):
+            if payload is None and (
+                status in (404, 408, 429) or isinstance(status, int) and status >= 500
+            ):
                 return {"status_code": status}
             raise classify_provider_error(status, "provider HTTP request failed") from None
         except HTTPError as error:
@@ -65,11 +71,21 @@ class HttpFortyGuardTransport:
                 return {"status_code": error.code}
             raise classify_provider_error(error.code, "provider HTTP request failed") from None
         except (TimeoutError, URLError, OSError) as error:
-            wrapped_timeout = isinstance(error, URLError) and isinstance(error.reason, socket.timeout)
-            kind = ProviderErrorKind.TIMEOUT if isinstance(error, (TimeoutError, socket.timeout)) or wrapped_timeout else ProviderErrorKind.SERVER
+            wrapped_timeout = isinstance(error, URLError) and isinstance(
+                error.reason, socket.timeout
+            )
+            kind = (
+                ProviderErrorKind.TIMEOUT
+                if isinstance(error, (TimeoutError, socket.timeout)) or wrapped_timeout
+                else ProviderErrorKind.SERVER
+            )
             raise ProviderError(kind, detail=type(error).__name__) from None
         except (json.JSONDecodeError, UnicodeDecodeError):
-            raise ProviderError(ProviderErrorKind.MALFORMED_RESPONSE, detail="invalid JSON response") from None
+            raise ProviderError(
+                ProviderErrorKind.MALFORMED_RESPONSE, detail="invalid JSON response"
+            ) from None
         if not isinstance(parsed, Mapping):
-            raise ProviderError(ProviderErrorKind.MALFORMED_RESPONSE, detail="response must be an object")
+            raise ProviderError(
+                ProviderErrorKind.MALFORMED_RESPONSE, detail="response must be an object"
+            )
         return parsed

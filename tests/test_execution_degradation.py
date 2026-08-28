@@ -27,7 +27,13 @@ RAW_TCM_RESULT: dict[str, Any] = {
                 "geometry": {
                     "type": "Polygon",
                     "coordinates": [
-                        [[-98.50, 29.42], [-98.49, 29.42], [-98.49, 29.43], [-98.50, 29.43], [-98.50, 29.42]]
+                        [
+                            [-98.50, 29.42],
+                            [-98.49, 29.42],
+                            [-98.49, 29.43],
+                            [-98.50, 29.43],
+                            [-98.50, 29.42],
+                        ]
                     ],
                 },
                 "properties": {"id": "tile-1", "average_temperature": 36.7},
@@ -104,9 +110,11 @@ def _stamp_names(result: Any) -> tuple[tuple[str, int], ...]:
 def test_raw_fixture_replays_through_translation_with_sidecar_provenance(tmp_path: Path) -> None:
     fixture = tmp_path / "heatmap-tcm-historical.json"
     fixture.write_text(json.dumps(RAW_TCM_RESULT), encoding="utf-8")
-    _write_sidecar(fixture, HISTORICAL_REQUEST_PAYLOAD, transformations=[
-        {"name": name, "version": version} for name, version in TCM_STAMPS
-    ])
+    _write_sidecar(
+        fixture,
+        HISTORICAL_REQUEST_PAYLOAD,
+        transformations=[{"name": name, "version": version} for name, version in TCM_STAMPS],
+    )
 
     result = HeatmapExecution(fixture_path=fixture).run(_heatmap_request())
     assert result.provenance.source == "fixture"
@@ -122,9 +130,11 @@ def test_raw_fixture_replays_through_translation_with_sidecar_provenance(tmp_pat
 def test_raw_fixture_and_live_share_identical_normalized_schema(tmp_path: Path) -> None:
     fixture = tmp_path / "heatmap-tcm-historical.json"
     fixture.write_text(json.dumps(RAW_TCM_RESULT), encoding="utf-8")
-    _write_sidecar(fixture, HISTORICAL_REQUEST_PAYLOAD, transformations=[
-        {"name": name, "version": version} for name, version in TCM_STAMPS
-    ])
+    _write_sidecar(
+        fixture,
+        HISTORICAL_REQUEST_PAYLOAD,
+        transformations=[{"name": name, "version": version} for name, version in TCM_STAMPS],
+    )
 
     from app.integrations.fortyguard.live import (
         request_transformations,
@@ -154,7 +164,10 @@ def test_raw_fixture_and_live_share_identical_normalized_schema(tmp_path: Path) 
         live_tile.metric_value,
         live_tile.unit,
     )
-    assert (fixture_tile.valid_time, fixture_tile.forecast) == (live_tile.valid_time, live_tile.forecast)
+    assert (fixture_tile.valid_time, fixture_tile.forecast) == (
+        live_tile.valid_time,
+        live_tile.forecast,
+    )
     assert _stamp_names(fixture_result) == _stamp_names(live_result)
     assert fixture_result.provenance.source == "fixture"
     assert live_result.provenance.source == "provider"
@@ -188,7 +201,11 @@ def test_cache_replay_is_preferred_over_fixture_fallback(tmp_path: Path) -> None
         "features": [
             {
                 "geometry": {"type": "Point", "coordinates": [-98.4936, 29.4241]},
-                "properties": {"value": 34.1, "unit": "C", "valid_time": "2026-08-22T15:00:00+00:00"},
+                "properties": {
+                    "value": 34.1,
+                    "unit": "C",
+                    "valid_time": "2026-08-22T15:00:00+00:00",
+                },
             }
         ],
     }
@@ -274,8 +291,12 @@ def test_historical_fixture_requires_strict_date_match(tmp_path: Path) -> None:
 
 def test_non_replayable_fixture_sidecars_are_skipped(tmp_path: Path) -> None:
     fixture = tmp_path / "heatmap-failed.json"
-    fixture.write_text(json.dumps({"status": "Failed", "error_code": "provider_task_failed"}), encoding="utf-8")
-    _write_sidecar(fixture, HISTORICAL_REQUEST_PAYLOAD, status="failed", activity_id=None, retrieved_at=None)
+    fixture.write_text(
+        json.dumps({"status": "Failed", "error_code": "provider_task_failed"}), encoding="utf-8"
+    )
+    _write_sidecar(
+        fixture, HISTORICAL_REQUEST_PAYLOAD, status="failed", activity_id=None, retrieved_at=None
+    )
 
     with pytest.raises(UnavailableError, match="no matching fixture"):
         HeatmapExecution(fixture_path=fixture).run(_heatmap_request())
@@ -289,9 +310,9 @@ def test_additional_fixtures_are_searched_after_the_primary(tmp_path: Path) -> N
     acquired.write_text(json.dumps(RAW_TCM_RESULT), encoding="utf-8")
     _write_sidecar(acquired, HISTORICAL_REQUEST_PAYLOAD)
 
-    result = HeatmapExecution(
-        fixture_path=primary, additional_fixtures=[acquired]
-    ).run(_heatmap_request())
+    result = HeatmapExecution(fixture_path=primary, additional_fixtures=[acquired]).run(
+        _heatmap_request()
+    )
     assert result.provenance.source == "fixture"
     assert result.tiles[0].value_celsius == 36.7
 
@@ -411,7 +432,11 @@ def test_forecast_fixture_with_matching_date_is_still_labelled_stale(tmp_path: P
     fixture = tmp_path / "heatmap-tcm-forecast.json"
     fixture.write_text(json.dumps(RAW_TCM_RESULT), encoding="utf-8")
     today = date.today()
-    forecast_payload = {**HISTORICAL_REQUEST_PAYLOAD, "start_date": today.isoformat(), "forecast": True}
+    forecast_payload = {
+        **HISTORICAL_REQUEST_PAYLOAD,
+        "start_date": today.isoformat(),
+        "forecast": True,
+    }
     _write_sidecar(fixture, forecast_payload, data_date=today.isoformat())
 
     result = HeatmapExecution(fixture_path=fixture).run(
@@ -430,7 +455,9 @@ def test_corrupt_fixture_payload_is_skipped_and_scan_continues(tmp_path: Path) -
     good.write_text(json.dumps(RAW_TCM_RESULT), encoding="utf-8")
     _write_sidecar(good, HISTORICAL_REQUEST_PAYLOAD)
 
-    result = HeatmapExecution(fixture_path=broken, additional_fixtures=[good]).run(_heatmap_request())
+    result = HeatmapExecution(fixture_path=broken, additional_fixtures=[good]).run(
+        _heatmap_request()
+    )
     assert result.provenance.source == "fixture"
     assert result.tiles[0].value_celsius == 36.7
 

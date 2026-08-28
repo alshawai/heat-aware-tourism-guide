@@ -20,9 +20,7 @@ USAGE_RESPONSE: dict[str, Any] = {
 }
 
 
-def _stub_provider(
-    monkeypatch: pytest.MonkeyPatch, response: dict[str, Any] | None = None
-) -> None:
+def _stub_provider(monkeypatch: pytest.MonkeyPatch, response: dict[str, Any] | None = None) -> None:
     """Replace the live account query; no network, no real key."""
     monkeypatch.setattr(reconcile_ledger, "load_api_key_from_environment", lambda: "secret")
     monkeypatch.setattr(

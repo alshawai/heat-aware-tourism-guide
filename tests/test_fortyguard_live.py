@@ -39,7 +39,9 @@ class _Response:
         return None
 
 
-def _recording_transport(responses: list[object]) -> tuple[LiveFortyGuardTransport, list[tuple[str, dict[str, str]]]]:
+def _recording_transport(
+    responses: list[object],
+) -> tuple[LiveFortyGuardTransport, list[tuple[str, dict[str, str]]]]:
     calls: list[tuple[str, dict[str, str]]] = []
     queue = list(responses)
 
@@ -58,7 +60,14 @@ def test_live_transport_sends_documented_api_key_header() -> None:
 
 def test_live_transport_hoists_submission_envelope_data_activity_id() -> None:
     transport, _ = _recording_transport(
-        [{"error": False, "status_code": 200, "message": "Heatmap Submitted", "data": {"activity_id": "a1"}}]
+        [
+            {
+                "error": False,
+                "status_code": 200,
+                "message": "Heatmap Submitted",
+                "data": {"activity_id": "a1"},
+            }
+        ]
     )
     assert transport.post("/v1/heatmap", {}, "secret") == {
         "error": False,
@@ -71,7 +80,13 @@ def test_live_transport_hoists_submission_envelope_data_activity_id() -> None:
 def test_live_transport_hoists_status_envelope_for_poller() -> None:
     transport, _ = _recording_transport(
         [
-            {"data": {"activity_id": "a1", "status": "Completed", "result": {"map_data": {}, "stats_data": {}}}},
+            {
+                "data": {
+                    "activity_id": "a1",
+                    "status": "Completed",
+                    "result": {"map_data": {}, "stats_data": {}},
+                }
+            },
         ]
     )
     assert transport.get("/v1/status/a1", "secret") == {
@@ -98,7 +113,13 @@ def test_live_transport_end_to_end_submit_and_poll_with_client() -> None:
         [
             {"data": {"activity_id": "a1"}},
             {"data": {"activity_id": "a1", "status": "Processing"}},
-            {"data": {"activity_id": "a1", "status": "Completed", "result": {"map_data": {}, "stats_data": {}}}},
+            {
+                "data": {
+                    "activity_id": "a1",
+                    "status": "Completed",
+                    "result": {"map_data": {}, "stats_data": {}},
+                }
+            },
         ]
     )
     client = FortyGuardClient(transport, "secret", clock=lambda: datetime(2026, 8, 27))
@@ -216,7 +237,9 @@ def test_historical_dates_outside_documented_range_rejected() -> None:
     with pytest.raises(ProviderError, match="2019"):
         build_documented_heatmap_payload(_historical_request(start_date=date(2018, 12, 31)))
     with pytest.raises(ProviderError, match="2019"):
-        build_documented_heatmap_payload(_historical_request(start_date=date.today() + timedelta(days=1)))
+        build_documented_heatmap_payload(
+            _historical_request(start_date=date.today() + timedelta(days=1))
+        )
 
 
 def _live_map_data() -> dict[str, object]:
@@ -228,9 +251,21 @@ def _live_map_data() -> dict[str, object]:
                     "type": "Feature",
                     "geometry": {
                         "type": "Polygon",
-                        "coordinates": [[[-98.5, 29.4], [-98.4, 29.4], [-98.4, 29.5], [-98.5, 29.5], [-98.5, 29.4]]],
+                        "coordinates": [
+                            [
+                                [-98.5, 29.4],
+                                [-98.4, 29.4],
+                                [-98.4, 29.5],
+                                [-98.5, 29.5],
+                                [-98.5, 29.4],
+                            ]
+                        ],
                     },
-                    "properties": {"average_temperature": 36.5, "min_temperature": 28.1, "max_temperature": 41.2},
+                    "properties": {
+                        "average_temperature": 36.5,
+                        "min_temperature": 28.1,
+                        "max_temperature": 41.2,
+                    },
                 }
             ],
         },
@@ -261,7 +296,15 @@ def test_translate_hour_analytics_value_tiles() -> None:
                     "type": "Feature",
                     "geometry": {
                         "type": "Polygon",
-                        "coordinates": [[[-98.5, 29.4], [-98.4, 29.4], [-98.4, 29.5], [-98.5, 29.5], [-98.5, 29.4]]],
+                        "coordinates": [
+                            [
+                                [-98.5, 29.4],
+                                [-98.4, 29.4],
+                                [-98.4, 29.5],
+                                [-98.5, 29.5],
+                                [-98.5, 29.4],
+                            ]
+                        ],
                     },
                     "properties": {"value": 5.0},
                 }
@@ -269,7 +312,9 @@ def test_translate_hour_analytics_value_tiles() -> None:
         },
         "stats_data": {"units": "hour", "analytic_type": "exceedance"},
     }
-    request = _historical_request(analytic_type=AnalyticType.EXCEEDANCE, threshold_celsius=35.0, direction="above")
+    request = _historical_request(
+        analytic_type=AnalyticType.EXCEEDANCE, threshold_celsius=35.0, direction="above"
+    )
     translated = translate_heatmap_response(result, request=request)
     hour_feature = cast(dict[str, Any], cast(list[object], translated["features"])[0])
     assert cast(dict[str, Any], hour_feature["properties"])["value"] == 5.0
@@ -287,11 +332,18 @@ def test_translate_rejects_missing_map_data_and_empty_features() -> None:
 
 def test_translate_rejects_undocumented_tile_values() -> None:
     bad_feature = {
-        "geometry": {"type": "Polygon", "coordinates": [[[-98.5, 29.4], [-98.4, 29.4], [-98.4, 29.5], [-98.5, 29.5], [-98.5, 29.4]]]},
+        "geometry": {
+            "type": "Polygon",
+            "coordinates": [
+                [[-98.5, 29.4], [-98.4, 29.4], [-98.4, 29.5], [-98.5, 29.5], [-98.5, 29.4]]
+            ],
+        },
         "properties": {"unrelated": True},
     }
     with pytest.raises(ProviderError) as error:
-        translate_heatmap_response({"map_data": {"features": [bad_feature]}}, request=_historical_request())
+        translate_heatmap_response(
+            {"map_data": {"features": [bad_feature]}}, request=_historical_request()
+        )
     assert error.value.kind is ProviderErrorKind.MALFORMED_RESPONSE
 
 
@@ -323,7 +375,9 @@ def test_adapter_load_translates_and_stamps_transformations() -> None:
     assert submissions[0]["analytic_type"] == "tcm"
     assert submissions[0]["granularity"] == 60
     assert cast(dict[str, Any], submissions[0]["date_time"])["filter_type"] == 3
-    stamps = {transformation.name: transformation.version for transformation in loaded.transformations}
+    stamps = {
+        transformation.name: transformation.version for transformation in loaded.transformations
+    }
     assert stamps == {
         "live_envelope_unwrapped": 1,
         "point_to_aoi_expansion": 1,
@@ -356,7 +410,18 @@ def test_adapter_load_hour_analytics_without_tcm_unit_stamp() -> None:
                         "map_data": {
                             "features": [
                                 {
-                                    "geometry": {"type": "Polygon", "coordinates": [[[-98.5, 29.4], [-98.4, 29.4], [-98.4, 29.5], [-98.5, 29.5], [-98.5, 29.4]]]},
+                                    "geometry": {
+                                        "type": "Polygon",
+                                        "coordinates": [
+                                            [
+                                                [-98.5, 29.4],
+                                                [-98.4, 29.4],
+                                                [-98.4, 29.5],
+                                                [-98.5, 29.5],
+                                                [-98.5, 29.4],
+                                            ]
+                                        ],
+                                    },
                                     "properties": {"value": 2.0},
                                 }
                             ]
@@ -367,7 +432,9 @@ def test_adapter_load_hour_analytics_without_tcm_unit_stamp() -> None:
         ]
     )
     adapter = LiveHeatmapAdapter(client)
-    request = _historical_request(analytic_type=AnalyticType.PERSISTENCE, threshold_celsius=35.0, direction="above")
+    request = _historical_request(
+        analytic_type=AnalyticType.PERSISTENCE, threshold_celsius=35.0, direction="above"
+    )
     loaded = adapter.load(request)
     assert "tcm_unit_celsius" not in {t.name for t in loaded.transformations}
 
@@ -446,7 +513,9 @@ def test_submit_and_poll_threads_interval_seconds() -> None:
         ]
     )
     client = FortyGuardClient(transport, "secret", clock=lambda: datetime(2026, 8, 27))
-    client.submit_and_poll("/v1/heatmap", {}, sleep=sleeps.append, max_polls=3, interval_seconds=5.0)
+    client.submit_and_poll(
+        "/v1/heatmap", {}, sleep=sleeps.append, max_polls=3, interval_seconds=5.0
+    )
     assert sleeps == [5.0]
 
 
@@ -489,7 +558,11 @@ def test_env_params_documented_payload_full_day_and_hourly() -> None:
     assert payload["temperature"] == 35.0
     assert payload["analysis"] == ["heat_index_celsius", "relative_humidity_percent"]
     hourly = build_documented_env_params_payload(_env_request(hour=13))
-    assert hourly["date_time"] == {"start_date": "2026-08-24", "filter_type": 1, "start_time": "13:00"}
+    assert hourly["date_time"] == {
+        "start_date": "2026-08-24",
+        "filter_type": 1,
+        "start_time": "13:00",
+    }
 
 
 def test_env_params_payload_rejects_out_of_contract_dates() -> None:
@@ -497,7 +570,9 @@ def test_env_params_payload_rejects_out_of_contract_dates() -> None:
         build_documented_env_params_payload(_env_request(start_date=date(2018, 12, 31)))
     assert early.value.kind is ProviderErrorKind.VALIDATION
     with pytest.raises(ProviderError) as late:
-        build_documented_env_params_payload(_env_request(start_date=date.today() + timedelta(days=30)))
+        build_documented_env_params_payload(
+            _env_request(start_date=date.today() + timedelta(days=30))
+        )
     assert late.value.kind is ProviderErrorKind.VALIDATION
 
 

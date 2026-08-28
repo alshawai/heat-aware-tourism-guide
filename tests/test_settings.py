@@ -13,7 +13,11 @@ from app.settings import (
 
 def test_load_settings_reads_core_configuration_from_environment() -> None:
     settings = load_settings(
-        environ={"ALLOW_LIVE": "true", "FORTYGUARD_API_KEY": "key-123", "FORTYGUARD_BASE_URL": "https://example.test"}
+        environ={
+            "ALLOW_LIVE": "true",
+            "FORTYGUARD_API_KEY": "key-123",
+            "FORTYGUARD_BASE_URL": "https://example.test",
+        }
     )
     assert settings == AppSettings(
         allow_live=True,
@@ -34,9 +38,7 @@ def test_load_settings_defaults_to_fixture_mode_and_documented_base_url() -> Non
 def test_process_environment_overrides_env_file_values(tmp_path: Path) -> None:
     env_file = tmp_path / ".env"
     env_file.write_text(
-        "ALLOW_LIVE=false\n"
-        "FORTYGUARD_API_KEY=file-key\n"
-        "FORTYGUARD_BASE_URL=https://file.example\n",
+        "ALLOW_LIVE=false\nFORTYGUARD_API_KEY=file-key\nFORTYGUARD_BASE_URL=https://file.example\n",
         encoding="utf-8",
     )
     settings = load_settings(
@@ -92,7 +94,9 @@ def test_polling_defaults_are_bounded() -> None:
 
 
 def test_polling_bounds_are_overridable() -> None:
-    polling = FortyGuardPollingSettings(interval_seconds=1.0, max_polls=3, timeout_seconds=5.0, status_404_grace_checks=1)
+    polling = FortyGuardPollingSettings(
+        interval_seconds=1.0, max_polls=3, timeout_seconds=5.0, status_404_grace_checks=1
+    )
     assert polling == FortyGuardPollingSettings(1.0, 3, 5.0, 1)
 
 
@@ -120,7 +124,9 @@ def test_invalid_polling_overrides_are_rejected() -> None:
 def test_empty_process_environment_value_still_overrides_env_file(tmp_path: Path) -> None:
     env_file = tmp_path / ".env"
     env_file.write_text("FORTYGUARD_API_KEY=file-key\nALLOW_LIVE=true\n", encoding="utf-8")
-    settings = load_settings(environ={"FORTYGUARD_API_KEY": "", "ALLOW_LIVE": ""}, env_file=env_file)
+    settings = load_settings(
+        environ={"FORTYGUARD_API_KEY": "", "ALLOW_LIVE": ""}, env_file=env_file
+    )
     assert settings.fortyguard_api_key is None
     assert settings.allow_live is False
 
@@ -142,9 +148,7 @@ def test_area_settings_overrides_are_read_from_environment() -> None:
     )
 
 
-
 def test_call_budget_defaults_to_record_only_and_is_overridable() -> None:
-
     assert load_settings(environ={}).call_budget is None
     settings = load_settings(environ={"FORTYGUARD_CALL_BUDGET": "500"})
     assert settings.call_budget == 500

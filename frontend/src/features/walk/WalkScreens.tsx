@@ -18,7 +18,7 @@ import {
   ResultSkeleton,
 } from "../../components/Shared";
 import { dataClient } from "../../services/dataClient";
-import type { ResultState, TripResponse } from "../../types";
+import type { ResultState } from "../../types";
 
 export function WalkLocationScreen() {
   const navigate = useNavigate();

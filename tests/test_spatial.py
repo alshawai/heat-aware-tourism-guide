@@ -7,8 +7,16 @@ from app.domain.analysis import TileGeometry, build_aoi, join_point_to_tiles, jo
 def test_polygon_join_area_weights_partial_overlap_in_projected_crs() -> None:
     target = Polygon([(-98.50, 29.42), (-98.48, 29.42), (-98.48, 29.44), (-98.50, 29.44)])
     tiles = [
-        TileGeometry("west", Polygon([(-98.50, 29.42), (-98.49, 29.42), (-98.49, 29.44), (-98.50, 29.44)]), 30),
-        TileGeometry("east-half", Polygon([(-98.49, 29.42), (-98.485, 29.42), (-98.485, 29.44), (-98.49, 29.44)]), 40),
+        TileGeometry(
+            "west",
+            Polygon([(-98.50, 29.42), (-98.49, 29.42), (-98.49, 29.44), (-98.50, 29.44)]),
+            30,
+        ),
+        TileGeometry(
+            "east-half",
+            Polygon([(-98.49, 29.42), (-98.485, 29.42), (-98.485, 29.44), (-98.49, 29.44)]),
+            40,
+        ),
     ]
     result = join_polygon_to_tiles(target, tiles)
     assert result.value == pytest.approx(100 / 3, rel=0.01)
@@ -27,13 +35,18 @@ def test_polygon_join_rejects_invalid_geometry_and_reports_no_overlap() -> None:
 
 
 def test_point_join_distinguishes_containing_boundary_and_nearest_fallback() -> None:
-    tile = TileGeometry("tile", Polygon([(-98.50, 29.42), (-98.49, 29.42), (-98.49, 29.43), (-98.50, 29.43)]), 35)
+    tile = TileGeometry(
+        "tile", Polygon([(-98.50, 29.42), (-98.49, 29.42), (-98.49, 29.43), (-98.50, 29.43)]), 35
+    )
     assert join_point_to_tiles(Point(-98.495, 29.425), [tile]).quality == "containing_tile"
     assert join_point_to_tiles(Point(-98.50, 29.425), [tile]).quality == "boundary"
     fallback = join_point_to_tiles(Point(-98.4899, 29.425), [tile], nearest_max_distance_m=20)
     assert fallback.quality == "nearest_fallback"
     assert fallback.distance_m is not None and fallback.distance_m > 0
-    assert join_point_to_tiles(Point(-98.40, 29.425), [tile], nearest_max_distance_m=20).quality == "outside_aoi"
+    assert (
+        join_point_to_tiles(Point(-98.40, 29.425), [tile], nearest_max_distance_m=20).quality
+        == "outside_aoi"
+    )
 
 
 def test_build_aoi_handles_district_points_and_route_corridors() -> None:

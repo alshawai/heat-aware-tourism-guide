@@ -40,7 +40,13 @@ def extract_exposure(
     valid_from = payload.get("valid_from")
     valid_to = payload.get("valid_to")
     fresh_at = payload.get("fresh_at")
-    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or not isinstance(valid_from, str) or not isinstance(valid_to, str):
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, (int, float))
+        or not math.isfinite(value)
+        or not isinstance(valid_from, str)
+        or not isinstance(valid_to, str)
+    ):
         raise ValueError("exposure response is missing value or date window")
     if not isinstance(fresh_at, str):
         raise ValueError("exposure response is missing freshness")
@@ -49,7 +55,18 @@ def extract_exposure(
     expected_unit = "C" if metric == "tcm" else "hours"
     if payload.get("unit") != expected_unit:
         raise ValueError(f"{metric} exposure must use {expected_unit}")
-    return ExposureSummary(metric, float(value), expected_unit, threshold_celsius, direction, source, forecast, valid_from, valid_to, fresh_at)
+    return ExposureSummary(
+        metric,
+        float(value),
+        expected_unit,
+        threshold_celsius,
+        direction,
+        source,
+        forecast,
+        valid_from,
+        valid_to,
+        fresh_at,
+    )
 
 
 @dataclass(frozen=True)

@@ -100,7 +100,9 @@ class AcquisitionRecord:
             "source": self.source,
             "endpoint": self.endpoint,
             "request_configuration": self.request_configuration,
-            "retrieved_at": self.retrieved_at.isoformat() if self.retrieved_at is not None else None,
+            "retrieved_at": self.retrieved_at.isoformat()
+            if self.retrieved_at is not None
+            else None,
             "data_date": self.data_date,
             "status": self.status,
             "schema_version": self.schema_version,

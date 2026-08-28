@@ -50,7 +50,18 @@ def test_normalizer_rejects_malformed_point_coordinates() -> None:
     request = HeatmapRequest(AnalyticType.TCM, 29.4241, -98.4936, date.today())
     with pytest.raises(ValueError, match="geometry"):
         normalize_heatmap_response(
-            {"features": [{"geometry": {"type": "Point", "coordinates": [1]}, "properties": {"value": 35, "unit": "C", "valid_time": "2026-08-23T15:00:00+00:00"}}]},
+            {
+                "features": [
+                    {
+                        "geometry": {"type": "Point", "coordinates": [1]},
+                        "properties": {
+                            "value": 35,
+                            "unit": "C",
+                            "valid_time": "2026-08-23T15:00:00+00:00",
+                        },
+                    }
+                ]
+            },
             request=request,
             retrieved_at=datetime.now(timezone.utc),
         )
@@ -103,7 +114,18 @@ def test_normalizer_preserves_forecast_provenance_and_units() -> None:
         start_date=date.today(),
     )
     result = normalize_heatmap_response(
-        {"features": [{"geometry": {"type": "Point", "coordinates": [-98.49, 29.42]}, "properties": {"value": 35.5, "unit": "C", "valid_time": "2026-08-23T15:00:00+00:00"}}]},
+        {
+            "features": [
+                {
+                    "geometry": {"type": "Point", "coordinates": [-98.49, 29.42]},
+                    "properties": {
+                        "value": 35.5,
+                        "unit": "C",
+                        "valid_time": "2026-08-23T15:00:00+00:00",
+                    },
+                }
+            ]
+        },
         request=request,
         retrieved_at=datetime(2026, 8, 23, 12, tzinfo=timezone.utc),
         activity_id="activity-1",
@@ -117,7 +139,18 @@ def test_normalizer_rejects_boolean_metric_values() -> None:
     request = HeatmapRequest(AnalyticType.TCM, 29.4241, -98.4936, date.today())
     with pytest.raises(ValueError, match="units"):
         normalize_heatmap_response(
-            {"features": [{"geometry": {"type": "Point", "coordinates": [-98.49, 29.42]}, "properties": {"value": True, "unit": "C", "valid_time": "2026-08-23T15:00:00+00:00"}}]},
+            {
+                "features": [
+                    {
+                        "geometry": {"type": "Point", "coordinates": [-98.49, 29.42]},
+                        "properties": {
+                            "value": True,
+                            "unit": "C",
+                            "valid_time": "2026-08-23T15:00:00+00:00",
+                        },
+                    }
+                ]
+            },
             request=request,
             retrieved_at=datetime(2026, 8, 23, 12, tzinfo=timezone.utc),
         )
@@ -127,7 +160,18 @@ def test_normalizer_rejects_non_finite_metric_values() -> None:
     request = HeatmapRequest(AnalyticType.TCM, 29.4241, -98.4936, date.today())
     with pytest.raises(ValueError, match="units"):
         normalize_heatmap_response(
-            {"features": [{"geometry": {"type": "Point", "coordinates": [-98.49, 29.42]}, "properties": {"value": float("nan"), "unit": "C", "valid_time": "2026-08-23T15:00:00+00:00"}}]},
+            {
+                "features": [
+                    {
+                        "geometry": {"type": "Point", "coordinates": [-98.49, 29.42]},
+                        "properties": {
+                            "value": float("nan"),
+                            "unit": "C",
+                            "valid_time": "2026-08-23T15:00:00+00:00",
+                        },
+                    }
+                ]
+            },
             request=request,
             retrieved_at=datetime.now(timezone.utc),
         )
@@ -137,13 +181,25 @@ def test_normalizer_rejects_provider_mode_mismatch() -> None:
     request = HeatmapRequest(AnalyticType.TCM, 29.4241, -98.4936, date.today())
     with pytest.raises(ValueError, match="mode"):
         normalize_heatmap_response(
-            {"mode": "historical", "features": [{"geometry": {"type": "Point", "coordinates": [-98.49, 29.42]}, "properties": {"value": 35, "unit": "C", "valid_time": "2026-08-23T15:00:00+00:00"}}]},
+            {
+                "mode": "historical",
+                "features": [
+                    {
+                        "geometry": {"type": "Point", "coordinates": [-98.49, 29.42]},
+                        "properties": {
+                            "value": 35,
+                            "unit": "C",
+                            "valid_time": "2026-08-23T15:00:00+00:00",
+                        },
+                    }
+                ],
+            },
             request=request,
             retrieved_at=datetime.now(timezone.utc),
         )
 
 
-@pytest.mark.parametrize(  # type: ignore[untyped-decorator]
+@pytest.mark.parametrize(  # type: ignore[misc]
     ("fixture_name", "analytic_type", "forecast", "value"),
     [
         ("heatmap-forecast.json", AnalyticType.TCM, True, 35.5),
@@ -243,7 +299,9 @@ def test_live_failure_replays_matching_cache_as_stale_data() -> None:
     def failed(_: HeatmapRequest) -> dict[str, object]:
         raise ConnectionError("provider unavailable")
 
-    result = HeatmapExecution(fixture_path=Path("fixtures") / "heatmap-historical.json", live_loader=failed, cache=cache).run(request, live=True)
+    result = HeatmapExecution(
+        fixture_path=Path("fixtures") / "heatmap-historical.json", live_loader=failed, cache=cache
+    ).run(request, live=True)
     assert result.provenance.source == "cache"
     assert result.provenance.stale is True
     assert result.provenance.data_date == "2026-08-20"
@@ -258,8 +316,22 @@ def test_live_result_preserves_activity_id_and_malformed_payload_uses_cache() ->
     request = HeatmapRequest(AnalyticType.TCM, 29.4241, -98.4936, date(2026, 8, 23), forecast=False)
     payload = json.loads((Path("fixtures") / "heatmap-historical.json").read_text())
     cache.put(
-        "/v1/heatmap", "v1", {"analytic_type": "tcm", "latitude": 29.4241, "longitude": -98.4936, "start_date": "2026-08-23", "forecast": False, "threshold_celsius": None, "direction": None, "granularity": 60}, payload,
-        retrieved_at=datetime(2026, 8, 20, tzinfo=timezone.utc), data_date="2026-08-20", activity_id="cached",
+        "/v1/heatmap",
+        "v1",
+        {
+            "analytic_type": "tcm",
+            "latitude": 29.4241,
+            "longitude": -98.4936,
+            "start_date": "2026-08-23",
+            "forecast": False,
+            "threshold_celsius": None,
+            "direction": None,
+            "granularity": 60,
+        },
+        payload,
+        retrieved_at=datetime(2026, 8, 20, tzinfo=timezone.utc),
+        data_date="2026-08-20",
+        activity_id="cached",
         provider_config_version="fortyguard-config-v1",
     )
     live = HeatmapExecution(
@@ -283,7 +355,10 @@ def test_live_provenance_uses_provider_freshness_date() -> None:
     result = HeatmapExecution(
         fixture_path=Path("fixtures") / "heatmap-historical.json",
         live_loader=lambda _: LiveHeatmapPayload(payload, "live-1"),
-    ).run(HeatmapRequest(AnalyticType.TCM, 29.4241, -98.4936, date(2026, 8, 23), forecast=False), live=True)
+    ).run(
+        HeatmapRequest(AnalyticType.TCM, 29.4241, -98.4936, date(2026, 8, 23), forecast=False),
+        live=True,
+    )
     assert result.provenance.data_date == "2026-08-20"
 
 
@@ -304,9 +379,13 @@ def test_fixture_and_live_execution_share_normalized_schema(tmp_path: Path) -> N
     from app.services.execution import HeatmapExecution
 
     fixture = tmp_path / "heatmap.json"
-    fixture.write_text('{"mode": "historical", "request": {"analytic_type": "tcm", "latitude": 29.4241, "longitude": -98.4936, "start_date": "2026-08-23", "forecast": false, "threshold_celsius": null, "direction": null, "granularity": 60}, "features": [{"geometry": {"type": "Point", "coordinates": [1, 1]}, "properties": {"value": 35.5, "unit": "C", "valid_time": "2026-08-23T15:00:00+00:00"}}]}')
+    fixture.write_text(
+        '{"mode": "historical", "request": {"analytic_type": "tcm", "latitude": 29.4241, "longitude": -98.4936, "start_date": "2026-08-23", "forecast": false, "threshold_celsius": null, "direction": null, "granularity": 60}, "features": [{"geometry": {"type": "Point", "coordinates": [1, 1]}, "properties": {"value": 35.5, "unit": "C", "valid_time": "2026-08-23T15:00:00+00:00"}}]}'
+    )
     request = HeatmapRequest(AnalyticType.TCM, 29.4241, -98.4936, date(2026, 8, 23), forecast=False)
-    execution = HeatmapExecution(fixture_path=fixture, live_loader=lambda _: json.loads(fixture.read_text()))
+    execution = HeatmapExecution(
+        fixture_path=fixture, live_loader=lambda _: json.loads(fixture.read_text())
+    )
     fixture_result = execution.run(request)
     live_result = execution.run(request, live=True)
     assert fixture_result.tiles[0].geometry == live_result.tiles[0].geometry
@@ -318,7 +397,9 @@ def test_fixture_and_live_execution_share_normalized_schema(tmp_path: Path) -> N
 
 
 def test_polling_tolerates_one_post_submit_404_but_does_not_resubmit() -> None:
-    responses: Iterator[dict[str, object]] = iter([{"status_code": 404}, {"status_code": 200, "status": "Completed", "result": {"ok": True}}])
+    responses: Iterator[dict[str, object]] = iter(
+        [{"status_code": 404}, {"status_code": 200, "status": "Completed", "result": {"ok": True}}]
+    )
     submitted = 0
 
     def get_status(_: str) -> dict[str, object]:
@@ -333,7 +414,12 @@ def test_polling_reports_failed_tasks_and_timeouts() -> None:
     with pytest.raises(Exception, match="task_failure"):
         poll_activity("activity-1", get_status=lambda _: {"status": "Failed"}, sleep=lambda _: None)
     with pytest.raises(Exception, match="timed out"):
-        poll_activity("activity-1", get_status=lambda _: {"status": "Processing"}, sleep=lambda _: None, max_polls=1)
+        poll_activity(
+            "activity-1",
+            get_status=lambda _: {"status": "Processing"},
+            sleep=lambda _: None,
+            max_polls=1,
+        )
 
 
 def test_provider_errors_are_classified_without_exposing_response_body() -> None:
@@ -373,7 +459,9 @@ def test_client_classifies_submit_errors_before_activity_lookup() -> None:
             raise AssertionError("status lookup must not run")
 
     with pytest.raises(Exception, match="rate_limit"):
-        FortyGuardClient(Transport(), "secret", clock=lambda: datetime.now(timezone.utc)).submit_and_poll("/v1/heatmap", {})
+        FortyGuardClient(
+            Transport(), "secret", clock=lambda: datetime.now(timezone.utc)
+        ).submit_and_poll("/v1/heatmap", {})
 
 
 def test_polling_retries_transient_status_transport_without_resubmission() -> None:
@@ -402,7 +490,9 @@ def test_polling_retries_status_timeout_within_bound() -> None:
     responses: Iterator[dict[str, object]] = iter(
         [{"status_code": 408}, {"status_code": 200, "status": "Completed", "result": {"ok": True}}]
     )
-    assert poll_activity("activity-1", get_status=lambda _: next(responses), sleep=lambda _: None, max_polls=2) == {"ok": True}
+    assert poll_activity(
+        "activity-1", get_status=lambda _: next(responses), sleep=lambda _: None, max_polls=2
+    ) == {"ok": True}
 
 
 def test_client_emits_sanitized_structured_activity_events() -> None:
@@ -451,7 +541,10 @@ def test_client_records_provider_reported_credits_in_ledger() -> None:
 
     ledger = CreditLedger(5)
     FortyGuardClient(
-        Transport(), "secret", clock=lambda: datetime(2026, 8, 23, tzinfo=timezone.utc), ledger=ledger
+        Transport(),
+        "secret",
+        clock=lambda: datetime(2026, 8, 23, tzinfo=timezone.utc),
+        ledger=ledger,
     ).submit_and_poll("/v1/heatmap", {}, sleep=lambda _: None)
     assert ledger.reported_credits == 4
     assert ledger.call_count == 1
@@ -518,6 +611,6 @@ def test_client_rejects_invalid_provider_credit_metadata() -> None:
             return {"status": "Completed", "credits_used": 1.5, "result": {"ok": True}}
 
     with pytest.raises(Exception, match="invalid credit"):
-        FortyGuardClient(Transport(), "secret", clock=lambda: datetime.now(timezone.utc)).submit_and_poll(
-            "/v1/heatmap", {}, sleep=lambda _: None
-        )
+        FortyGuardClient(
+            Transport(), "secret", clock=lambda: datetime.now(timezone.utc)
+        ).submit_and_poll("/v1/heatmap", {}, sleep=lambda _: None)

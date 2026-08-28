@@ -165,7 +165,9 @@ def test_build_live_heatmap_execution_composes_adapter_and_cache() -> None:
         fortyguard_base_url="https://api.example.test",
         polling=FortyGuardPollingSettings(max_polls=7),
     )
-    execution = build_live_heatmap_execution(settings, fixture_path=FIXTURES / "heatmap-historical.json")
+    execution = build_live_heatmap_execution(
+        settings, fixture_path=FIXTURES / "heatmap-historical.json"
+    )
     assert execution.live_loader is not None
     assert execution.cache is not None
 
@@ -204,13 +206,21 @@ def test_create_production_app_fails_fast_when_live_key_missing() -> None:
 
 def test_create_production_app_enables_live_only_with_settings() -> None:
     fixture_only = create_production_app(
-        AppSettings(allow_live=False, fortyguard_api_key=None, fortyguard_base_url="https://api.example.test")
+        AppSettings(
+            allow_live=False,
+            fortyguard_api_key=None,
+            fortyguard_base_url="https://api.example.test",
+        )
     )
     client = TestClient(fixture_only)
     assert client.get("/health").json()["mode"] == "fixture"
 
     live = create_production_app(
-        AppSettings(allow_live=True, fortyguard_api_key="key-1", fortyguard_base_url="https://api.example.test")
+        AppSettings(
+            allow_live=True,
+            fortyguard_api_key="key-1",
+            fortyguard_base_url="https://api.example.test",
+        )
     )
     live_client = TestClient(live)
     assert live_client.get("/health").json()["mode"] == "live"
@@ -229,7 +239,11 @@ def test_heatmap_route_accepts_granularity_from_request_body() -> None:
             "features": [
                 {
                     "geometry": {"type": "Point", "coordinates": [1, 1]},
-                    "properties": {"value": 35.5, "unit": "C", "valid_time": "2026-08-23T15:00:00+00:00"},
+                    "properties": {
+                        "value": 35.5,
+                        "unit": "C",
+                        "valid_time": "2026-08-23T15:00:00+00:00",
+                    },
                 }
             ],
         }
@@ -279,8 +293,14 @@ def test_env_params_live_loader_receives_documented_date_windows() -> None:
     assert date_time["filter_type"] == 3
     assert payload["temperature"] == 35.0
     assert payload["analysis"] == ["heat_index_celsius", "relative_humidity_percent"]
-    hourly = build_documented_env_params_payload(EnvParamsRequest(29.4241, -98.4936, date(2026, 8, 24), 35.0, hour=13))
-    assert hourly["date_time"] == {"start_date": "2026-08-24", "filter_type": 1, "start_time": "13:00"}
+    hourly = build_documented_env_params_payload(
+        EnvParamsRequest(29.4241, -98.4936, date(2026, 8, 24), 35.0, hour=13)
+    )
+    assert hourly["date_time"] == {
+        "start_date": "2026-08-24",
+        "filter_type": 1,
+        "start_time": "13:00",
+    }
 
 
 def test_budget_exceeded_maps_to_service_unavailable_with_error_kind() -> None:

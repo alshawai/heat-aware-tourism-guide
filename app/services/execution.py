@@ -71,7 +71,8 @@ class HeatmapExecution:
         self,
         *,
         fixture_path: Path,
-        live_loader: Callable[[HeatmapRequest], Mapping[str, object] | LiveHeatmapPayload] | None = None,
+        live_loader: Callable[[HeatmapRequest], Mapping[str, object] | LiveHeatmapPayload]
+        | None = None,
         cache: CacheService | None = None,
         endpoint: str = "/v1/heatmap",
         schema_version: str = "v1",
@@ -102,7 +103,9 @@ class HeatmapExecution:
             loaded = self.live_loader(request)
             payload = loaded.payload if isinstance(loaded, LiveHeatmapPayload) else loaded
             activity_id = loaded.activity_id if isinstance(loaded, LiveHeatmapPayload) else None
-            transformations = loaded.transformations if isinstance(loaded, LiveHeatmapPayload) else ()
+            transformations = (
+                loaded.transformations if isinstance(loaded, LiveHeatmapPayload) else ()
+            )
             result = normalize_heatmap_response(
                 payload,
                 request=request,
@@ -134,11 +137,16 @@ class HeatmapExecution:
             )
         return result
 
-    def _fallback(self, request: HeatmapRequest, request_payload: dict[str, object]) -> HeatmapResult | None:
+    def _fallback(
+        self, request: HeatmapRequest, request_payload: dict[str, object]
+    ) -> HeatmapResult | None:
         if self.cache is not None:
             cached = self.cache.get(
                 CacheKey.create(
-                    self.endpoint, self.schema_version, request_payload, self.provider_config_version
+                    self.endpoint,
+                    self.schema_version,
+                    request_payload,
+                    self.provider_config_version,
                 )
             )
             if cached is not None:
@@ -219,13 +227,15 @@ class HeatmapExecution:
                 retrieved_at=_retrieved_at(record),
                 activity_id=record.activity_id if record is not None else None,
                 source="fixture",
-                data_date=record.data_date if record is not None else (
-                    raw_data_date if isinstance(raw_data_date, str) else None
-                ),
+                data_date=record.data_date
+                if record is not None
+                else (raw_data_date if isinstance(raw_data_date, str) else None),
                 # The sidecar records which transformation rule versions produced
                 # the acquired data; a rule change never rewrites history (ADR 0002).
                 transformations=(
-                    record.transformations if record is not None else request_transformations(request)
+                    record.transformations
+                    if record is not None
+                    else request_transformations(request)
                 ),
                 stale=stale,
             )
@@ -314,7 +324,8 @@ class EnvParamsExecution:
         self,
         *,
         fixture_path: Path,
-        live_loader: Callable[[EnvParamsRequest], Mapping[str, object] | LiveEnvParamsPayload] | None = None,
+        live_loader: Callable[[EnvParamsRequest], Mapping[str, object] | LiveEnvParamsPayload]
+        | None = None,
         cache: CacheService | None = None,
         endpoint: str = "/v1/env_params",
         schema_version: str = "v1",
@@ -347,7 +358,9 @@ class EnvParamsExecution:
             loaded = self.live_loader(request)
             payload = loaded.payload if isinstance(loaded, LiveEnvParamsPayload) else loaded
             activity_id = loaded.activity_id if isinstance(loaded, LiveEnvParamsPayload) else None
-            transformations = loaded.transformations if isinstance(loaded, LiveEnvParamsPayload) else ()
+            transformations = (
+                loaded.transformations if isinstance(loaded, LiveEnvParamsPayload) else ()
+            )
             result = normalize_env_params_response(payload, request=request)
         except (ConnectionError, OSError, ProviderError, TimeoutError, ValueError) as error:
             fallback = self._fallback(request, request_payload)
@@ -373,7 +386,12 @@ class EnvParamsExecution:
                 provider_config_version=self.provider_config_version,
             )
         return EnvParamsOutcome(
-            result, "provider", activity_id, transformations, retrieved_at=retrieved_at, data_date=data_date
+            result,
+            "provider",
+            activity_id,
+            transformations,
+            retrieved_at=retrieved_at,
+            data_date=data_date,
         )
 
     def _fallback(
@@ -382,7 +400,10 @@ class EnvParamsExecution:
         if self.cache is not None:
             cached = self.cache.get(
                 CacheKey.create(
-                    self.endpoint, self.schema_version, request_payload, self.provider_config_version
+                    self.endpoint,
+                    self.schema_version,
+                    request_payload,
+                    self.provider_config_version,
                 )
             )
             if cached is not None:
@@ -423,7 +444,9 @@ class EnvParamsExecution:
         payload = _read_fixture(path)
         if payload is None:
             return None
-        if not _request_identity_matches(record.request_configuration, request_payload, date_relaxed=False):
+        if not _request_identity_matches(
+            record.request_configuration, request_payload, date_relaxed=False
+        ):
             return None
         return EnvParamsOutcome(
             normalize_env_params_response(payload, request=request),
@@ -453,10 +476,6 @@ def _env_data_date(payload: Mapping[str, object]) -> str | None:
     metadata = payload.get("metadata")
     if isinstance(metadata, Mapping):
         timestamps = metadata.get("timestamps")
-        if (
-            isinstance(timestamps, list)
-            and timestamps
-            and isinstance(timestamps[0], str)
-        ):
+        if isinstance(timestamps, list) and timestamps and isinstance(timestamps[0], str):
             return timestamps[0][:10]
     return None

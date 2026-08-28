@@ -23,7 +23,9 @@ def test_hotel_ranker_exposes_components_percentiles_and_ties() -> None:
 
 
 def test_hotel_ranker_rejects_invalid_weights_and_components() -> None:
-    candidate = HotelCandidate("a", {"night": 30, "hot_hours": 5, "persistence": 2, "day": float("nan")})
+    candidate = HotelCandidate(
+        "a", {"night": 30, "hot_hours": 5, "persistence": 2, "day": float("nan")}
+    )
     with pytest.raises(ValueError, match="components"):
         HotelRanker().rank([candidate])
     with pytest.raises(ValueError, match="weights"):

@@ -1,4 +1,4 @@
 {
   "*": "prettier --ignore-unknown --write",
-  "*.py": "python -m ruff check"
+  "*.py": ["uv run ruff format", "uv run ruff check --fix"]
 }

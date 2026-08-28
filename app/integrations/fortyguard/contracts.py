@@ -40,7 +40,9 @@ class HeatmapRequest:
         if not isinstance(self.forecast, bool):
             raise ValueError("forecast must be a boolean")
         _validate_us_coordinates(self.latitude, self.longitude)
-        if self.forecast and not date.today() <= self.start_date <= date.today() + timedelta(days=1):
+        if self.forecast and not date.today() <= self.start_date <= date.today() + timedelta(
+            days=1
+        ):
             raise ValueError("forecast start date must be today or tomorrow")
         if self.analytic_type in (AnalyticType.EXCEEDANCE, AnalyticType.PERSISTENCE):
             if (
@@ -51,7 +53,11 @@ class HeatmapRequest:
                 raise ValueError("threshold is required for this analytic type")
             if self.direction not in ("above", "below"):
                 raise ValueError("direction must be above or below")
-        if isinstance(self.granularity, bool) or not isinstance(self.granularity, int) or self.granularity not in (60, 80, 100):
+        if (
+            isinstance(self.granularity, bool)
+            or not isinstance(self.granularity, int)
+            or self.granularity not in (60, 80, 100)
+        ):
             raise ValueError("granularity must be 60, 80, or 100 meters")
 
     def to_payload(self) -> dict[str, object]:
@@ -81,12 +87,21 @@ class EnvParamsRequest:
 
     def __post_init__(self) -> None:
         _validate_us_coordinates(self.latitude, self.longitude)
-        if self.temperature_anchor_celsius is None or isinstance(self.temperature_anchor_celsius, bool) or not isinstance(self.temperature_anchor_celsius, (int, float)) or not math.isfinite(self.temperature_anchor_celsius):
+        if (
+            self.temperature_anchor_celsius is None
+            or isinstance(self.temperature_anchor_celsius, bool)
+            or not isinstance(self.temperature_anchor_celsius, (int, float))
+            or not math.isfinite(self.temperature_anchor_celsius)
+        ):
             raise ValueError("caller-supplied temperature anchor is required")
         if self.is_real_forecast:
             raise ValueError("fixed-anchor env_params cannot be a real forecast")
         if self.hour is not None:
-            if isinstance(self.hour, bool) or not isinstance(self.hour, int) or not 0 <= self.hour <= 23:
+            if (
+                isinstance(self.hour, bool)
+                or not isinstance(self.hour, int)
+                or not 0 <= self.hour <= 23
+            ):
                 raise ValueError("hour must be an integer between 0 and 23")
 
     def to_payload(self) -> dict[str, object]:
@@ -112,11 +127,16 @@ class AreaHeatmapRequest:
     unit_source: str
 
     def __post_init__(self) -> None:
-        if self.geometry.get("type") not in {"Polygon", "MultiPolygon"} or not _valid_geometry_coordinates(self.geometry):
+        if self.geometry.get("type") not in {
+            "Polygon",
+            "MultiPolygon",
+        } or not _valid_geometry_coordinates(self.geometry):
             raise ValueError("area heatmap requires polygon geometry")
         if not self.analytic_types:
             raise ValueError("at least one analytic type is required")
-        if any(not isinstance(analytic_type, AnalyticType) for analytic_type in self.analytic_types):
+        if any(
+            not isinstance(analytic_type, AnalyticType) for analytic_type in self.analytic_types
+        ):
             raise ValueError("area analytic types must be known")
         if self.context not in {"district", "corridor"}:
             raise ValueError("area context must be district or corridor")
@@ -177,7 +197,9 @@ def normalize_env_params_response(
             _series_value(heat, "heat index"),
             _series_value(humidity, "humidity"),
         )
-        for timestamp, heat, humidity in zip(timestamps, series["heat"], series["humidity"], strict=True)
+        for timestamp, heat, humidity in zip(
+            timestamps, series["heat"], series["humidity"], strict=True
+        )
     )
     if not entries:
         raise ValueError("env params response contains no entries")
@@ -189,7 +211,9 @@ def normalize_env_params_response(
     )
 
 
-def _env_params_series(payload: Mapping[str, object]) -> tuple[Sequence[object], str, dict[str, list[object]]]:
+def _env_params_series(
+    payload: Mapping[str, object],
+) -> tuple[Sequence[object], str, dict[str, list[object]]]:
     """Extract timestamps, timezone, and the consumed series from either provider shape.
 
     Two provider shapes are reality: the documented ``metadata`` + ``locations``
@@ -213,7 +237,11 @@ def _documented_series(
     if not isinstance(timezone, str) or not timezone:
         raise ValueError("missing timezone metadata")
     locations = payload.get("locations")
-    if not isinstance(locations, Sequence) or isinstance(locations, (str, bytes)) or len(locations) != 1:
+    if (
+        not isinstance(locations, Sequence)
+        or isinstance(locations, (str, bytes))
+        or len(locations) != 1
+    ):
         raise ValueError("single-point env params requires exactly one location")
     location = locations[0]
     if not isinstance(location, Mapping):
@@ -229,7 +257,9 @@ def _documented_series(
     return timestamps, timezone, series
 
 
-def _flat_series(payload: Mapping[str, object]) -> tuple[Sequence[object], str, dict[str, list[object]]]:
+def _flat_series(
+    payload: Mapping[str, object],
+) -> tuple[Sequence[object], str, dict[str, list[object]]]:
     timezone = payload.get("timezone")
     if not isinstance(timezone, str) or not timezone:
         raise ValueError("missing timezone metadata")
@@ -342,7 +372,22 @@ def normalize_heatmap_response(
         valid_time = _parse_datetime(properties.get("valid_time"))
         units.add(unit)
         numeric_value = float(value)
-        tiles.append(Tile(str(properties.get("id", index)), geometry, request.analytic_type, numeric_value if request.analytic_type is AnalyticType.TCM else None, numeric_value, unit, source, valid_time, request.forecast, request.threshold_celsius, request.direction, activity_id))
+        tiles.append(
+            Tile(
+                str(properties.get("id", index)),
+                geometry,
+                request.analytic_type,
+                numeric_value if request.analytic_type is AnalyticType.TCM else None,
+                numeric_value,
+                unit,
+                source,
+                valid_time,
+                request.forecast,
+                request.threshold_celsius,
+                request.direction,
+                activity_id,
+            )
+        )
     if len(units) != 1:
         raise ValueError("mixed or unsupported units")
     sanitized_payload = sanitize_payload(payload)
@@ -366,9 +411,15 @@ def normalize_heatmap_response(
 def _valid_geometry_coordinates(geometry: Mapping[str, object]) -> bool:
     coordinates = geometry.get("coordinates")
     if geometry.get("type") == "Point":
-        return isinstance(coordinates, list) and len(coordinates) == 2 and all(
-            isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
-            for value in coordinates
+        return (
+            isinstance(coordinates, list)
+            and len(coordinates) == 2
+            and all(
+                isinstance(value, (int, float))
+                and not isinstance(value, bool)
+                and math.isfinite(value)
+                for value in coordinates
+            )
         )
     if not isinstance(coordinates, list) or not coordinates:
         return False
@@ -394,7 +445,10 @@ def _valid_geometry_coordinates(geometry: Mapping[str, object]) -> bool:
     structurally_valid = (
         all(valid_ring(ring) for ring in coordinates)
         if geometry.get("type") == "Polygon"
-        else all(isinstance(polygon, list) and polygon and all(valid_ring(ring) for ring in polygon) for polygon in coordinates)
+        else all(
+            isinstance(polygon, list) and polygon and all(valid_ring(ring) for ring in polygon)
+            for polygon in coordinates
+        )
     )
     if not structurally_valid:
         return False
@@ -405,5 +459,10 @@ def _valid_geometry_coordinates(geometry: Mapping[str, object]) -> bool:
 
 
 def _validate_us_coordinates(latitude: float, longitude: float) -> None:
-    if not math.isfinite(latitude) or not math.isfinite(longitude) or not 24 <= latitude <= 50 or not -125 <= longitude <= -66:
+    if (
+        not math.isfinite(latitude)
+        or not math.isfinite(longitude)
+        or not 24 <= latitude <= 50
+        or not -125 <= longitude <= -66
+    ):
         raise ValueError("coordinates must be within the supported US extent")
