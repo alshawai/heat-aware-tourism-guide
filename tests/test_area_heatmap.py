@@ -16,7 +16,11 @@ import pytest
 from shapely.geometry import shape
 
 from app.integrations.fortyguard.client import FortyGuardClient
-from app.integrations.fortyguard.contracts import AnalyticType, HeatmapRequest, normalize_heatmap_response
+from app.integrations.fortyguard.contracts import (
+    AnalyticType,
+    HeatmapRequest,
+    normalize_heatmap_response,
+)
 from app.integrations.fortyguard.errors import ProviderError, ProviderErrorKind
 from app.integrations.fortyguard.live import (
     LiveAreaHeatmapAdapter,
@@ -79,20 +83,16 @@ class TestBuildRouteCorridorPolygon:
         """The turn point should be inside the buffered corridor."""
         corridor = build_route_corridor_polygon(_SHARP_TURN_ROUTE, buffer_m=25.0)
         from shapely.geometry import Point
+
         turn_point = Point(-98.4850, 29.4259)  # (lng, lat) for shapely
         assert corridor.contains(turn_point) or corridor.boundary.covers(turn_point)
 
     def test_oversized_route_triggers_simplification(self) -> None:
         """A route with many points must be simplified to at most max_vertices."""
         # Generate a dense route with 500 points
-        dense_route = [
-            (29.4259 + i * 0.00001, -98.4870 + i * 0.00002)
-            for i in range(500)
-        ]
+        dense_route = [(29.4259 + i * 0.00001, -98.4870 + i * 0.00002) for i in range(500)]
         max_verts = 50
-        corridor = build_route_corridor_polygon(
-            dense_route, buffer_m=25.0, max_vertices=max_verts
-        )
+        corridor = build_route_corridor_polygon(dense_route, buffer_m=25.0, max_vertices=max_verts)
         assert corridor.is_valid
         vertex_count = len(corridor.exterior.coords)
         assert vertex_count <= max_verts, (
@@ -225,22 +225,24 @@ def _multi_tile_map_data(n_tiles: int = 4) -> dict[str, object]:
         east = west + 0.001
         south = 29.42
         north = 29.421
-        features.append({
-            "type": "Feature",
-            "geometry": {
-                "type": "Polygon",
-                "coordinates": [
-                    [
-                        [west, south],
-                        [east, south],
-                        [east, north],
-                        [west, north],
-                        [west, south],
-                    ]
-                ],
-            },
-            "properties": {"average_temperature": 33.0 + i * 0.5},
-        })
+        features.append(
+            {
+                "type": "Feature",
+                "geometry": {
+                    "type": "Polygon",
+                    "coordinates": [
+                        [
+                            [west, south],
+                            [east, south],
+                            [east, north],
+                            [west, north],
+                            [west, south],
+                        ]
+                    ],
+                },
+                "properties": {"average_temperature": 33.0 + i * 0.5},
+            }
+        )
     return {
         "map_data": {"type": "FeatureCollection", "features": features},
         "stats_data": {"units": "celsius", "analytic_type": "tcm"},
@@ -334,17 +336,23 @@ def _mock_tiles_along_route() -> list[dict[str, object]]:
         east = west + 0.001
         south = 29.4220 + i * 0.001
         north = south + 0.001
-        tiles.append({
-            "geometry": {
-                "type": "Polygon",
-                "coordinates": [[
-                    [west, south], [east, south],
-                    [east, north], [west, north],
-                    [west, south],
-                ]],
-            },
-            "properties": {"value": 33.0 + i},
-        })
+        tiles.append(
+            {
+                "geometry": {
+                    "type": "Polygon",
+                    "coordinates": [
+                        [
+                            [west, south],
+                            [east, south],
+                            [east, north],
+                            [west, north],
+                            [west, south],
+                        ]
+                    ],
+                },
+                "properties": {"value": 33.0 + i},
+            }
+        )
     return tiles
 
 
@@ -359,17 +367,23 @@ class TestMapTilesToRouteSegments:
 
     def test_segments_with_no_overlap_have_none_value(self) -> None:
         # Tiles far from route
-        far_tiles: list[dict[str, object]] = [{
-            "geometry": {
-                "type": "Polygon",
-                "coordinates": [[
-                    [-99.0, 30.0], [-98.9, 30.0],
-                    [-98.9, 30.1], [-99.0, 30.1],
-                    [-99.0, 30.0],
-                ]],
-            },
-            "properties": {"value": 40.0},
-        }]
+        far_tiles: list[dict[str, object]] = [
+            {
+                "geometry": {
+                    "type": "Polygon",
+                    "coordinates": [
+                        [
+                            [-99.0, 30.0],
+                            [-98.9, 30.0],
+                            [-98.9, 30.1],
+                            [-99.0, 30.1],
+                            [-99.0, 30.0],
+                        ]
+                    ],
+                },
+                "properties": {"value": 40.0},
+            }
+        ]
         segments = map_tiles_to_route_segments(_SA_ROUTE, far_tiles)
         for seg in segments:
             assert seg.value is None
@@ -413,12 +427,22 @@ def _adapter_client(responses: list[object]) -> tuple[FortyGuardClient, list[dic
 
 class TestLiveAreaHeatmapAdapter:
     def test_adapter_submits_area_payload_and_stamps_route_to_aoi_buffer(self) -> None:
-        client, submissions = _adapter_client([
-            {"data": {"activity_id": "area-1"}},
-            {"data": {"activity_id": "area-1", "status": "Completed", "result": _multi_tile_map_data(2)}},
-        ])
+        client, submissions = _adapter_client(
+            [
+                {"data": {"activity_id": "area-1"}},
+                {
+                    "data": {
+                        "activity_id": "area-1",
+                        "status": "Completed",
+                        "result": _multi_tile_map_data(2),
+                    }
+                },
+            ]
+        )
         adapter = LiveAreaHeatmapAdapter(
-            client, today=lambda: date(2026, 8, 27), sleep=lambda _: None,
+            client,
+            today=lambda: date(2026, 8, 27),
+            sleep=lambda _: None,
         )
         loaded = adapter.load(
             _SA_ROUTE,
@@ -451,12 +475,22 @@ class TestLiveAreaHeatmapAdapter:
         assert "point_to_aoi_expansion" not in stamp_names
 
     def test_adapter_default_granularity_is_100(self) -> None:
-        client, submissions = _adapter_client([
-            {"data": {"activity_id": "area-2"}},
-            {"data": {"activity_id": "area-2", "status": "Completed", "result": _multi_tile_map_data(1)}},
-        ])
+        client, submissions = _adapter_client(
+            [
+                {"data": {"activity_id": "area-2"}},
+                {
+                    "data": {
+                        "activity_id": "area-2",
+                        "status": "Completed",
+                        "result": _multi_tile_map_data(1),
+                    }
+                },
+            ]
+        )
         adapter = LiveAreaHeatmapAdapter(
-            client, today=lambda: date(2026, 8, 27), sleep=lambda _: None,
+            client,
+            today=lambda: date(2026, 8, 27),
+            sleep=lambda _: None,
         )
         adapter.load(
             _SA_ROUTE,
@@ -469,7 +503,9 @@ class TestLiveAreaHeatmapAdapter:
     def test_adapter_rejects_out_of_contract_date_before_submission(self) -> None:
         client, submissions = _adapter_client([{"data": {"activity_id": "area-3"}}])
         adapter = LiveAreaHeatmapAdapter(
-            client, today=lambda: date(2026, 8, 27), sleep=lambda _: None,
+            client,
+            today=lambda: date(2026, 8, 27),
+            sleep=lambda _: None,
         )
         with pytest.raises(ProviderError) as error:
             adapter.load(
@@ -483,11 +519,19 @@ class TestLiveAreaHeatmapAdapter:
 
     def test_adapter_uses_custom_polling_settings(self) -> None:
         sleeps: list[float] = []
-        client, _ = _adapter_client([
-            {"data": {"activity_id": "area-4"}},
-            {"data": {"activity_id": "area-4", "status": "Processing"}},
-            {"data": {"activity_id": "area-4", "status": "Completed", "result": _multi_tile_map_data(1)}},
-        ])
+        client, _ = _adapter_client(
+            [
+                {"data": {"activity_id": "area-4"}},
+                {"data": {"activity_id": "area-4", "status": "Processing"}},
+                {
+                    "data": {
+                        "activity_id": "area-4",
+                        "status": "Completed",
+                        "result": _multi_tile_map_data(1),
+                    }
+                },
+            ]
+        )
         adapter = LiveAreaHeatmapAdapter(
             client,
             today=lambda: date(2026, 8, 27),

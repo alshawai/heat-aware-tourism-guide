@@ -62,8 +62,13 @@ class LiveFortyGuardTransport(HttpFortyGuardTransport):
             return parsed
         data = parsed["data"]
         if not isinstance(data, Mapping):
-            raise ProviderError(ProviderErrorKind.MALFORMED_RESPONSE, detail="response data envelope must be an object")
-        unwrapped: dict[str, object] = {key: value for key, value in parsed.items() if key != "data"}
+            raise ProviderError(
+                ProviderErrorKind.MALFORMED_RESPONSE,
+                detail="response data envelope must be an object",
+            )
+        unwrapped: dict[str, object] = {
+            key: value for key, value in parsed.items() if key != "data"
+        }
         unwrapped.update(dict(data))
         return unwrapped
 
@@ -80,7 +85,9 @@ def build_documented_heatmap_payload(
     and historical requests must fall between 2019-01-01 and today.
     """
     current = date.today() if today is None else today
-    _validate_documented_window(start_date=request.start_date, forecast=request.forecast, today=current)
+    _validate_documented_window(
+        start_date=request.start_date, forecast=request.forecast, today=current
+    )
     payload: dict[str, object] = {
         "polygon_aoi": _point_square_feature_collection(
             request.latitude, request.longitude, side_m=request.granularity
@@ -116,7 +123,9 @@ def _validate_documented_date(start_date: date, *, today: date) -> None:
         )
 
 
-def _point_square_feature_collection(latitude: float, longitude: float, *, side_m: float) -> dict[str, object]:
+def _point_square_feature_collection(
+    latitude: float, longitude: float, *, side_m: float
+) -> dict[str, object]:
     half_lat = side_m / 2.0 * _DEGREES_PER_METER
     half_lon = half_lat / math.cos(math.radians(latitude))
     west, east = longitude - half_lon, longitude + half_lon
@@ -131,7 +140,11 @@ def _point_square_feature_collection(latitude: float, longitude: float, *, side_
     return {
         "type": "FeatureCollection",
         "features": [
-            {"type": "Feature", "properties": {}, "geometry": {"type": "Polygon", "coordinates": [ring]}}
+            {
+                "type": "Feature",
+                "properties": {},
+                "geometry": {"type": "Polygon", "coordinates": [ring]},
+            }
         ],
     }
 
@@ -149,20 +162,28 @@ def translate_heatmap_response(
     """
     map_data = result.get("map_data")
     if not isinstance(map_data, Mapping):
-        raise ProviderError(ProviderErrorKind.MALFORMED_RESPONSE, detail="missing map_data in completed result")
+        raise ProviderError(
+            ProviderErrorKind.MALFORMED_RESPONSE, detail="missing map_data in completed result"
+        )
     features = map_data.get("features")
     if not isinstance(features, Sequence) or isinstance(features, (str, bytes)) or not features:
-        raise ProviderError(ProviderErrorKind.MALFORMED_RESPONSE, detail="map_data contains no features")
+        raise ProviderError(
+            ProviderErrorKind.MALFORMED_RESPONSE, detail="map_data contains no features"
+        )
     valid_time = f"{request.start_date.isoformat()}T00:00:00+00:00"
     unit = "C" if request.analytic_type is AnalyticType.TCM else "hours"
     internal_features: list[dict[str, object]] = []
     for index, feature in enumerate(features):
         if not isinstance(feature, Mapping):
-            raise ProviderError(ProviderErrorKind.MALFORMED_RESPONSE, detail="malformed map_data feature")
+            raise ProviderError(
+                ProviderErrorKind.MALFORMED_RESPONSE, detail="malformed map_data feature"
+            )
         geometry = feature.get("geometry")
         properties = feature.get("properties")
         if not isinstance(geometry, Mapping) or not isinstance(properties, Mapping):
-            raise ProviderError(ProviderErrorKind.MALFORMED_RESPONSE, detail="malformed map_data feature")
+            raise ProviderError(
+                ProviderErrorKind.MALFORMED_RESPONSE, detail="malformed map_data feature"
+            )
         value = _tile_value(properties, request.analytic_type)
         internal_features.append(
             {
@@ -188,10 +209,16 @@ def translate_heatmap_response(
 
 
 def _tile_value(properties: Mapping[str, object], analytic_type: AnalyticType) -> float:
-    candidates = ("average_temperature", "temperature") if analytic_type is AnalyticType.TCM else ("value",)
+    candidates = (
+        ("average_temperature", "temperature") if analytic_type is AnalyticType.TCM else ("value",)
+    )
     for name in candidates:
         value = properties.get(name)
-        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, (int, float))
+            or not math.isfinite(value)
+        ):
             if value is not None:
                 raise ProviderError(
                     ProviderErrorKind.MALFORMED_RESPONSE,
@@ -371,9 +398,7 @@ def _geometry_to_feature_collection(geometry: BaseGeometry) -> dict[str, object]
     geojson = shapely_mapping(geometry)
     return {
         "type": "FeatureCollection",
-        "features": [
-            {"type": "Feature", "properties": {}, "geometry": dict(geojson)}
-        ],
+        "features": [{"type": "Feature", "properties": {}, "geometry": dict(geojson)}],
     }
 
 
@@ -515,6 +540,7 @@ class LiveAreaHeatmapAdapter:
 @dataclass(frozen=True)
 class RouteSegmentHeat:
     """Heat metric for one segment of a route, derived from tile overlap."""
+
     segment_index: int
     start: tuple[float, float]
     end: tuple[float, float]
@@ -585,14 +611,16 @@ def map_tiles_to_route_segments(
         coverage = min(1.0, overlap_area / segment_area) if segment_area > 0 else 0.0
         avg_value = weighted_sum / overlap_area if overlap_area > 0 else None
 
-        segments.append(RouteSegmentHeat(
-            segment_index=i,
-            start=start_pt,
-            end=end_pt,
-            value=avg_value,
-            coverage=coverage,
-            tile_count=tile_count,
-        ))
+        segments.append(
+            RouteSegmentHeat(
+                segment_index=i,
+                start=start_pt,
+                end=end_pt,
+                value=avg_value,
+                coverage=coverage,
+                tile_count=tile_count,
+            )
+        )
 
     return segments
 
@@ -609,7 +637,10 @@ def build_documented_env_params_payload(request: EnvParamsRequest) -> dict[str, 
     observations: between 2019-01-01 and today.
     """
     _validate_documented_date(request.start_date, today=date.today())
-    date_time: dict[str, object] = {"start_date": request.start_date.isoformat(), "filter_type": 1 if request.hour is not None else 3}
+    date_time: dict[str, object] = {
+        "start_date": request.start_date.isoformat(),
+        "filter_type": 1 if request.hour is not None else 3,
+    }
     if request.hour is not None:
         date_time["start_time"] = f"{request.hour:02d}:00"
     return {

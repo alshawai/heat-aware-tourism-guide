@@ -33,7 +33,10 @@ class HotelRanker:
             raise ValueError("hotel weights must sum to one")
         required = set(self.default_weights)
         if set(selected_weights) != required or any(
-            isinstance(weight, bool) or not isinstance(weight, (int, float)) or not math.isfinite(weight) or weight < 0
+            isinstance(weight, bool)
+            or not isinstance(weight, (int, float))
+            or not math.isfinite(weight)
+            or weight < 0
             for weight in selected_weights.values()
         ):
             raise ValueError("hotel weights must be finite, non-negative, and complete")
@@ -58,7 +61,9 @@ class HotelRanker:
         for position, (candidate, score) in enumerate(ordered):
             tie_group = distinct.index(score)
             percentile = 100 * (1 - (distinct.index(score) / max(1, len(distinct) - 1)))
-            result.append(RankedHotel(candidate.identity, candidate.components, score, percentile, tie_group))
+            result.append(
+                RankedHotel(candidate.identity, candidate.components, score, percentile, tie_group)
+            )
         return tuple(result)
 
 
@@ -105,6 +110,10 @@ class RouteComparator:
             return RouteComparison(shortest.identity, "heat below threshold", corridor_heat, False)
         shade_values = {route.identity: shade(route) for route in routes}
         if building_coverage < 0.7:
-            return RouteComparison(shortest.identity, "insufficient shade coverage", corridor_heat, True)
+            return RouteComparison(
+                shortest.identity, "insufficient shade coverage", corridor_heat, True
+            )
         best = max(routes, key=lambda route: (shade_values[route.identity], -route.distance_m))
-        return RouteComparison(best.identity, "highest modeled shade among returned routes", corridor_heat, True)
+        return RouteComparison(
+            best.identity, "highest modeled shade among returned routes", corridor_heat, True
+        )

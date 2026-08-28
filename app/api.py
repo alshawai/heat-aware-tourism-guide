@@ -78,7 +78,9 @@ def create_fixture_server(
     allow_live: bool = False,
     trip_adapter: TripAnalysisAdapter | None = None,
 ) -> ThreadingHTTPServer:
-    configured_execution: HeatmapExecution = execution or HeatmapExecution(fixture_path=fixture_path)
+    configured_execution: HeatmapExecution = execution or HeatmapExecution(
+        fixture_path=fixture_path
+    )
 
     class Handler(BaseHTTPRequestHandler):
         def do_POST(self) -> None:
@@ -112,7 +114,10 @@ def create_fixture_server(
                     raise ValueError("execution_mode must be fixture or live")
                 if live and not allow_live:
                     raise ValueError("live execution is not enabled for this server")
-                response = json.dumps(_result_json(configured_execution.run(request, live=live)), default=_json_default).encode()
+                response = json.dumps(
+                    _result_json(configured_execution.run(request, live=live)),
+                    default=_json_default,
+                ).encode()
                 self.send_response(200)
             except (
                 BudgetExceededError,
@@ -148,7 +153,9 @@ def create_app(
     trip_adapter: TripAnalysisAdapter | None = None,
 ) -> FastAPI:
     """Create the server-owned product API used by local runs and deployment."""
-    configured_execution: HeatmapExecution = execution or HeatmapExecution(fixture_path=fixture_path)
+    configured_execution: HeatmapExecution = execution or HeatmapExecution(
+        fixture_path=fixture_path
+    )
     configured_env_params: EnvParamsExecution = env_params_execution or EnvParamsExecution(
         fixture_path=fixture_path.parent / "env-params.json"
     )
@@ -195,7 +202,9 @@ def create_app(
                     "stale": outcome.stale,
                     "activity_id": outcome.activity_id,
                     "retrieved_at": (
-                        outcome.retrieved_at.isoformat() if outcome.retrieved_at is not None else None
+                        outcome.retrieved_at.isoformat()
+                        if outcome.retrieved_at is not None
+                        else None
                     ),
                     "data_date": outcome.data_date,
                     "transformations": [

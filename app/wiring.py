@@ -116,6 +116,7 @@ def _fixture_candidates(primary: Path, pattern: str) -> list[Path]:
 
     Acquisition sidecars are excluded — they are identity metadata, not payloads.
     """
+
     def payloads(paths: list[Path]) -> list[Path]:
         return [path for path in paths if not path.name.endswith(".acquisition.json")]
 
@@ -139,7 +140,9 @@ def create_production_app(
 
     resolved = settings if settings is not None else load_settings()
     root = Path(__file__).resolve().parents[1]
-    heatmap_fixture = fixture_path if fixture_path is not None else root / "fixtures" / "heatmap-historical.json"
+    heatmap_fixture = (
+        fixture_path if fixture_path is not None else root / "fixtures" / "heatmap-historical.json"
+    )
     env_fixture = (
         env_params_fixture_path
         if env_params_fixture_path is not None

@@ -28,7 +28,9 @@ class ProviderError(Exception):
 
 
 def _sanitize_detail(detail: str) -> str:
-    detail = re.sub(r"(?i)(api[_ -]?key|authorization|token)\s*[:=]\s*[^\s,;]+", r"\1=[redacted]", detail)
+    detail = re.sub(
+        r"(?i)(api[_ -]?key|authorization|token)\s*[:=]\s*[^\s,;]+", r"\1=[redacted]", detail
+    )
     return detail[:160]
 
 

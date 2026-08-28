@@ -11,6 +11,13 @@ dependencies = [
 
 [project.optional-dependencies]
 test = ["httpx2==2.12.0"]
+dev = [
+    "httpx2==2.12.0",
+    "mypy==1.17.1",
+    "pip-audit==2.9.0",
+    "pytest==9.0.3",
+    "ruff==0.12.12",
+]
 
 [build-system]
 requires = ["setuptools>=68"]
@@ -21,6 +28,9 @@ include = ["app*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "integration: fixture-backed tests that cross application boundaries",
+]
 
 [tool.ruff]
 line-length = 100
@@ -35,9 +45,5 @@ ignore_missing_imports = true
 follow_imports = "skip"
 
 [[tool.mypy.overrides]]
-module = "tests.*"
-disable_error_code = ["untyped-decorator"]
-
-[[tool.mypy.overrides]]
 module = "app.api"
-disable_error_code = ["untyped-decorator"]
+disable_error_code = ["misc"]

@@ -14,7 +14,9 @@ from app.domain.ledger import (
 NOW = datetime(2026, 8, 28, 12, tzinfo=timezone.utc)
 
 
-def _call(activity_id: str, credits: int | None = None, endpoint: str = "/v1/heatmap") -> UsageRecord:
+def _call(
+    activity_id: str, credits: int | None = None, endpoint: str = "/v1/heatmap"
+) -> UsageRecord:
     return UsageRecord(activity_id, endpoint, credits, NOW, "completed")
 
 

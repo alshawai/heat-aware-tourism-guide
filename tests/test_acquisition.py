@@ -29,7 +29,13 @@ RAW_TCM_RESULT: dict[str, object] = {
                 "geometry": {
                     "type": "Polygon",
                     "coordinates": [
-                        [[-98.50, 29.42], [-98.49, 29.42], [-98.49, 29.43], [-98.50, 29.43], [-98.50, 29.42]]
+                        [
+                            [-98.50, 29.42],
+                            [-98.49, 29.42],
+                            [-98.49, 29.43],
+                            [-98.50, 29.43],
+                            [-98.50, 29.42],
+                        ]
                     ],
                 },
                 "properties": {"id": "tile-1", "average_temperature": 36.7},
@@ -67,9 +73,7 @@ class FakeTransport:
 
 
 def _client(result: dict[str, object], ledger: CreditLedger | None = None) -> FortyGuardClient:
-    return FortyGuardClient(
-        FakeTransport(result), "secret", clock=lambda: CLOCK, ledger=ledger
-    )
+    return FortyGuardClient(FakeTransport(result), "secret", clock=lambda: CLOCK, ledger=ledger)
 
 
 def test_heatmap_acquisition_writes_raw_fixture_and_sidecar(tmp_path: Path) -> None:
@@ -122,9 +126,7 @@ def test_acquired_heatmap_fixture_replays_through_execution(tmp_path: Path) -> N
     )
     from app.integrations.fortyguard.contracts import AnalyticType, HeatmapRequest
 
-    request = HeatmapRequest(
-        AnalyticType.TCM, 29.4241, -98.4936, date(2026, 8, 23), forecast=False
-    )
+    request = HeatmapRequest(AnalyticType.TCM, 29.4241, -98.4936, date(2026, 8, 23), forecast=False)
     result = HeatmapExecution(fixture_path=outcome.fixture_path).run(request)
     assert result.provenance.source == "fixture"
     assert result.provenance.activity_id == "activity-acq-1"
@@ -169,7 +171,9 @@ def test_acquisition_records_actual_usage_in_ledger(tmp_path: Path) -> None:
     store = JsonlLedgerStore(tmp_path / "ledger.jsonl")
     ledger = store.load(budget=100)
     acquire_heatmap_fixture(
-        HEATMAP_SCENARIOS["tcm-historical"], _client(RAW_TCM_RESULT, ledger=ledger), out_dir=tmp_path
+        HEATMAP_SCENARIOS["tcm-historical"],
+        _client(RAW_TCM_RESULT, ledger=ledger),
+        out_dir=tmp_path,
     )
     reloaded = JsonlLedgerStore(tmp_path / "ledger.jsonl").load()
     assert reloaded.call_count == 1

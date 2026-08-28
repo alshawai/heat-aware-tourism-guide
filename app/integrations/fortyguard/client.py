@@ -69,7 +69,11 @@ class FortyGuardClient:
         submitted_at = self._clock()
         self._emit(
             "fortyguard.submitted",
-            {"activity_id": activity_id, "endpoint": endpoint, "request": sanitize_payload(payload)},
+            {
+                "activity_id": activity_id,
+                "endpoint": endpoint,
+                "request": sanitize_payload(payload),
+            },
         )
         transitions: list[str] = []
 
@@ -108,7 +112,9 @@ class FortyGuardClient:
             self._ledger.record(
                 UsageRecord(activity_id, endpoint, credits_used, self._clock(), "completed")
             )
-        self._emit("fortyguard.completed", {"activity_id": activity_id, **_response_metadata(result)})
+        self._emit(
+            "fortyguard.completed", {"activity_id": activity_id, **_response_metadata(result)}
+        )
         return result, metadata
 
     def _emit(self, event: str, fields: Mapping[str, object]) -> None:
@@ -145,7 +151,13 @@ def poll_activity(
             if on_transition is not None:
                 on_transition("timed_out" if status_code == 408 else "rate_limited")
             if on_event is not None:
-                on_event("fortyguard.status_transition", {"activity_id": activity_id, "status": "timed_out" if status_code == 408 else "rate_limited"})
+                on_event(
+                    "fortyguard.status_transition",
+                    {
+                        "activity_id": activity_id,
+                        "status": "timed_out" if status_code == 408 else "rate_limited",
+                    },
+                )
             if poll_number < max_polls:
                 sleep(interval_seconds)
                 continue
@@ -154,7 +166,10 @@ def poll_activity(
             if on_transition is not None:
                 on_transition("server_error")
             if on_event is not None:
-                on_event("fortyguard.status_transition", {"activity_id": activity_id, "status": "server_error"})
+                on_event(
+                    "fortyguard.status_transition",
+                    {"activity_id": activity_id, "status": "server_error"},
+                )
             if poll_number < max_polls:
                 sleep(interval_seconds)
                 continue
@@ -171,7 +186,9 @@ def poll_activity(
         if status == "Completed":
             result = response.get("result")
             if not isinstance(result, Mapping):
-                raise ProviderError(ProviderErrorKind.MALFORMED_RESPONSE, detail="missing task result")
+                raise ProviderError(
+                    ProviderErrorKind.MALFORMED_RESPONSE, detail="missing task result"
+                )
             completed = dict(result)
             for key in ("credits_used", "request_id"):
                 if key in response:
@@ -181,7 +198,9 @@ def poll_activity(
             raise ProviderError(ProviderErrorKind.TASK_FAILURE, detail="provider task failed")
         if status_code not in (None, 200, 202, 404):
             if not isinstance(status_code, int):
-                raise ProviderError(ProviderErrorKind.MALFORMED_RESPONSE, detail="invalid status code")
+                raise ProviderError(
+                    ProviderErrorKind.MALFORMED_RESPONSE, detail="invalid status code"
+                )
             raise classify_provider_error(status_code, "status lookup failed")
         if poll_number < max_polls:
             sleep(interval_seconds)

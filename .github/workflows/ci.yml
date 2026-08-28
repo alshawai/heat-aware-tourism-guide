@@ -1,4 +1,4 @@
-name: CI
+name: Quality gates
 
 on:
   pull_request:
@@ -8,44 +8,80 @@ on:
 permissions:
   contents: read
 
+env:
+  ALLOW_LIVE: "false"
+
 jobs:
-  repository-quality:
+  python:
+    name: Python quality
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: uv sync --frozen --extra dev
+      - run: uv run ruff format --check app tests
+      - run: uv run ruff check app tests
+      - run: uv run mypy app tests
+      - run: uv run python -m pytest -q -m "not integration"
+      - run: uv run python -m pytest -q -m integration
 
+  frontend:
+    name: Frontend quality
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            frontend/package-lock.json
+      - run: npm ci
+      - run: npm ci --prefix frontend
+      - run: npm run format:check
+      - run: npm run frontend:lint
+      - run: npm run frontend:typecheck
+      - run: npm run frontend:test
+      - run: npm run frontend:build
 
-      - name: Install repository tooling
-        run: npm ci
-
-      - name: Check formatting
-        run: npm run format:check
-
-      - name: Audit repository tooling
-        run: npm audit --audit-level=high
-
-  python-quality:
+  offline-e2e:
+    name: Offline fixture E2E
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-
-      - uses: actions/setup-python@v6
+      - uses: astral-sh/setup-uv@v6
         with:
-          python-version: "3.11"
-          cache: pip
+          enable-cache: true
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: uv sync --frozen
+      - run: npm ci --prefix frontend
+      - run: npm run frontend:build
+      - run: npx --prefix frontend playwright install --with-deps chromium
+      - run: npm run e2e
 
-      - name: Install Python quality tooling
-        run: python -m pip install ".[test]" mypy==1.20.2 pytest==9.0.3 ruff==0.15.12
-
-      - name: Lint Python
-        run: python -m ruff check app tests
-
-      - name: Type-check Python
-        run: python -m mypy app tests
-
-      - name: Test Python
-        run: python -m pytest -q
+  dependency-audit:
+    name: High-severity dependency audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            frontend/package-lock.json
+      - run: uv sync --frozen --extra dev
+      - run: uv run pip-audit
+      - run: npm audit --audit-level=high
+      - run: npm audit --prefix frontend --audit-level=high

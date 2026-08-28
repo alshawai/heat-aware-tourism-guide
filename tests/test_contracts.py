@@ -36,6 +36,7 @@ from app.domain.contracts import (
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _valid_hotel_candidate(identity: str = "hotel-a") -> HotelCandidateData:
     return HotelCandidateData(
         identity=identity,
@@ -99,7 +100,15 @@ def _valid_provenance() -> Provenance:
 
 def _valid_hourly() -> tuple[HourlyEntry, ...]:
     return tuple(
-        HourlyEntry(hour=h, metric=Metric(value=30 + h * 0.5, unit="C", label=MetricLabel.PROVIDER_TCM, is_actual_heat_index=False))
+        HourlyEntry(
+            hour=h,
+            metric=Metric(
+                value=30 + h * 0.5,
+                unit="C",
+                label=MetricLabel.PROVIDER_TCM,
+                is_actual_heat_index=False,
+            ),
+        )
         for h in range(24)
     )
 
@@ -117,8 +126,20 @@ def _valid_best_time() -> BestTimeResult:
 def _valid_ranked_hotels() -> HotelRankingResult:
     return HotelRankingResult(
         ranked=(
-            RankedHotel(identity="a", components={"night": 30, "hot_hours": 5, "persistence": 2, "day": 32}, score=18.55, percentile=100, tie_group=0),
-            RankedHotel(identity="b", components={"night": 36, "hot_hours": 9, "persistence": 5, "day": 38}, score=23.45, percentile=0, tie_group=1),
+            RankedHotel(
+                identity="a",
+                components={"night": 30, "hot_hours": 5, "persistence": 2, "day": 32},
+                score=18.55,
+                percentile=100,
+                tie_group=0,
+            ),
+            RankedHotel(
+                identity="b",
+                components={"night": 36, "hot_hours": 9, "persistence": 5, "day": 38},
+                score=23.45,
+                percentile=0,
+                tie_group=1,
+            ),
         ),
         weights={"night": 0.35, "hot_hours": 0.25, "persistence": 0.20, "day": 0.20},
         usable_count=2,
@@ -165,6 +186,7 @@ def _valid_response(**overrides: object) -> TripAnalysisResponse:
 # Valid construction
 # ---------------------------------------------------------------------------
 
+
 class TestValidConstruction:
     def test_request_with_all_fields(self) -> None:
         request = _valid_request()
@@ -184,13 +206,29 @@ class TestValidConstruction:
         assert coords.latitude == 29.42
 
     def test_provenance_with_coverage(self) -> None:
-        prov = Provenance(source="fixture", data_date="2026-08-23", confidence=Confidence.SUFFICIENT, retrieved_at="2026-08-24T00:00:00+00:00", transformation_version="trip-contract-v1", provider="test-provider", response_status="completed", request_configuration={}, fresh=True, coverage=0.85, note="strong data")
+        prov = Provenance(
+            source="fixture",
+            data_date="2026-08-23",
+            confidence=Confidence.SUFFICIENT,
+            retrieved_at="2026-08-24T00:00:00+00:00",
+            transformation_version="trip-contract-v1",
+            provider="test-provider",
+            response_status="completed",
+            request_configuration={},
+            fresh=True,
+            coverage=0.85,
+            note="strong data",
+        )
         assert prov.coverage == 0.85
         assert prov.note == "strong data"
 
     def test_metric_labels_distinguish_provider_from_noaa(self) -> None:
-        provider = Metric(value=35.0, unit="C", label=MetricLabel.PROVIDER_TCM, is_actual_heat_index=False)
-        noaa = Metric(value=38.0, unit="C", label=MetricLabel.NOAA_HEAT_INDEX, is_actual_heat_index=True)
+        provider = Metric(
+            value=35.0, unit="C", label=MetricLabel.PROVIDER_TCM, is_actual_heat_index=False
+        )
+        noaa = Metric(
+            value=38.0, unit="C", label=MetricLabel.NOAA_HEAT_INDEX, is_actual_heat_index=True
+        )
         assert provider.label is MetricLabel.PROVIDER_TCM
         assert noaa.label is MetricLabel.NOAA_HEAT_INDEX
 
@@ -211,15 +249,26 @@ class TestValidConstruction:
         assert unavail.recoverable is True
 
     def test_hourly_entry_valid_range(self) -> None:
-        entry = HourlyEntry(hour=0, metric=Metric(value=28.0, unit="C", label=MetricLabel.PROVIDER_TCM, is_actual_heat_index=False))
+        entry = HourlyEntry(
+            hour=0,
+            metric=Metric(
+                value=28.0, unit="C", label=MetricLabel.PROVIDER_TCM, is_actual_heat_index=False
+            ),
+        )
         assert entry.hour == 0
-        last = HourlyEntry(hour=23, metric=Metric(value=35.0, unit="C", label=MetricLabel.PROVIDER_TCM, is_actual_heat_index=False))
+        last = HourlyEntry(
+            hour=23,
+            metric=Metric(
+                value=35.0, unit="C", label=MetricLabel.PROVIDER_TCM, is_actual_heat_index=False
+            ),
+        )
         assert last.hour == 23
 
 
 # ---------------------------------------------------------------------------
 # Incomplete / missing required fields
 # ---------------------------------------------------------------------------
+
 
 class TestIncompleteFields:
     def test_request_missing_landmark_rejected(self) -> None:
@@ -269,6 +318,7 @@ class TestIncompleteFields:
 # Malformed payloads
 # ---------------------------------------------------------------------------
 
+
 class TestMalformedPayloads:
     def test_coordinates_invalid_latitude(self) -> None:
         with pytest.raises(ValueError, match="coordinates"):
@@ -288,19 +338,55 @@ class TestMalformedPayloads:
 
     def test_provenance_empty_source(self) -> None:
         with pytest.raises(ValueError, match="source"):
-            Provenance(source="", data_date="2026-08-23", confidence=Confidence.SUFFICIENT, retrieved_at="x", transformation_version="v1", provider="p", response_status="completed", request_configuration={}, fresh=True)
+            Provenance(
+                source="",
+                data_date="2026-08-23",
+                confidence=Confidence.SUFFICIENT,
+                retrieved_at="x",
+                transformation_version="v1",
+                provider="p",
+                response_status="completed",
+                request_configuration={},
+                fresh=True,
+            )
 
     def test_provenance_empty_data_date(self) -> None:
         with pytest.raises(ValueError, match="data_date"):
-            Provenance(source="fixture", data_date="", confidence=Confidence.SUFFICIENT, retrieved_at="x", transformation_version="v1", provider="p", response_status="completed", request_configuration={}, fresh=True)
+            Provenance(
+                source="fixture",
+                data_date="",
+                confidence=Confidence.SUFFICIENT,
+                retrieved_at="x",
+                transformation_version="v1",
+                provider="p",
+                response_status="completed",
+                request_configuration={},
+                fresh=True,
+            )
 
     def test_provenance_coverage_out_of_range(self) -> None:
         with pytest.raises(ValueError, match="coverage"):
-            Provenance(source="fixture", data_date="2026-08-23", confidence=Confidence.SUFFICIENT, retrieved_at="2026-08-24T00:00:00+00:00", transformation_version="v1", provider="p", response_status="completed", request_configuration={}, fresh=True, coverage=1.5)
+            Provenance(
+                source="fixture",
+                data_date="2026-08-23",
+                confidence=Confidence.SUFFICIENT,
+                retrieved_at="2026-08-24T00:00:00+00:00",
+                transformation_version="v1",
+                provider="p",
+                response_status="completed",
+                request_configuration={},
+                fresh=True,
+                coverage=1.5,
+            )
 
     def test_metric_nan_value(self) -> None:
         with pytest.raises(ValueError, match="finite"):
-            Metric(value=float("nan"), unit="C", label=MetricLabel.PROVIDER_TCM, is_actual_heat_index=False)
+            Metric(
+                value=float("nan"),
+                unit="C",
+                label=MetricLabel.PROVIDER_TCM,
+                is_actual_heat_index=False,
+            )
 
     def test_metric_empty_unit(self) -> None:
         with pytest.raises(ValueError, match="unit"):
@@ -308,7 +394,12 @@ class TestMalformedPayloads:
 
     def test_hourly_entry_invalid_hour(self) -> None:
         with pytest.raises(ValueError, match="hour"):
-            HourlyEntry(hour=24, metric=Metric(value=30.0, unit="C", label=MetricLabel.PROVIDER_TCM, is_actual_heat_index=False))
+            HourlyEntry(
+                hour=24,
+                metric=Metric(
+                    value=30.0, unit="C", label=MetricLabel.PROVIDER_TCM, is_actual_heat_index=False
+                ),
+            )
 
     def test_hotel_candidate_wrong_components(self) -> None:
         with pytest.raises(ValueError, match="components"):
@@ -316,11 +407,17 @@ class TestMalformedPayloads:
 
     def test_hotel_candidate_nan_component(self) -> None:
         with pytest.raises(ValueError, match="finite"):
-            HotelCandidateData(identity="a", components={"night": float("nan"), "hot_hours": 5, "persistence": 2, "day": 32})
+            HotelCandidateData(
+                identity="a",
+                components={"night": float("nan"), "hot_hours": 5, "persistence": 2, "day": 32},
+            )
 
     def test_hotel_candidate_bool_component(self) -> None:
         with pytest.raises(ValueError, match="finite"):
-            HotelCandidateData(identity="a", components={"night": True, "hot_hours": 5, "persistence": 2, "day": 32})
+            HotelCandidateData(
+                identity="a",
+                components={"night": True, "hot_hours": 5, "persistence": 2, "day": 32},
+            )
 
     def test_route_candidate_negative_distance(self) -> None:
         with pytest.raises(ValueError, match="distance_m"):
@@ -332,11 +429,29 @@ class TestMalformedPayloads:
 
     def test_ranked_hotel_nan_score(self) -> None:
         with pytest.raises(ValueError, match="score"):
-            RankedHotel(identity="a", components={"night": 30, "hot_hours": 5, "persistence": 2, "day": 32}, score=float("nan"), percentile=50, tie_group=0)
+            RankedHotel(
+                identity="a",
+                components={"night": 30, "hot_hours": 5, "persistence": 2, "day": 32},
+                score=float("nan"),
+                percentile=50,
+                tie_group=0,
+            )
 
     def test_hotel_ranking_rejects_duplicate_identity_and_wrong_order(self) -> None:
-        first = RankedHotel(identity="a", components={"night": 30, "hot_hours": 5, "persistence": 2, "day": 32}, score=20, percentile=0, tie_group=0)
-        second = RankedHotel(identity="a", components={"night": 31, "hot_hours": 6, "persistence": 3, "day": 33}, score=10, percentile=100, tie_group=1)
+        first = RankedHotel(
+            identity="a",
+            components={"night": 30, "hot_hours": 5, "persistence": 2, "day": 32},
+            score=20,
+            percentile=0,
+            tie_group=0,
+        )
+        second = RankedHotel(
+            identity="a",
+            components={"night": 31, "hot_hours": 6, "persistence": 3, "day": 33},
+            score=10,
+            percentile=100,
+            tie_group=1,
+        )
         with pytest.raises(ValueError, match="weighted|ordered|unique"):
             HotelRankingResult(
                 ranked=(first, second),
@@ -344,18 +459,36 @@ class TestMalformedPayloads:
                 usable_count=2,
                 discovered_count=2,
                 provenance=_valid_provenance(),
-                component_units={"night": "C", "hot_hours": "hours", "persistence": "hours", "day": "C"},
+                component_units={
+                    "night": "C",
+                    "hot_hours": "hours",
+                    "persistence": "hours",
+                    "day": "C",
+                },
             )
 
     def test_hotel_ranking_weights_not_sum_to_one(self) -> None:
         with pytest.raises(ValueError, match="weights"):
             HotelRankingResult(
-                ranked=(RankedHotel(identity="a", components={"night": 30, "hot_hours": 5, "persistence": 2, "day": 32}, score=18.5, percentile=100, tie_group=0),),
+                ranked=(
+                    RankedHotel(
+                        identity="a",
+                        components={"night": 30, "hot_hours": 5, "persistence": 2, "day": 32},
+                        score=18.5,
+                        percentile=100,
+                        tie_group=0,
+                    ),
+                ),
                 weights={"night": 0.5, "hot_hours": 0.5, "persistence": 0.5, "day": 0.0},
                 usable_count=1,
                 discovered_count=1,
                 provenance=_valid_provenance(),
-                component_units={"night": "C", "hot_hours": "hours", "persistence": "hours", "day": "C"},
+                component_units={
+                    "night": "C",
+                    "hot_hours": "hours",
+                    "persistence": "hours",
+                    "day": "C",
+                },
             )
 
     def test_hotel_ranking_usable_exceeds_discovered(self) -> None:
@@ -371,10 +504,19 @@ class TestMalformedPayloads:
     def test_route_option_negative_heat(self) -> None:
         with pytest.raises(ValueError, match="heat_value"):
             RouteOption(
-                identity="a", distance_m=1000, duration_s=600, heat_value=float("-inf"),
-                heat_metric=HeatMetricName.TCM, heat_unit="C", heat_status=HeatStatus.ELEVATED,
-                modeled_shade_percent=None, shade_confidence=None, building_coverage=0.9,
-                recommended=False, recommendation_reason=None, shade_model_label=None,
+                identity="a",
+                distance_m=1000,
+                duration_s=600,
+                heat_value=float("-inf"),
+                heat_metric=HeatMetricName.TCM,
+                heat_unit="C",
+                heat_status=HeatStatus.ELEVATED,
+                modeled_shade_percent=None,
+                shade_confidence=None,
+                building_coverage=0.9,
+                recommended=False,
+                recommendation_reason=None,
+                shade_model_label=None,
             )
 
     def test_route_comparison_empty_alternatives(self) -> None:
@@ -429,45 +571,76 @@ class TestMalformedPayloads:
         with pytest.raises(ValueError, match="must use C"):
             RouteComparisonResult(
                 alternatives=(_valid_route_option("a", recommended=True),),
-                recommended_id="a", reason="test", heat_status=HeatStatus.ELEVATED,
-                corridor_heat_value=30, heat_metric=HeatMetricName.TCM, heat_unit="F",
-                coverage=0.9, confidence=Confidence.SUFFICIENT,
-                comparison_scope="returned alternatives", provenance=_valid_provenance(),
+                recommended_id="a",
+                reason="test",
+                heat_status=HeatStatus.ELEVATED,
+                corridor_heat_value=30,
+                heat_metric=HeatMetricName.TCM,
+                heat_unit="F",
+                coverage=0.9,
+                confidence=Confidence.SUFFICIENT,
+                comparison_scope="returned alternatives",
+                provenance=_valid_provenance(),
             )
         with pytest.raises(ValueError, match="corridor_heat_value"):
             RouteComparisonResult(
                 alternatives=(_valid_route_option("a", recommended=True),),
-                recommended_id="a", reason="test", heat_status=HeatStatus.ELEVATED,
-                corridor_heat_value=float("nan"), heat_metric=HeatMetricName.TCM, heat_unit="C",
-                coverage=0.9, confidence=Confidence.SUFFICIENT,
-                comparison_scope="returned alternatives", provenance=_valid_provenance(),
+                recommended_id="a",
+                reason="test",
+                heat_status=HeatStatus.ELEVATED,
+                corridor_heat_value=float("nan"),
+                heat_metric=HeatMetricName.TCM,
+                heat_unit="C",
+                coverage=0.9,
+                confidence=Confidence.SUFFICIENT,
+                comparison_scope="returned alternatives",
+                provenance=_valid_provenance(),
             )
 
     def test_request_building_coverage_out_of_range(self) -> None:
         with pytest.raises(ValueError, match="building_coverage"):
             TripAnalysisInputs(
-                HeatMetricName.TCM, 38, 35, (), 1.5,
-                (_valid_hotel_candidate(),), (_valid_route_candidate(),), {"route-a": 50},
+                HeatMetricName.TCM,
+                38,
+                35,
+                (),
+                1.5,
+                (_valid_hotel_candidate(),),
+                (_valid_route_candidate(),),
+                {"route-a": 50},
             )
 
     def test_request_heat_value_nan(self) -> None:
         with pytest.raises(ValueError, match="heat_value"):
             TripAnalysisInputs(
-                HeatMetricName.TCM, float("nan"), 35, (), 0.9,
-                (_valid_hotel_candidate(),), (_valid_route_candidate(),), {"route-a": 50},
+                HeatMetricName.TCM,
+                float("nan"),
+                35,
+                (),
+                0.9,
+                (_valid_hotel_candidate(),),
+                (_valid_route_candidate(),),
+                {"route-a": 50},
             )
 
     def test_request_heat_threshold_infinite(self) -> None:
         with pytest.raises(ValueError, match="heat_threshold"):
             TripAnalysisInputs(
-                HeatMetricName.TCM, 38, float("inf"), (), 0.9,
-                (_valid_hotel_candidate(),), (_valid_route_candidate(),), {"route-a": 50},
+                HeatMetricName.TCM,
+                38,
+                float("inf"),
+                (),
+                0.9,
+                (_valid_hotel_candidate(),),
+                (_valid_route_candidate(),),
+                {"route-a": 50},
             )
 
 
 # ---------------------------------------------------------------------------
 # Unavailable / error states
 # ---------------------------------------------------------------------------
+
 
 class TestUnavailableStates:
     def test_unavailable_response_no_result_data(self) -> None:
@@ -555,8 +728,10 @@ class TestUnavailableStates:
         for state in (ResultState.UNAVAILABLE, ResultState.ERROR):
             with pytest.raises(ValueError, match="degraded_reasons"):
                 TripAnalysisResponse(
-                    request_identity="req-1", mode=TripMode.CURATED,
-                    execution_mode=ExecutionMode.FIXTURE, state=state,
+                    request_identity="req-1",
+                    mode=TripMode.CURATED,
+                    execution_mode=ExecutionMode.FIXTURE,
+                    state=state,
                     unavailable=UnavailableResult("failed", recoverable=False),
                     degraded_reasons={"routes": "failed"},
                 )
@@ -564,9 +739,13 @@ class TestUnavailableStates:
     def test_success_rejects_arbitrary_section_objects(self) -> None:
         with pytest.raises(ValueError, match="BestTimeResult"):
             TripAnalysisResponse(
-                request_identity="req-1", mode=TripMode.CURATED,
-                execution_mode=ExecutionMode.FIXTURE, state=ResultState.SUCCESS,
-                best_time=object(), hotels=_valid_ranked_hotels(), routes=_valid_route_comparison(),  # type: ignore[arg-type]
+                request_identity="req-1",
+                mode=TripMode.CURATED,
+                execution_mode=ExecutionMode.FIXTURE,
+                state=ResultState.SUCCESS,
+                best_time=object(),  # type: ignore[arg-type]
+                hotels=_valid_ranked_hotels(),
+                routes=_valid_route_comparison(),
             )
 
 
@@ -574,51 +753,61 @@ class TestUnavailableStates:
 # API integration via contract validation
 # ---------------------------------------------------------------------------
 
+
 class TestApiContractValidation:
     """Validates that _parse_trip_request correctly rejects malformed bodies."""
 
     def test_missing_origin_coordinates_rejected(self) -> None:
         from app.api import _parse_trip_request
+
         with pytest.raises(ValueError, match="origin_latitude"):
-            _parse_trip_request({
+            _parse_trip_request(
+                {
+                    "destination_latitude": 29.43,
+                    "destination_longitude": -98.48,
+                    "landmark_name": "The Alamo",
+                    "district_name": "Downtown",
+                    "date": "2026-08-23",
+                    "hour": 14,
+                }
+            )
+
+    def test_full_body_with_defaults_accepted(self) -> None:
+        from app.api import _parse_trip_request
+
+        request = _parse_trip_request(
+            {
+                "origin_latitude": 29.42,
+                "origin_longitude": -98.49,
                 "destination_latitude": 29.43,
                 "destination_longitude": -98.48,
                 "landmark_name": "The Alamo",
                 "district_name": "Downtown",
                 "date": "2026-08-23",
-                "hour": 14,
-            })
-
-    def test_full_body_with_defaults_accepted(self) -> None:
-        from app.api import _parse_trip_request
-        request = _parse_trip_request({
-            "origin_latitude": 29.42,
-            "origin_longitude": -98.49,
-            "destination_latitude": 29.43,
-            "destination_longitude": -98.48,
-            "landmark_name": "The Alamo",
-            "district_name": "Downtown",
-            "date": "2026-08-23",
-            "hour": 12,
-            "mode": "curated",
-        })
+                "hour": 12,
+                "mode": "curated",
+            }
+        )
         assert request.cautious is False
         assert request.hour == 12
 
     def test_full_contract_body_accepted(self) -> None:
         from app.api import _parse_trip_request
-        request = _parse_trip_request({
-            "origin_latitude": 29.4245914,
-            "origin_longitude": -98.4864288,
-            "destination_latitude": 29.425833,
-            "destination_longitude": -98.485833,
-            "mode": "exploratory",
-            "landmark_name": "The Alamo",
-            "district_name": "Downtown San Antonio",
-            "date": "2026-08-23",
-            "hour": 14,
-            "cautious": True,
-        })
+
+        request = _parse_trip_request(
+            {
+                "origin_latitude": 29.4245914,
+                "origin_longitude": -98.4864288,
+                "destination_latitude": 29.425833,
+                "destination_longitude": -98.485833,
+                "mode": "exploratory",
+                "landmark_name": "The Alamo",
+                "district_name": "Downtown San Antonio",
+                "date": "2026-08-23",
+                "hour": 14,
+                "cautious": True,
+            }
+        )
         assert request.mode is TripMode.EXPLORATORY
         assert request.landmark_name == "The Alamo"
         assert request.cautious is True
@@ -628,15 +817,17 @@ class TestApiContractValidation:
         from app.api import _parse_trip_request
 
         with pytest.raises(ValueError, match="cautious must be a boolean"):
-            _parse_trip_request({
-                "origin_latitude": 29.42,
-                "origin_longitude": -98.49,
-                "destination_latitude": 29.43,
-                "destination_longitude": -98.48,
-                "mode": "curated",
-                "landmark_name": "The Alamo",
-                "district_name": "Downtown",
-                "date": "2026-08-23",
-                "hour": 14,
-                "cautious": "false",
-            })
+            _parse_trip_request(
+                {
+                    "origin_latitude": 29.42,
+                    "origin_longitude": -98.49,
+                    "destination_latitude": 29.43,
+                    "destination_longitude": -98.48,
+                    "mode": "curated",
+                    "landmark_name": "The Alamo",
+                    "district_name": "Downtown",
+                    "date": "2026-08-23",
+                    "hour": 14,
+                    "cautious": "false",
+                }
+            )

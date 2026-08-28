@@ -18,6 +18,7 @@ from typing import Protocol
 # Enums
 # ---------------------------------------------------------------------------
 
+
 class TripMode(str, Enum):
     CURATED = "curated"
     EXPLORATORY = "exploratory"
@@ -78,6 +79,7 @@ class OptionalEnrichment:
 # ---------------------------------------------------------------------------
 # Shared value objects
 # ---------------------------------------------------------------------------
+
 
 @dataclass(frozen=True)
 class Coordinates:
@@ -147,7 +149,10 @@ class Metric:
             raise ValueError("metric value must be finite")
         if not self.unit:
             raise ValueError("metric unit is required")
-        if self.label in (MetricLabel.PROVIDER_TCM, MetricLabel.NOAA_HEAT_INDEX) and self.unit != "C":
+        if (
+            self.label in (MetricLabel.PROVIDER_TCM, MetricLabel.NOAA_HEAT_INDEX)
+            and self.unit != "C"
+        ):
             raise ValueError("temperature metrics must use C")
         if self.label is MetricLabel.NOAA_HEAT_INDEX and not self.is_actual_heat_index:
             raise ValueError("NOAA Heat Index label requires an actual heat index")
@@ -161,13 +166,18 @@ class HourlyEntry:
     metric: Metric
 
     def __post_init__(self) -> None:
-        if isinstance(self.hour, bool) or not isinstance(self.hour, int) or not 0 <= self.hour <= 23:
+        if (
+            isinstance(self.hour, bool)
+            or not isinstance(self.hour, int)
+            or not 0 <= self.hour <= 23
+        ):
             raise ValueError("hour must be between 0 and 23")
 
 
 # ---------------------------------------------------------------------------
 # Request contract
 # ---------------------------------------------------------------------------
+
 
 @dataclass(frozen=True)
 class TripAnalysisRequest:
@@ -195,7 +205,11 @@ class TripAnalysisRequest:
             calendar_date.fromisoformat(self.date)
         except ValueError as error:
             raise ValueError("date must be an ISO date") from error
-        if isinstance(self.hour, bool) or not isinstance(self.hour, int) or not 0 <= self.hour <= 23:
+        if (
+            isinstance(self.hour, bool)
+            or not isinstance(self.hour, int)
+            or not 0 <= self.hour <= 23
+        ):
             raise ValueError("hour must be between 0 and 23")
         if not isinstance(self.cautious, bool):
             raise ValueError("cautious must be a boolean")
@@ -243,7 +257,11 @@ class HotelCandidateData:
         if set(self.components) != required:
             raise ValueError(f"hotel components must be exactly {required}")
         for name, value in self.components.items():
-            if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+            if (
+                isinstance(value, bool)
+                or not isinstance(value, (int, float))
+                or not math.isfinite(value)
+            ):
                 raise ValueError(f"hotel component {name} must be a finite number")
 
 
@@ -265,6 +283,7 @@ class RouteCandidateData:
 # ---------------------------------------------------------------------------
 # Response sub-shapes
 # ---------------------------------------------------------------------------
+
 
 @dataclass(frozen=True)
 class BestTimeResult:
@@ -316,13 +335,21 @@ class RankedHotel:
         if not self.identity:
             raise ValueError("hotel identity is required")
         for name, value in self.components.items():
-            if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+            if (
+                isinstance(value, bool)
+                or not isinstance(value, (int, float))
+                or not math.isfinite(value)
+            ):
                 raise ValueError(f"hotel component {name} must be a finite number")
         if not math.isfinite(self.score):
             raise ValueError("score must be finite")
         if not math.isfinite(self.percentile) or not 0 <= self.percentile <= 100:
             raise ValueError("percentile must be between 0 and 100")
-        if isinstance(self.tie_group, bool) or not isinstance(self.tie_group, int) or self.tie_group < 0:
+        if (
+            isinstance(self.tie_group, bool)
+            or not isinstance(self.tie_group, int)
+            or self.tie_group < 0
+        ):
             raise ValueError("tie_group must be non-negative")
 
 
@@ -371,13 +398,17 @@ class HotelRankingResult:
             hotel.identity: sum(hotel.components[name] * self.weights[name] for name in required)
             for hotel in self.ranked
         }
-        if any(not math.isclose(hotel.score, expected_scores[hotel.identity]) for hotel in self.ranked):
+        if any(
+            not math.isclose(hotel.score, expected_scores[hotel.identity]) for hotel in self.ranked
+        ):
             raise ValueError("hotel score must equal weighted component values")
         distinct_scores = sorted({hotel.score for hotel in self.ranked})
         for hotel in self.ranked:
             expected_tie = distinct_scores.index(hotel.score)
             expected_percentile = 100 * (1 - expected_tie / max(1, len(distinct_scores) - 1))
-            if hotel.tie_group != expected_tie or not math.isclose(hotel.percentile, expected_percentile):
+            if hotel.tie_group != expected_tie or not math.isclose(
+                hotel.percentile, expected_percentile
+            ):
                 raise ValueError("hotel percentile and tie group must match ranking")
         for left in self.ranked:
             for right in self.ranked:
@@ -388,8 +419,7 @@ class HotelRankingResult:
                 if same_tie and left.percentile != right.percentile:
                     raise ValueError("tied hotels must share a percentile")
         if any(
-            current.score > following.score
-            or current.percentile < following.percentile
+            current.score > following.score or current.percentile < following.percentile
             for current, following in zip(self.ranked, self.ranked[1:])
         ):
             raise ValueError("ranked hotels must be ordered by score and percentile")
@@ -418,9 +448,7 @@ class RouteOption:
             raise ValueError("heat_metric must be a HeatMetricName value")
         if not isinstance(self.heat_status, HeatStatus):
             raise ValueError("heat_status must be a HeatStatus value")
-        if self.shade_confidence is not None and not isinstance(
-            self.shade_confidence, Confidence
-        ):
+        if self.shade_confidence is not None and not isinstance(self.shade_confidence, Confidence):
             raise ValueError("shade_confidence must be a Confidence value")
         if not isinstance(self.recommended, bool):
             raise ValueError("recommended must be a boolean")
@@ -434,7 +462,10 @@ class RouteOption:
             raise ValueError("heat_value must be finite")
         if not self.heat_unit:
             raise ValueError("heat_unit is required")
-        if self.heat_metric in (HeatMetricName.TCM, HeatMetricName.HEAT_INDEX_CELSIUS) and self.heat_unit != "C":
+        if (
+            self.heat_metric in (HeatMetricName.TCM, HeatMetricName.HEAT_INDEX_CELSIUS)
+            and self.heat_unit != "C"
+        ):
             raise ValueError("temperature route metrics must use C")
         if not 0 <= self.building_coverage <= 1:
             raise ValueError("building_coverage must be between 0 and 1")
@@ -477,7 +508,10 @@ class RouteComparisonResult:
             raise ValueError("confidence must be a Confidence value")
         if not self.heat_unit:
             raise ValueError("heat_unit is required")
-        if self.heat_metric in (HeatMetricName.TCM, HeatMetricName.HEAT_INDEX_CELSIUS) and self.heat_unit != "C":
+        if (
+            self.heat_metric in (HeatMetricName.TCM, HeatMetricName.HEAT_INDEX_CELSIUS)
+            and self.heat_unit != "C"
+        ):
             raise ValueError("temperature comparison metrics must use C")
         if not math.isfinite(self.corridor_heat_value):
             raise ValueError("corridor_heat_value must be finite")
@@ -524,6 +558,7 @@ class UnavailableResult:
 # ---------------------------------------------------------------------------
 # Top-level response
 # ---------------------------------------------------------------------------
+
 
 @dataclass(frozen=True)
 class TripAnalysisResponse:
@@ -597,8 +632,7 @@ class TripAnalysisResponse:
             }
             allowed_present = {
                 "routes"
-                if self.routes is not None
-                and self.routes.confidence is Confidence.INSUFFICIENT
+                if self.routes is not None and self.routes.confidence is Confidence.INSUFFICIENT
                 else ""
             }
             if set(self.degraded_reasons) != missing | (allowed_present - {""}):

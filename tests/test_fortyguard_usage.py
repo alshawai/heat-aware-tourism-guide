@@ -35,11 +35,13 @@ def test_fetch_custom_usage_sends_quickstart_contract(monkeypatch: pytest.Monkey
 
     request = cast(Request, captured["request"])
     assert result == {"total_credits_used": 12}
-    assert cast(bytes, request.data).decode() == json.dumps({
-        "api_key": "secret",
-        "start_date": "2026-08-01T00:00:00Z",
-        "end_date": "2026-08-24T23:59:59Z",
-    })
+    assert cast(bytes, request.data).decode() == json.dumps(
+        {
+            "api_key": "secret",
+            "start_date": "2026-08-01T00:00:00Z",
+            "end_date": "2026-08-24T23:59:59Z",
+        }
+    )
     assert request.headers["Api-key"] == "secret"
 
 

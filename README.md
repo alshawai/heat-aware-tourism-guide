@@ -24,22 +24,51 @@ Detailed contributor setup, live-mode acquisition, deployment, API reference,
 and demo instructions will be organized under the Diataxis structure as the
 application scaffold lands.
 
-## Repository Checks
+## Contributor Quality Gates
 
-Repository tooling provides offline Python tests, lint/type checks, formatting,
-and dependency audit checks:
+Install the locked Python, root Node tooling, and frontend dependencies:
 
 ```bash
-npm install
+uv sync --frozen --extra dev
+npm ci
+npm ci --prefix frontend
+```
+
+Run the same formatting, linting, type checking, unit tests, fixture-backed
+integration tests, production build, and dependency audits enforced by CI:
+
+```bash
 npm run format:check
+npm run python:format:check
 npm run python:lint
 npm run python:typecheck
 npm run python:test
+npm run python:test:integration
+npm run frontend:format:check
+npm run frontend:lint
+npm run frontend:typecheck
+npm run frontend:test
+npm run frontend:build
+uv run pip-audit
 npm audit --audit-level=high
+npm audit --prefix frontend --audit-level=high
 ```
 
-Live FortyGuard and Overpass calls are never required by CI. Frontend checks will
-be added with the React/Vite scaffold.
+For the browser-level fixture flow, install Chromium once and run Playwright:
+
+```bash
+npx --prefix frontend playwright install chromium
+npm run e2e
+```
+
+`npm install` enables Husky. Each commit formats staged files with lint-staged,
+then runs the local Python and frontend type checks and unit tests. CI also runs
+the fixture-backed HTTP integration suite and browser flow.
+
+All automated checks set or retain `ALLOW_LIVE=false`. They require no provider
+credentials and make no FortyGuard, Overpass, OSRM, or other metered provider
+requests. Live acquisition remains an explicit maintainer operation through the
+scripts documented below.
 
 ## Live Credit Usage
 

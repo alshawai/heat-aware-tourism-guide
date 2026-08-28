@@ -203,9 +203,7 @@ def acquire_env_params_fixture(
 
 def _write_fixture(out_dir: Path, filename: str, result: Mapping[str, object]) -> Path:
     payload = {
-        key: value
-        for key, value in dict(result).items()
-        if key not in _CREDIT_METADATA_KEYS
+        key: value for key, value in dict(result).items() if key not in _CREDIT_METADATA_KEYS
     }
     sanitized = sanitize_payload(payload)
     out_dir.mkdir(parents=True, exist_ok=True)
