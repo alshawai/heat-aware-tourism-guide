@@ -127,6 +127,4 @@ def test_complete_identity_changes_for_route_options_and_provider_instance() -> 
     baseline = route_request_payload(_request())
     assert route_request_payload(_request(steps=True)) != baseline
     assert route_request_payload(_request(provider_instance="another-instance")) != baseline
-    assert route_request_payload(
-        _request(destination=Coordinates(29.43, -98.48))
-    ) != baseline
+    assert route_request_payload(_request(destination=Coordinates(29.43, -98.48))) != baseline

@@ -2,8 +2,8 @@
   "source": "synthesized",
   "endpoint": "https://routing.openstreetmap.de/routed-foot/route/v1",
   "request_configuration": {
-    "origin": {"latitude": 29.4245914, "longitude": -98.4864288},
-    "destination": {"latitude": 29.425833, "longitude": -98.485833},
+    "origin": { "latitude": 29.4245914, "longitude": -98.4864288 },
+    "destination": { "latitude": 29.425833, "longitude": -98.485833 },
     "profile": "foot",
     "alternatives": true,
     "overview": "full",

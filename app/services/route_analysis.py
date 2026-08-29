@@ -29,7 +29,12 @@ from app.integrations.fortyguard.contracts import (
 )
 from app.integrations.fortyguard.errors import ProviderError
 from app.integrations.fortyguard.live import LiveHeatmapPayload
-from app.services.routing import RouteExecution, RouteOutcome, RouteUnavailable, route_request_payload
+from app.services.routing import (
+    RouteExecution,
+    RouteOutcome,
+    RouteUnavailable,
+    route_request_payload,
+)
 
 
 class SharedRouteHeatUnavailable(RuntimeError):
@@ -94,7 +99,9 @@ class RouteAnalysisService:
         try:
             outcome = self.route_execution.run(route_request, live=True)
         except RouteUnavailable:
-            unavailable_provenance = _unavailable_routing_provenance(request, route_request, self.clock)
+            unavailable_provenance = _unavailable_routing_provenance(
+                request, route_request, self.clock
+            )
             return decide_route_comparison(
                 RouteDecisionInput(route_set=None, landmark_tcm_celsius=None),
                 cautious=request.cautious,

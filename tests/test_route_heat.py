@@ -41,10 +41,15 @@ def _tile(identity: str, west: float, east: float, value: float) -> Tile:
         identity=identity,
         geometry={
             "type": "Polygon",
-            "coordinates": [[
-                [west, 29.415], [east, 29.415], [east, 29.435],
-                [west, 29.435], [west, 29.415],
-            ]],
+            "coordinates": [
+                [
+                    [west, 29.415],
+                    [east, 29.415],
+                    [east, 29.435],
+                    [west, 29.435],
+                    [west, 29.415],
+                ]
+            ],
         },
         metric=AnalyticType.TCM,
         value_celsius=value,
@@ -97,9 +102,7 @@ def _shared_request() -> SharedRouteHeatRequest:
 
 def test_selected_hour_payload_and_identity_include_geometry_and_configuration() -> None:
     request = _shared_request()
-    payload = build_documented_shared_route_heat_payload(
-        request, today=date(2026, 8, 23)
-    )
+    payload = build_documented_shared_route_heat_payload(request, today=date(2026, 8, 23))
 
     assert payload["date_time"] == {
         "start_date": "2026-08-23",

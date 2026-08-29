@@ -61,9 +61,7 @@ def _option(
         shade_confidence=None,
         building_coverage=0.0,
         recommended=recommended,
-        recommendation_reason="shortest returned route under mild heat"
-        if recommended
-        else None,
+        recommendation_reason="shortest returned route under mild heat" if recommended else None,
         shade_model_label=None,
         geometry=_geometry().coordinates,
         heat_coverage=1.0 if heat_value is not None else None,
@@ -149,7 +147,10 @@ def test_mild_heat_requires_the_shortest_returned_route_recommendation() -> None
 
     with pytest.raises(ValueError, match="shortest"):
         _comparison(
-            (replace(short, recommended=False, recommendation_reason=None), replace(long, recommended=True, recommendation_reason="wrong")),
+            (
+                replace(short, recommended=False, recommendation_reason=None),
+                replace(long, recommended=True, recommendation_reason="wrong"),
+            ),
             route_set_state=RouteSetState.ALTERNATIVES_RETURNED,
             decision_state=RouteDecisionState.MILD_SHORTEST_RECOMMENDED,
             recommended_id="long",

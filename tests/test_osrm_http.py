@@ -120,7 +120,19 @@ def test_client_accepts_one_returned_route_without_fabricating_an_alternative() 
         ({"code": "NoRoute", "routes": []}, OsrmNoRoute),
         ({"code": "Ok", "routes": []}, OsrmNoRoute),
         ({"code": "Ok", "routes": [{"distance": 10, "duration": 2}]}, OsrmMalformedResponse),
-        ({"code": "Ok", "routes": [{"distance": -1, "duration": 2, "geometry": {"type": "LineString", "coordinates": [[0, 0], [1, 1]]}}]}, OsrmMalformedResponse),
+        (
+            {
+                "code": "Ok",
+                "routes": [
+                    {
+                        "distance": -1,
+                        "duration": 2,
+                        "geometry": {"type": "LineString", "coordinates": [[0, 0], [1, 1]]},
+                    }
+                ],
+            },
+            OsrmMalformedResponse,
+        ),
     ],
 )
 def test_client_classifies_no_route_and_malformed_responses(
