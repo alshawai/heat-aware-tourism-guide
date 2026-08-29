@@ -41,6 +41,11 @@ class TimeWindow:
     def hours(self) -> range:
         return range(self.start_hour, self.end_hour)
 
+    @property
+    def last_hour(self) -> int:
+        """The final whole hour inside the window (``end_hour`` is exclusive)."""
+        return self.end_hour - 1
+
     def contains_hour(self, hour: int) -> bool:
         return hour in self.hours
 
@@ -48,7 +53,17 @@ class TimeWindow:
         return f"{self.start_hour:02d}:00"
 
     def end_time(self) -> str:
-        return f"{self.end_hour:02d}:00"
+        """The inclusive upper bound for the provider's hour-range filter.
+
+        The provider's range filter is inclusive of ``end_time`` — a live call
+        for 08:00-14:00 returned seven hourly readings, 08:00 through 14:00 —
+        while this window is half-open. Rendering :attr:`last_hour` therefore
+        asks for exactly the hours the traveler is present for. Rendering
+        ``end_hour`` would request one hour beyond the window, up to
+        ``MAX_WINDOW_HOURS + 1`` readings, and leave the trailing reading
+        outside :meth:`contains_hour` for every consumer downstream.
+        """
+        return f"{self.last_hour:02d}:00"
 
 
 class CelsiusReading(Protocol):

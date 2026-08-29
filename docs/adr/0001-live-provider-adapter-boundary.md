@@ -40,9 +40,15 @@ properties.
    60/80/100); area requests default internally to 100 m granularity. Full-day
    requests use filter_type 3; validated ranges use filter_type 2 with the
    same `start_date`, `start_time`, and `end_time` carried by the product
-   request. Dates are validated against the documented windows (historical >=
-   2019-01-01, forecast <= 12 h ahead); violations raise a classified
-   VALIDATION error before any billable submission.
+   request. The provider's range filter is **inclusive** of `end_time` (a live
+   call for `08:00`–`14:00` returned seven hourly readings) while the product
+   window is half-open, so the adapter renders `end_time` from the window's
+   last in-window hour (`end_hour - 1`). Sending the exclusive bound would bill
+   for an hour outside the trip and hand consumers a reading that
+   `TimeWindow.contains_hour` rejects. Dates are validated against the
+   documented windows (historical >= 2019-01-01, forecast <= 12 h ahead);
+   violations raise a classified VALIDATION error before any billable
+   submission.
 4. **The auth header is `api-key`** (raw key, no Bearer), per the official
    documentation and the observed live 401 with `X-API-Key`. The salvaged
    usage module already used `api-key`.
@@ -62,8 +68,13 @@ properties.
    full-day hourly series (filter_type 3) by default; an optional `hour`
    selects filter_type 1. A validated traveler window selects filter_type 2
    with matching `start_time` and `end_time` on both heatmap and environment
-   requests. The request explicitly lists the two consumed `analysis`
-   parameters (within the 3-parameter plan limit).
+   requests. The request explicitly lists the full `analysis` parameter set
+   (`ENVIRONMENT_PARAMETERS`, 17 names) rather than only the two the trip stage
+   consumes: a live call on 2026-08-29 accepted the full list and returned 15
+   of them, so there is no 3-parameter plan limit on this key. The two absent
+   names (`elevation`, `solar_irradiance`) are kept in the request — whether
+   the provider omitted them or returned them scalar-shaped (and the flat-shape
+   series filter dropped them) is undetermined without the raw payload.
 8. **Trip temporal preparation is a series-only contract stage.**
    `POST /api/trip/analyze` accepts a same-day half-open `start_hour` /
    `end_hour` window of at most twelve whole hours; it no longer accepts a
@@ -87,9 +98,11 @@ properties.
   documented-payload construction (issue #11 owns cache-key policy).
 - The translation adapter is the only place allowed to know the documented
   live shapes; `contracts.py` and `client.py` remain shape-neutral.
-- `fixtures/env-params.json` is regenerated in the documented series shape
-  (arrays + `metadata.timestamps`), built from the issue-7 recorded live
-  observation; the previous scalar fixture was an invented shape.
+- `fixtures/env-params.json` holds a recorded live series. It is in the
+  provider's *flat* shape (top-level `timestamp`/`timezone`/`offset`/`interval`/
+  `count` beside one array per parameter), not the documented `metadata` +
+  `locations` shape, so the adapter branches on the presence of a `metadata`
+  mapping and supports both. The earlier scalar fixture was an invented shape.
 - One risk accepted: the documented per-tile property name (`properties.temperature`)
   is undocumented; the adapter reads it from live evidence and stamps the
   inference in provenance. If the provider changes it, only the adapter

@@ -236,7 +236,7 @@ class TestTemporalTripApi:
         )
 
         assert request.window.start_time() == "08:00"
-        assert request.window.end_time() == "20:00"
+        assert request.window.end_time() == "19:00"
 
     def test_api_rejects_a_missing_window_bound(self) -> None:
         with pytest.raises(ValueError, match="end_hour"):

@@ -123,6 +123,11 @@ def _date_time_filter(*, start_date: date, window: TimeWindow | None) -> dict[st
     with ``start_time``/``end_time`` as ``"HH:00"`` strings); without one the
     request keeps its full-day shape (``filter_type`` 3), which is how
     full-day heatmap and env-params calls are made today (ADR 0001).
+
+    The provider treats the range as inclusive of ``end_time``, so
+    :meth:`TimeWindow.end_time` renders the window's last in-window hour rather
+    than its exclusive bound. Heatmap and env-params share this helper so a
+    chained trip asks both endpoints for the identical set of hours.
     """
     date_time: dict[str, object] = {
         "start_date": start_date.isoformat(),

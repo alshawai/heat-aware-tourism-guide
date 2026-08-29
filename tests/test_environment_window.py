@@ -32,7 +32,23 @@ class TestTimeWindow:
         window = TimeWindow(8, 20)
         assert window.hours == range(8, 20)
         assert window.start_time() == "08:00"
-        assert window.end_time() == "20:00"
+        assert window.end_time() == "19:00"
+
+    def test_end_time_is_the_last_in_window_hour(self) -> None:
+        """The provider's range filter is inclusive; this window is half-open.
+
+        A live call for 08:00-14:00 returned seven readings, so ``end_time``
+        must render the last hour the traveler is actually present for.
+        """
+        window = TimeWindow(8, 14)
+        assert window.last_hour == 13
+        assert window.end_time() == "13:00"
+        assert window.contains_hour(13)
+        assert not window.contains_hour(14)
+
+    def test_single_hour_window_asks_for_exactly_that_hour(self) -> None:
+        window = TimeWindow(8, 9)
+        assert window.start_time() == window.end_time() == "08:00"
 
     def test_accepts_exactly_twelve_hours(self) -> None:
         assert TimeWindow(0, 12).hours == range(0, 12)

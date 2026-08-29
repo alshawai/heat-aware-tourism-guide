@@ -167,7 +167,7 @@ class TestHeatmapRangePayload:
             "start_date": date.today().isoformat(),
             "filter_type": 2,
             "start_time": "08:00",
-            "end_time": "20:00",
+            "end_time": "19:00",
         }
 
     def test_full_day_request_still_emits_filter_type_three(self) -> None:
@@ -213,8 +213,27 @@ class TestEnvParamsRangePayload:
             "start_date": "2026-08-24",
             "filter_type": 2,
             "start_time": "08:00",
-            "end_time": "20:00",
+            "end_time": "19:00",
         }
+
+    def test_inclusive_range_asks_for_exactly_the_in_window_hours(self) -> None:
+        """The provider range is inclusive, so the bounds must be in-window hours.
+
+        A live call for 08:00-14:00 returned seven hourly readings. Sending the
+        exclusive ``end_hour`` would bill for one hour the traveler is not
+        present for and hand the series an entry ``contains_hour`` rejects.
+        """
+        request = _env_request(start_hour=8, end_hour=20)
+        window = request.window
+        assert window is not None
+        date_time = cast(
+            "dict[str, str]", build_documented_env_params_payload(request)["date_time"]
+        )
+
+        first = int(date_time["start_time"][:2])
+        last = int(date_time["end_time"][:2])
+        assert [*range(first, last + 1)] == [*window.hours]
+        assert last - first + 1 <= MAX_WINDOW_HOURS
 
     def test_full_day_request_still_emits_filter_type_three(self) -> None:
         payload = build_documented_env_params_payload(_env_request())
