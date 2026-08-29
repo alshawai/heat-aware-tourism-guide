@@ -33,6 +33,7 @@ from app.services.trip_adapters import (
     FixtureTripAnalysisAdapter,
     LiveTripAnalysisAdapter,
     ModeDispatchTripAnalysisAdapter,
+    TemporalTripAnalysisAdapter,
 )
 from app.settings import AppSettings, SettingsError
 
@@ -170,11 +171,19 @@ def create_production_app(
             additional_fixtures=_fixture_candidates(env_fixture, "env-params*.json"),
         )
     if trip_adapter is None:
-        trip_adapter = ModeDispatchTripAnalysisAdapter(
-            FixtureTripAnalysisAdapter(heatmap_fixture.parent / "trip-analysis.json"),
-            LiveTripAnalysisAdapter(
+        fixture_trip_adapter = FixtureTripAnalysisAdapter(
+            heatmap_fixture.parent / "trip-analysis.json"
+        )
+        live_trip_adapter: TripAnalysisAdapter
+        if execution is not None and env_params_execution is not None:
+            live_trip_adapter = TemporalTripAnalysisAdapter(execution, env_params_execution)
+        else:
+            live_trip_adapter = LiveTripAnalysisAdapter(
                 lambda request: {"unavailable": "live trip adapter is not configured"}
-            ),
+            )
+        trip_adapter = ModeDispatchTripAnalysisAdapter(
+            fixture_trip_adapter,
+            live_trip_adapter,
         )
     return create_app(
         heatmap_fixture,

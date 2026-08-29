@@ -37,10 +37,12 @@ properties.
    the internal request into the documented payload: point requests are
    expanded to a square AOI (side = granularity, centered on the point,
    default 60 m; `granularity` is exposed on the public request, allowed
-   60/80/100); area requests default internally to 100 m granularity. Dates are
-   validated against the documented windows (historical ≥ 2019-01-01, forecast
-   ≤ 12 h ahead); violations raise a classified VALIDATION error before any
-   billable submission.
+   60/80/100); area requests default internally to 100 m granularity. Full-day
+   requests use filter_type 3; validated ranges use filter_type 2 with the
+   same `start_date`, `start_time`, and `end_time` carried by the product
+   request. Dates are validated against the documented windows (historical >=
+   2019-01-01, forecast <= 12 h ahead); violations raise a classified
+   VALIDATION error before any billable submission.
 4. **The auth header is `api-key`** (raw key, no Bearer), per the official
    documentation and the observed live 401 with `X-API-Key`. The salvaged
    usage module already used `api-key`.
@@ -67,8 +69,13 @@ properties.
    `end_hour` window of at most twelve whole hours; it no longer accepts a
    selected visit `hour`. The initial `series_ready` response carries only the
    raw nullable environment series, timezone, conservative temperature anchor,
-   provenance, and the fixed-anchor warning. Hotel, route, best-time, and
-   comfort decisions remain outside this preparation stage.
+   provenance, and the fixed-anchor warning. Production wiring runs exactly
+   one ranged TCM heatmap execution at the curated destination, derives the
+   anchor as the maximum in-window Celsius tile value, then runs exactly one
+   env-params execution with identical coordinates and range. Each execution
+   retains its ADR 0004 cache/fixture degradation chain and submit-once ledger
+   behavior. Hotel, route, best-time, and comfort decisions remain outside
+   this preparation stage.
 
 ## Consequences
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import math
+from datetime import date
 from pathlib import Path
 from typing import Callable, Mapping
 
@@ -11,6 +12,8 @@ from app.domain.contracts import (
     BestTimeResult,
     Confidence,
     EnrichmentState,
+    EnvironmentSeriesEntry,
+    EnvironmentSeriesResult,
     ExecutionMode,
     HeatMetricName,
     HeatStatus,
@@ -18,15 +21,30 @@ from app.domain.contracts import (
     HourlyEntry,
     Metric,
     MetricLabel,
+    OptionalEnrichment,
     Provenance,
     RankedHotel,
     ResultState,
     RouteComparisonResult,
     RouteOption,
-    OptionalEnrichment,
+    TripAnalysisAdapter,
     TripAnalysisRequest,
     TripAnalysisResponse,
+    TripMode,
     UnavailableResult,
+)
+from app.domain.environment import select_anchor_celsius
+from app.integrations.fortyguard.contracts import (
+    AnalyticType,
+    EnvParamsRequest,
+    HeatmapRequest,
+    HeatmapResult,
+)
+from app.services.execution import (
+    EnvParamsExecution,
+    EnvParamsOutcome,
+    HeatmapExecution,
+    UnavailableError,
 )
 from app.services.sidecars import load_acquisition_record
 
@@ -92,13 +110,133 @@ class LiveTripAnalysisAdapter:
         return normalize_trip_analysis(payload, request, execution_mode)
 
 
+class TemporalTripAnalysisAdapter:
+    """Chain one ranged point heatmap into one ranged environment request."""
+
+    def __init__(
+        self,
+        heatmap_execution: HeatmapExecution,
+        env_params_execution: EnvParamsExecution,
+    ) -> None:
+        self.heatmap_execution = heatmap_execution
+        self.env_params_execution = env_params_execution
+
+    def analyze(
+        self,
+        request: TripAnalysisRequest,
+        execution_mode: ExecutionMode = ExecutionMode.LIVE,
+    ) -> TripAnalysisResponse:
+        if execution_mode is not ExecutionMode.LIVE:
+            raise ValueError("temporal trip adapter only supports live execution")
+        if request.mode is not TripMode.CURATED:
+            return _unavailable_response(
+                request,
+                execution_mode,
+                "temporal data preparation is only available for curated trips",
+            )
+        analysis_date = date.fromisoformat(request.date)
+        heatmap_request = HeatmapRequest(
+            analytic_type=AnalyticType.TCM,
+            latitude=request.destination.latitude,
+            longitude=request.destination.longitude,
+            start_date=analysis_date,
+            forecast=analysis_date >= date.today(),
+            start_hour=request.start_hour,
+            end_hour=request.end_hour,
+        )
+        try:
+            heatmap = self.heatmap_execution.run(heatmap_request, live=True)
+            anchor = select_anchor_celsius(heatmap.tiles, request.window)
+            env_request = EnvParamsRequest(
+                latitude=heatmap_request.latitude,
+                longitude=heatmap_request.longitude,
+                start_date=analysis_date,
+                temperature_anchor_celsius=anchor,
+                start_hour=request.start_hour,
+                end_hour=request.end_hour,
+            )
+            outcome = self.env_params_execution.run(env_request, live=True)
+            environment = _environment_result(request, anchor, heatmap, outcome)
+        except (UnavailableError, ValueError) as error:
+            return _unavailable_response(request, execution_mode, str(error))
+        return TripAnalysisResponse(
+            request_identity=_request_identity(request),
+            mode=request.mode,
+            execution_mode=execution_mode,
+            state=ResultState.SERIES_READY,
+            environment=environment,
+        )
+
+
+def _environment_result(
+    request: TripAnalysisRequest,
+    anchor: float,
+    heatmap: HeatmapResult,
+    outcome: EnvParamsOutcome,
+) -> EnvironmentSeriesResult:
+    if outcome.retrieved_at is None or outcome.data_date is None:
+        raise ValueError("environmental-parameters provenance is incomplete")
+    entries = tuple(
+        EnvironmentSeriesEntry(
+            valid_time=entry.valid_time,
+            heat_index_celsius=entry.heat_index_celsius,
+            humidity_percent=entry.humidity_percent,
+        )
+        for entry in outcome.result.entries
+        if request.window.contains_hour(entry.valid_time.hour)
+    )
+    provenance = Provenance(
+        source=outcome.source,
+        data_date=outcome.data_date,
+        confidence=Confidence.SUFFICIENT,
+        retrieved_at=outcome.retrieved_at.isoformat(),
+        transformation_version="trip-environment-series-v1",
+        provider="fortyguard",
+        response_status="completed",
+        request_configuration={
+            "latitude": request.destination.latitude,
+            "longitude": request.destination.longitude,
+            "start_date": request.date,
+            "start_hour": request.start_hour,
+            "end_hour": request.end_hour,
+            "temperature_anchor_celsius": anchor,
+            "anchor_policy": "maximum_in_window_temperature_celsius",
+            "heatmap_source": heatmap.provenance.source,
+            "heatmap_activity_id": heatmap.provenance.activity_id,
+        },
+        fresh=not heatmap.provenance.stale and not outcome.stale,
+        activity_id=outcome.activity_id,
+    )
+    return EnvironmentSeriesResult(
+        entries=entries,
+        timezone=outcome.result.timezone,
+        temperature_anchor_celsius=anchor,
+        warning="fixed temperature anchor; not a real 24-hour forecast",
+        provenance=provenance,
+    )
+
+
+def _unavailable_response(
+    request: TripAnalysisRequest,
+    execution_mode: ExecutionMode,
+    reason: str,
+) -> TripAnalysisResponse:
+    return TripAnalysisResponse(
+        request_identity=_request_identity(request),
+        mode=request.mode,
+        execution_mode=execution_mode,
+        state=ResultState.UNAVAILABLE,
+        unavailable=UnavailableResult(reason, recoverable=True),
+    )
+
+
 class ModeDispatchTripAnalysisAdapter:
     """Selects the adapter owned by the requested execution mode."""
 
     def __init__(
         self,
         fixture: FixtureTripAnalysisAdapter,
-        live: LiveTripAnalysisAdapter,
+        live: TripAnalysisAdapter,
     ) -> None:
         self.fixture = fixture
         self.live = live

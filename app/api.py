@@ -234,7 +234,15 @@ def create_app(
                 allow_live=allow_live,
                 trip_adapter=trip_adapter,
             )
-        except (KeyError, TypeError, ValueError) as error:
+        except (
+            BudgetExceededError,
+            KeyError,
+            TypeError,
+            ValueError,
+            OSError,
+            RuntimeError,
+            ProviderError,
+        ) as error:
             raise _http_error(error) from error
 
     if frontend_dist is not None and frontend_dist.is_dir():
