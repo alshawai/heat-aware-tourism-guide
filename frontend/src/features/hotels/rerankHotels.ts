@@ -36,15 +36,30 @@ export function rerankHotels(
       )
   );
   const aggregates = new Map(
-    complete.map((hotel) => [
-      identity(hotel),
-      Number(
-        HOTEL_COMPONENTS.reduce((total, component) => {
-          const percentile = hotel.components[component].percentile;
-          return total + (1 - (percentile ?? 0) / 100) * weights[component];
-        }, 0).toFixed(6)
-      ),
-    ])
+    complete.map((hotel) => {
+      const groups = new Map<string, [HotelComponentName, number]>();
+      HOTEL_COMPONENTS.forEach((component) => {
+        const key = hotel.components[component].correlation_key ?? component;
+        const current = groups.get(key);
+        if (!current) {
+          groups.set(key, [component, weights[component]]);
+        } else {
+          groups.set(key, [current[0], current[1] + weights[component]]);
+        }
+      });
+      const activeWeight = [...groups.values()].reduce(
+        (total, [, weight]) => total + weight,
+        0
+      );
+      const aggregate = [...groups.values()].reduce(
+        (total, [component, weight]) =>
+          total +
+          ((1 - (hotel.components[component].percentile ?? 0) / 100) * weight) /
+            activeWeight,
+        0
+      );
+      return [identity(hotel), Number(aggregate.toFixed(6))];
+    })
   );
   const aggregateValues = [...new Set(aggregates.values())].sort(
     (a, b) => a - b

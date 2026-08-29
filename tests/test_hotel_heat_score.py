@@ -172,6 +172,34 @@ def test_custom_weights_recompute_locally_and_are_labelled_custom() -> None:
     assert [item.rank for item in custom.hotels] == [1, 2, 3, 4, 5]
 
 
+def test_correlated_components_share_one_weighted_measurement() -> None:
+    scorer = NeighbourhoodHeatScorer()
+    shared = complete_evidence([10, 20, 30, 40, 50])
+    shared["night"] = ComponentEvidence(
+        **{**shared["night"].__dict__, "correlation_key": "shared-date-tcm"}
+    )
+    shared["day"] = ComponentEvidence(
+        **{
+            **shared["day"].__dict__,
+            "correlation_key": "shared-date-tcm",
+            "tiles": tuple(reversed(shared["day"].tiles)),
+        }
+    )
+    assignments = scorer.assign(
+        [hotel(index + 1, index * 0.001 + 0.0005) for index in range(5)],
+        shared,
+        aoi=AOI,
+    )
+
+    result = scorer.score(assignments)
+
+    # Night ranks hotel 1 best while the correlated day snapshot ranks hotel 5 best.
+    # Only the representative (night, with the larger default weight) is scored.
+    assert [hotel.identity.object_id for hotel in result.hotels] == [1, 2, 3, 4, 5]
+    assert [hotel.rank for hotel in result.hotels] == [1, 2, 3, 4, 5]
+    assert [hotel.relative_aggregate for hotel in result.hotels] == [0.0, 0.25, 0.5, 0.75, 1.0]
+
+
 @pytest.mark.parametrize(  # type: ignore[misc]
     "weights",
     [

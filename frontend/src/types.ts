@@ -70,6 +70,7 @@ export type HotelComponentAssignment = {
   distance_m: number | null;
   coverage: number | null;
   caveats: string[];
+  correlation_key?: string | null;
   percentile: number | null;
 };
 

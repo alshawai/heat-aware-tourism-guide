@@ -13,6 +13,7 @@ import {
   ResultSkeleton,
 } from "../../components/Shared";
 import { dataClient } from "../../services/dataClient";
+import { hotelLocations } from "../../mocks/data";
 import type {
   HotelComponentAssignment,
   HotelComponentName,
@@ -32,6 +33,8 @@ export function HotelLocationScreen() {
     <LocationPicker
       title="Where should hotels be ranked?"
       description="Choose the area whose nearby hotels you want to compare by outdoor heat exposure."
+      locations={hotelLocations}
+      allowMapSelection={false}
       onContinue={(location) => {
         setHotelLocation(location);
         navigate("/hotels/results");

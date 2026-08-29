@@ -278,9 +278,9 @@ export const dataClient = {
     }
     return value;
   },
-  searchLocations(query: string) {
+  searchLocations(query: string, locations = scenarioLocations) {
     const normalized = query.trim().toLowerCase();
-    return scenarioLocations.filter(
+    return locations.filter(
       (location) =>
         !normalized ||
         `${location.name} ${location.context}`

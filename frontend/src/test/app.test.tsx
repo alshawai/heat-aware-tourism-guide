@@ -24,7 +24,9 @@ describe("mock data boundary", () => {
 
   it("returns a scenario with ties and fewer than five hotels", async () => {
     vi.useFakeTimers();
-    const request = mockHotelRanking(scenarioLocations[1]);
+    const request = mockHotelRanking(scenarioLocations[0], {
+      mode: "degraded",
+    });
     await vi.advanceTimersByTimeAsync(1400);
     const result = await request;
     expect(result.usable_count).toBeLessThan(5);

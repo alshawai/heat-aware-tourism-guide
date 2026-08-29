@@ -253,6 +253,15 @@ const makeHotels = (
 };
 
 export const scenarioLocations = locations;
+export const hotelLocations: LocationSelection[] = [
+  {
+    id: "downtown-san-antonio",
+    name: "Downtown San Antonio",
+    context: "Supported hotel ranking district",
+    latitude: 29.425,
+    longitude: -98.486,
+  },
+];
 export const scenarioIds = ["harbor", "civic", "garden"];
 export function resolveLocation(id?: string) {
   return locations.find((location) => location.id === id) ?? locations[0];
@@ -281,7 +290,7 @@ export function mockHotelRanking(
 ): Promise<HotelRankResponse> {
   return delayed(
     resolveMode(options),
-    () => makeHotels(location, location.id === "civic"),
+    () => makeHotels(location, resolveMode(options) === "degraded"),
     options.signal
   );
 }

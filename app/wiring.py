@@ -13,6 +13,7 @@ import json
 import logging
 from pathlib import Path
 from dataclasses import replace
+from threading import Lock
 from typing import Callable, Mapping, Sequence
 
 from fastapi import FastAPI
@@ -136,6 +137,8 @@ def build_live_hotel_heat_analysis_service(
         use_bounding_box=area.use_bounding_box,
     )
     route = _bbox_route(district)
+    shared_tcm: dict[str, ComponentEvidence] = {}
+    shared_tcm_lock = Lock()
     fixture_service = (
         build_fixture_hotel_heat_analysis_service(fixture_path, district_aoi=district)
         if fixture_path is not None
@@ -148,6 +151,11 @@ def build_live_hotel_heat_analysis_service(
             if component in {"night", "day"}
             else (AnalyticType.EXCEEDANCE if component == "hot_hours" else AnalyticType.PERSISTENCE)
         )
+        if analytic is AnalyticType.TCM:
+            with shared_tcm_lock:
+                cached_tcm = shared_tcm.get("evidence")
+            if cached_tcm is not None:
+                return replace(cached_tcm, component=component)
         try:
             payload = adapter.load(
                 route,
@@ -195,7 +203,7 @@ def build_live_hotel_heat_analysis_service(
                         data_date=cached.provenance.data_date,
                         stale=True,
                     )
-                    return ComponentEvidence(
+                    evidence = ComponentEvidence(
                         component,
                         tuple(replayed._spatial_tiles()),
                         "C" if analytic is AnalyticType.TCM else "hours",
@@ -212,7 +220,11 @@ def build_live_hotel_heat_analysis_service(
                             "activity_id": cached.provenance.activity_id,
                             "transformations": [],
                         },
+                        correlation_key=(
+                            "shared-date-tcm" if component in {"night", "day"} else None
+                        ),
                     )
+                    return evidence
             if fixture_service is None:
                 return None
             fixture_evidence = fixture_service.load_component(component)
@@ -220,12 +232,13 @@ def build_live_hotel_heat_analysis_service(
                 return None
             details = dict(fixture_evidence.provenance_details or {})
             details["stale"] = True
-            return replace(
+            replayed_evidence = replace(
                 fixture_evidence,
                 provenance="fixture:canonical-district-hotel-analysis",
                 caveats=fixture_evidence.caveats + ("replayed matching fixture evidence; stale",),
                 provenance_details=details,
             )
+            return replayed_evidence
         request_date = date.today()
         midpoint = route[len(route) // 2]
         result = normalize_heatmap_response(
@@ -282,7 +295,7 @@ def build_live_hotel_heat_analysis_service(
             else ()
         )
         coverage = result.polygon_lookup(_bbox_geometry(district)).coverage
-        return ComponentEvidence(
+        evidence = ComponentEvidence(
             component,
             tuple(result._spatial_tiles()),
             units,
@@ -303,7 +316,12 @@ def build_live_hotel_heat_analysis_service(
                     for item in result.provenance.transformations
                 ],
             },
+            correlation_key="shared-date-tcm" if analytic is AnalyticType.TCM else None,
         )
+        if analytic is AnalyticType.TCM:
+            with shared_tcm_lock:
+                shared_tcm["evidence"] = evidence
+        return evidence
 
     return HotelHeatAnalysisService(
         lambda: _live_discovery_with_fixture(

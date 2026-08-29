@@ -40,6 +40,7 @@ class ComponentEvidence:
     coverage: float | None = None
     caveats: tuple[str, ...] = ()
     provenance_details: Mapping[str, object] | None = None
+    correlation_key: str | None = None
 
     def __post_init__(self) -> None:
         if self.component not in COMPONENTS:
@@ -79,6 +80,7 @@ class ComponentAssignment:
     distance_m: float | None
     coverage: float | None = None
     caveats: tuple[str, ...] = ()
+    correlation_key: str | None = None
 
 
 @dataclass(frozen=True)
@@ -163,6 +165,7 @@ class NeighbourhoodHeatScorer:
                     distance_m=match.distance_m,
                     coverage=item.coverage,
                     caveats=item.caveats,
+                    correlation_key=item.correlation_key or component,
                 )
             assignments.append(
                 HotelHeatAssignment(
@@ -200,17 +203,26 @@ class NeighbourhoodHeatScorer:
                     else 100.0
                 )
 
-        aggregates = {
-            assignment.identity: round(
+        aggregates = {}
+        for assignment in complete:
+            groups: dict[str, tuple[str, float]] = {}
+            for component in COMPONENTS:
+                key = assignment.components[component].correlation_key or component
+                current = groups.get(key)
+                if current is None:
+                    groups[key] = (component, selected_weights[component])
+                else:
+                    groups[key] = (current[0], current[1] + selected_weights[component])
+            active_weight = sum(weight for _, weight in groups.values())
+            aggregates[assignment.identity] = round(
                 sum(
                     (1.0 - percentiles[component][assignment.identity] / 100.0)
-                    * selected_weights[component]
-                    for component in COMPONENTS
+                    * weight
+                    / active_weight
+                    for component, weight in groups.values()
                 ),
                 6,
             )
-            for assignment in complete
-        }
         ranked_output = len(complete) >= 5
         ranks: dict[OsmIdentity, int] = {}
         if ranked_output:
