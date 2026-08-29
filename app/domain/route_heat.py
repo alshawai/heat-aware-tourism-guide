@@ -31,7 +31,11 @@ class SharedRouteHeatRequest:
         polygon = shape(dict(self.geometry))
         if polygon.geom_type != "Polygon" or not polygon.is_valid or polygon.is_empty:
             raise ValueError("shared route heat geometry must be a valid polygon")
-        if isinstance(self.hour, bool) or not isinstance(self.hour, int) or not 0 <= self.hour <= 23:
+        if (
+            isinstance(self.hour, bool)
+            or not isinstance(self.hour, int)
+            or not 0 <= self.hour <= 23
+        ):
             raise ValueError("shared route heat hour must be between 0 and 23")
         if not isinstance(self.forecast, bool):
             raise ValueError("shared route heat forecast must be boolean")
@@ -74,9 +78,7 @@ class RouteHeatEvidence:
         )
 
 
-def build_shared_route_aoi(
-    routes: RouteSet, *, buffer_m: float
-) -> dict[str, object]:
+def build_shared_route_aoi(routes: RouteSet, *, buffer_m: float) -> dict[str, object]:
     """Return a canonical buffered WGS84 rectangle covering every returned route."""
     if not math.isfinite(buffer_m) or buffer_m <= 0:
         raise ValueError("shared route AOI buffer must be positive and finite")
@@ -118,9 +120,7 @@ def aggregate_shared_route_heat(
     ):
         raise ValueError("route heat tiles must match the selected hour")
 
-    all_lines = unary_union(
-        [LineString(route.geometry.coordinates) for route in routes.routes]
-    )
+    all_lines = unary_union([LineString(route.geometry.coordinates) for route in routes.routes])
     crs = _local_crs(all_lines)
     projected_tiles: list[tuple[BaseGeometry, float]] = []
     for tile in heatmap.tiles:
@@ -139,7 +139,9 @@ def aggregate_shared_route_heat(
             for tile, value in projected_tiles
             if corridor.intersects(tile)
         ]
-        usable = [(intersection, value) for intersection, value in intersections if intersection.area > 0]
+        usable = [
+            (intersection, value) for intersection, value in intersections if intersection.area > 0
+        ]
         covered = unary_union([intersection for intersection, _ in usable]) if usable else None
         coverage = (
             min(1.0, max(0.0, covered.area / corridor.area))

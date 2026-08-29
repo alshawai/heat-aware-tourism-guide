@@ -838,9 +838,7 @@ class RouteComparisonResult:
             and self.heat_unit != "C"
         ):
             raise ValueError("temperature comparison metrics must use C")
-        if self.corridor_heat_value is not None and not math.isfinite(
-            self.corridor_heat_value
-        ):
+        if self.corridor_heat_value is not None and not math.isfinite(self.corridor_heat_value):
             raise ValueError("corridor_heat_value must be finite or None")
         if not self.reason:
             raise ValueError("reason is required")
@@ -886,7 +884,10 @@ class RouteComparisonResult:
         if self.routing_provenance is None:
             raise ValueError("explicit route results require routing provenance")
         if self.route_set_state is RouteSetState.NO_SUITABLE_RETURNED_ROUTE:
-            if self.alternatives or self.decision_state is not RouteDecisionState.NO_SUITABLE_RETURNED_ROUTE:
+            if (
+                self.alternatives
+                or self.decision_state is not RouteDecisionState.NO_SUITABLE_RETURNED_ROUTE
+            ):
                 raise ValueError("no suitable returned route state cannot contain alternatives")
             if self.recommended_id is not None:
                 raise ValueError("no suitable returned route cannot be recommended")
@@ -900,7 +901,10 @@ class RouteComparisonResult:
             raise ValueError("route alternative identities must be unique")
         if self.route_set_state is RouteSetState.SINGLE_ROUTE and len(self.alternatives) != 1:
             raise ValueError("single route state requires exactly one returned route")
-        if self.route_set_state is RouteSetState.ALTERNATIVES_RETURNED and len(self.alternatives) < 2:
+        if (
+            self.route_set_state is RouteSetState.ALTERNATIVES_RETURNED
+            and len(self.alternatives) < 2
+        ):
             raise ValueError("alternatives returned state requires at least two routes")
         if self.lowest_heat_route_id is not None and self.lowest_heat_route_id not in identities:
             raise ValueError("lowest_heat_route_id must reference a returned route")

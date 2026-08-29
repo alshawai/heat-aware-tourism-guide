@@ -13,12 +13,15 @@ from app.domain.contracts import (
     Coordinates,
     ExecutionMode,
     ResultState,
+    RouteDecisionState,
     TripAnalysisRequest,
     TripMode,
 )
 from app.domain.ledger import BudgetExceededError
 from app.integrations.fortyguard.contracts import EnvParamsRequest, HeatmapRequest
 from app.services.execution import EnvParamsExecution, HeatmapExecution
+from app.services.route_analysis import RouteAnalysisService
+from app.services.routing import RouteExecution
 from app.services.trip_adapters import TemporalTripAnalysisAdapter
 from app.settings import AppSettings
 
@@ -175,6 +178,49 @@ def test_temporal_adapter_chains_one_heatmap_call_into_one_env_params_call(
     assert response.best_time.hourly[1].metric.label.value == "provider_tcm"
 
 
+def test_temporal_adapter_preserves_best_time_for_unavailable_routes(
+    tmp_path: Path,
+) -> None:
+    route_service = RouteAnalysisService(
+        RouteExecution(
+            fixture_path=tmp_path / "route.json",
+            live_loader=lambda request: {"code": "NoRoute", "routes": []},
+        ),
+        profile="foot",
+        alternatives=True,
+        overview="full",
+        geometries="geojson",
+        steps=False,
+        provider_instance="fossgis-routed-foot",
+        request_version="v1",
+        representative_distance_m=1500.0,
+        minimum_heat_coverage=0.70,
+        corridor_buffer_m=25.0,
+        corridor_granularity=100,
+    )
+    adapter = TemporalTripAnalysisAdapter(
+        HeatmapExecution(
+            fixture_path=tmp_path / "heatmap.json",
+            live_loader=lambda request: _heatmap_payload(),
+        ),
+        EnvParamsExecution(
+            fixture_path=tmp_path / "env.json",
+            live_loader=lambda request: _env_payload(),
+        ),
+        route_analysis=route_service,
+    )
+
+    response = adapter.analyze(_request(), ExecutionMode.LIVE)
+
+    assert response.best_time is not None
+    assert response.routes is not None
+    assert response.routes.decision_state is RouteDecisionState.NO_SUITABLE_RETURNED_ROUTE
+    assert response.routes.alternatives == ()
+    assert response.routes.recommended_id is None
+    assert response.degraded_reasons is not None
+    assert "routes" in response.degraded_reasons
+
+
 def test_heatmap_unavailable_stops_before_env_params_call(tmp_path: Path) -> None:
     env_calls = 0
 
@@ -279,6 +325,11 @@ def test_production_wiring_uses_temporal_adapter_for_live_trip_requests(
         wiring,
         "build_live_env_params_execution",
         lambda *args, **kwargs: env_execution,
+    )
+    monkeypatch.setattr(
+        wiring,
+        "build_live_route_analysis_service",
+        lambda *args, **kwargs: None,
     )
     _copy_hotel_fixture(tmp_path)
     app = wiring.create_production_app(

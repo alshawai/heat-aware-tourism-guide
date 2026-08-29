@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Mapping
+from typing import cast
 
 from app.domain.routing import RouteRequest, RouteSet, ReturnedRoute, RouteGeometry
 from app.integrations.osrm.errors import OsrmMalformedResponse, OsrmNoRoute
@@ -14,20 +15,27 @@ class OsrmClient:
     def __init__(self, transport: HttpOsrmTransport) -> None:
         self.transport = transport
 
-    def route(self, request: RouteRequest) -> RouteSet:
+    def load(self, request: RouteRequest) -> Mapping[str, object]:
+        """Load one raw response so execution can cache the provider payload."""
         coordinates = (
             f"{request.origin.longitude},{request.origin.latitude};"
             f"{request.destination.longitude},{request.destination.latitude}"
         )
-        payload = self.transport.get(
-            f"{request.profile}/{coordinates}",
-            {
-                "alternatives": str(request.alternatives).lower(),
-                "overview": request.overview,
-                "geometries": request.geometries,
-                "steps": str(request.steps).lower(),
-            },
+        return cast(
+            Mapping[str, object],
+            self.transport.get(
+                f"{request.profile}/{coordinates}",
+                {
+                    "alternatives": str(request.alternatives).lower(),
+                    "overview": request.overview,
+                    "geometries": request.geometries,
+                    "steps": str(request.steps).lower(),
+                },
+            ),
         )
+
+    def route(self, request: RouteRequest) -> RouteSet:
+        payload = self.load(request)
         return normalize_response(payload, provider_instance=request.provider_instance)
 
 

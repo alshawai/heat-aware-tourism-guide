@@ -38,7 +38,10 @@ from app.integrations.fortyguard.live import (
     LiveEnvParamsAdapter,
     LiveFortyGuardTransport,
     LiveHeatmapAdapter,
+    LiveSharedRouteHeatAdapter,
 )
+from app.integrations.osrm.client import OsrmClient
+from app.integrations.osrm.transport import HttpOsrmTransport
 from app.integrations.overpass.client import OverpassClient
 from app.integrations.overpass.errors import OverpassError
 from app.integrations.overpass.transport import HttpOverpassTransport
@@ -48,6 +51,8 @@ from app.services.hotel_heat_score import HotelHeatAnalysisService
 from app.services.hotel_heat_score import build_fixture_hotel_heat_analysis_service
 from app.services.execution import EnvParamsExecution, HeatmapExecution
 from app.services.ledger_store import JsonlLedgerStore
+from app.services.route_analysis import RouteAnalysisService
+from app.services.routing import RouteExecution
 from app.services.trip_adapters import (
     FixtureTripAnalysisAdapter,
     LiveTripAnalysisAdapter,
@@ -403,6 +408,50 @@ def build_live_env_params_execution(
     )
 
 
+def build_live_route_analysis_service(
+    settings: AppSettings,
+    *,
+    client: FortyGuardClient,
+    cache: CacheService | None = None,
+    fixture_path: Path,
+) -> RouteAnalysisService:
+    """Compose one OSRM execution and one optional shared corridor activity."""
+    osrm = settings.osrm
+    transport = HttpOsrmTransport(
+        osrm.base_url,
+        user_agent=osrm.user_agent,
+        timeout_seconds=osrm.timeout_seconds,
+    )
+    osrm_client = OsrmClient(transport)
+    route_execution = RouteExecution(
+        fixture_path=fixture_path,
+        live_loader=osrm_client.load,
+        cache=cache if cache is not None else CacheService(),
+        endpoint=osrm.base_url,
+        schema_version=osrm.schema_version,
+        provider_config_version=osrm.provider_config_version,
+    )
+    shared_heat = LiveSharedRouteHeatAdapter(
+        client,
+        polling=settings.polling,
+    )
+    return RouteAnalysisService(
+        route_execution,
+        profile=osrm.profile,
+        alternatives=osrm.alternatives,
+        overview=osrm.overview,
+        geometries=osrm.geometries,
+        steps=osrm.steps,
+        provider_instance=osrm.provider_instance,
+        request_version=osrm.schema_version,
+        representative_distance_m=osrm.representative_distance_m,
+        minimum_heat_coverage=osrm.minimum_heat_coverage,
+        corridor_buffer_m=settings.area.buffer_m,
+        corridor_granularity=settings.area.granularity,
+        shared_heat_loader=shared_heat.load,
+    )
+
+
 def _fixture_candidates(primary: Path, pattern: str) -> list[Path]:
     """Committed fixtures of one kind: the fixture directory plus acquisitions.
 
@@ -444,6 +493,7 @@ def create_production_app(
     dist = frontend_dist if frontend_dist is not None else root / "frontend" / "dist"
     execution: HeatmapExecution | None = None
     env_params_execution: EnvParamsExecution | None = None
+    route_analysis: RouteAnalysisService | None = None
     if resolved.allow_live:
         ledger = build_ledger(resolved)
         client = build_live_client(resolved, ledger=ledger)
@@ -462,13 +512,21 @@ def create_production_app(
             cache=cache,
             additional_fixtures=_fixture_candidates(env_fixture, "env-params*.json"),
         )
+        route_analysis = build_live_route_analysis_service(
+            resolved,
+            client=client,
+            cache=cache,
+            fixture_path=heatmap_fixture.parent / "osrm-route.json",
+        )
     if trip_adapter is None:
         fixture_trip_adapter = FixtureTripAnalysisAdapter(
             heatmap_fixture.parent / "trip-analysis.json"
         )
         live_trip_adapter: TripAnalysisAdapter
         if execution is not None and env_params_execution is not None:
-            live_trip_adapter = TemporalTripAnalysisAdapter(execution, env_params_execution)
+            live_trip_adapter = TemporalTripAnalysisAdapter(
+                execution, env_params_execution, route_analysis
+            )
         else:
             live_trip_adapter = LiveTripAnalysisAdapter(
                 lambda request: {"unavailable": "live trip adapter is not configured"}

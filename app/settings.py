@@ -243,11 +243,8 @@ def _osrm_from_env(merged: Mapping[str, str]) -> OsrmSettings:
         profile=merged.get("OSRM_PROFILE", "").strip() or "foot",
         user_agent=merged.get("OSRM_USER_AGENT", "").strip() or DEFAULT_OSRM_USER_AGENT,
         timeout_seconds=positive_float("OSRM_TIMEOUT_SECONDS", 15.0),
-        provider_instance=merged.get("OSRM_PROVIDER_INSTANCE", "").strip()
-        or "fossgis-routed-foot",
-        representative_distance_m=positive_float(
-            "ROUTE_REPRESENTATIVE_DISTANCE_M", 1500.0
-        ),
+        provider_instance=merged.get("OSRM_PROVIDER_INSTANCE", "").strip() or "fossgis-routed-foot",
+        representative_distance_m=positive_float("ROUTE_REPRESENTATIVE_DISTANCE_M", 1500.0),
         minimum_heat_coverage=coverage,
     )
 

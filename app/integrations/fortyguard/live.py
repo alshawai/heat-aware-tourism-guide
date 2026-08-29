@@ -577,9 +577,7 @@ class LiveSharedRouteHeatAdapter:
         self._sleep = sleep
 
     def load(self, request: SharedRouteHeatRequest) -> LiveHeatmapPayload:
-        payload = build_documented_shared_route_heat_payload(
-            request, today=self._today()
-        )
+        payload = build_documented_shared_route_heat_payload(request, today=self._today())
         result, metadata = self._client.submit_and_poll(
             "/v1/heatmap",
             payload,

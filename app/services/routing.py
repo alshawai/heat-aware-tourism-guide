@@ -80,9 +80,7 @@ class RouteExecution:
             )
         return RouteOutcome(routes, "provider", False, retrieved_at, data_date)
 
-    def _fallback(
-        self, request: RouteRequest, identity: dict[str, object]
-    ) -> RouteOutcome | None:
+    def _fallback(self, request: RouteRequest, identity: dict[str, object]) -> RouteOutcome | None:
         if self.cache is not None:
             cached = self.cache.get(
                 CacheKey.create(

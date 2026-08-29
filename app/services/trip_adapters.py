@@ -26,7 +26,9 @@ from app.domain.contracts import (
     RankedHotel,
     ResultState,
     RouteComparisonResult,
+    RouteDecisionState,
     RouteOption,
+    RouteSetState,
     TripAnalysisAdapter,
     TripAnalysisRequest,
     TripAnalysisResponse,
@@ -48,6 +50,8 @@ from app.services.execution import (
     HeatmapExecution,
     UnavailableError,
 )
+from app.services.route_analysis import RouteAnalysisService
+from app.services.routing import RouteUnavailable
 from app.services.sidecars import load_acquisition_record
 
 
@@ -123,9 +127,11 @@ class TemporalTripAnalysisAdapter:
         self,
         heatmap_execution: HeatmapExecution,
         env_params_execution: EnvParamsExecution,
+        route_analysis: RouteAnalysisService | None = None,
     ) -> None:
         self.heatmap_execution = heatmap_execution
         self.env_params_execution = env_params_execution
+        self.route_analysis = route_analysis
 
     def analyze(
         self,
@@ -185,16 +191,29 @@ class TemporalTripAnalysisAdapter:
             )
         except ValueError as error:
             return _unavailable_response(request, execution_mode, str(error))
+        routes: RouteComparisonResult | None = None
+        route_reason: str | None = None
+        if self.route_analysis is None:
+            route_reason = "route comparison is not configured on the temporal live path"
+        else:
+            try:
+                routes = self.route_analysis.analyze(request, best_time)
+            except RouteUnavailable as error:
+                route_reason = str(error)
+            else:
+                route_reason = _route_degradation_reason(routes)
+
+        degraded_reasons = {"hotels": "hotel ranking is not implemented on the temporal live path"}
+        if route_reason is not None:
+            degraded_reasons["routes"] = route_reason
         return TripAnalysisResponse(
             request_identity=_request_identity(request),
             mode=request.mode,
             execution_mode=execution_mode,
             state=ResultState.DEGRADED,
             best_time=best_time,
-            degraded_reasons={
-                "hotels": "hotel ranking is not implemented on the temporal live path",
-                "routes": "route comparison is not implemented on the temporal live path",
-            },
+            routes=routes,
+            degraded_reasons=degraded_reasons,
         )
 
     def _framing_value(
@@ -216,6 +235,18 @@ class TemporalTripAnalysisAdapter:
         except (UnavailableError, ValueError):
             return None
         return max((tile.metric_value for tile in result.tiles), default=None)
+
+
+def _route_degradation_reason(routes: RouteComparisonResult) -> str | None:
+    if routes.decision_state is RouteDecisionState.SHADE_REQUIRED:
+        return "route heat is elevated; shade analysis is required before recommendation"
+    if routes.decision_state is RouteDecisionState.HEAT_UNAVAILABLE:
+        return "shared corridor heat is unavailable"
+    if routes.decision_state is RouteDecisionState.NO_SUITABLE_RETURNED_ROUTE:
+        return "no returned route has sufficient evidence for recommendation"
+    if routes.route_set_state is RouteSetState.SINGLE_ROUTE:
+        return "only one pedestrian route was returned; comparison is limited"
+    return None
 
 
 def _best_time_result(
