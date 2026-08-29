@@ -99,7 +99,7 @@ properties.
 - The translation adapter is the only place allowed to know the documented
   live shapes; `contracts.py` and `client.py` remain shape-neutral.
 - `fixtures/env-params.json` holds a recorded live series. It is in the
-  provider's *flat* shape (top-level `timestamp`/`timezone`/`offset`/`interval`/
+  provider's _flat_ shape (top-level `timestamp`/`timezone`/`offset`/`interval`/
   `count` beside one array per parameter), not the documented `metadata` +
   `locations` shape, so the adapter branches on the presence of a `metadata`
   mapping and supports both. The earlier scalar fixture was an invented shape.
