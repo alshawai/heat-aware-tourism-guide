@@ -21,21 +21,24 @@ are collected in [`docs/research/`](docs/research/).
 ## Documentation
 
 Detailed contributor setup, live-mode acquisition, deployment, API reference,
-and demo instructions will be organized under the Diataxis structure as the
-application scaffold lands.
+and demo instructions are organized under the Diataxis structure:
+
+- [Design explanation](docs/design/design-doc.md)
+- [Fixture demo script](docs/demo-script.md)
+- [Provider and coordinate research](docs/research/)
 
 ## Contributor Quality Gates
 
-Install the locked Python, root Node tooling, and frontend dependencies:
+Install the Python dependencies into the repository virtual environment, then install the Node tooling:
 
 ```bash
-uv sync --frozen --extra dev
+python3 -m venv .venv
+.venv/bin/python -m pip install -e '.[dev]'
 npm ci
 npm ci --prefix frontend
 ```
 
-Run the same formatting, linting, type checking, unit tests, fixture-backed
-integration tests, production build, and dependency audits enforced by CI:
+Run the local quality gates:
 
 ```bash
 npm run format:check
@@ -49,7 +52,7 @@ npm run frontend:lint
 npm run frontend:typecheck
 npm run frontend:test
 npm run frontend:build
-uv run pip-audit
+.venv/bin/python -m pip_audit
 npm audit --audit-level=high
 npm audit --prefix frontend --audit-level=high
 ```
