@@ -100,7 +100,7 @@ class TestTemporalTripRequest:
         assert list(request.window.hours) == list(range(8, 20))
         assert not hasattr(request, "hour")
 
-    @pytest.mark.parametrize(
+    @pytest.mark.parametrize(  # type: ignore[misc]
         ("overrides", "message"),
         [
             ({"start_hour": 8, "end_hour": 21}, "at most 12 hours"),
@@ -166,7 +166,7 @@ class TestSeriesReadyResponse:
                 provenance=_provenance(),
             )
 
-    @pytest.mark.parametrize("humidity", [-0.1, 100.1, 999.0])
+    @pytest.mark.parametrize("humidity", [-0.1, 100.1, 999.0])  # type: ignore[misc]
     def test_entry_rejects_out_of_range_humidity(self, humidity: float) -> None:
         """Widening the entry to carry every parameter must not drop this bound."""
         with pytest.raises(ValueError, match="between 0 and 100"):
@@ -191,7 +191,7 @@ class TestTemporalTripApi:
         assert response.status_code == 200
         assert response.json()["request_identity"] == "curated:2026-08-23:8-20"
 
-    @pytest.mark.parametrize(
+    @pytest.mark.parametrize(  # type: ignore[misc]
         "overrides",
         [
             {"end_hour": None},
