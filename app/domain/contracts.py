@@ -7,11 +7,11 @@ defined here.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 import math
 from datetime import date as calendar_date, datetime
-from typing import Protocol
+from typing import Mapping, Protocol
 
 from app.domain.environment import TimeWindow
 
@@ -290,11 +290,12 @@ class RouteCandidateData:
 
 @dataclass(frozen=True)
 class EnvironmentSeriesEntry:
-    """One environmental observation; unavailable provider metrics remain None."""
+    """One environmental observation with every requested provider parameter."""
 
     valid_time: datetime
     heat_index_celsius: float | None
     humidity_percent: float | None
+    parameters: Mapping[str, float | None] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if self.valid_time.tzinfo is None or self.valid_time.utcoffset() is None:
@@ -309,8 +310,22 @@ class EnvironmentSeriesEntry:
                 or not math.isfinite(value)
             ):
                 raise ValueError(f"{name} must be a finite number or None")
+        for name, value in self.parameters.items():
+            if not isinstance(name, str) or not name:
+                raise ValueError("environment parameter names must be non-empty strings")
+            if value is not None and (
+                isinstance(value, bool)
+                or not isinstance(value, (int, float))
+                or not math.isfinite(value)
+            ):
+                raise ValueError(f"environment parameter {name} must be finite or None")
         if self.humidity_percent is not None and not 0 <= self.humidity_percent <= 100:
             raise ValueError("humidity_percent must be between 0 and 100")
+        if self.parameters:
+            if self.parameters.get("relative_humidity_percent") != self.humidity_percent:
+                raise ValueError("humidity_percent must mirror relative_humidity_percent")
+            if self.parameters.get("heat_index_celsius") != self.heat_index_celsius:
+                raise ValueError("heat_index_celsius must mirror the parameter map")
 
 
 @dataclass(frozen=True)

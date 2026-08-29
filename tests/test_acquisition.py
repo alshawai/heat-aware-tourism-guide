@@ -115,7 +115,7 @@ def test_heatmap_acquisition_writes_raw_fixture_and_sidecar(tmp_path: Path) -> N
     assert stamps == (
         ("live_envelope_unwrapped", 1),
         ("point_to_aoi_expansion", 1),
-        ("valid_time_from_request", 1),
+        ("valid_time_from_request", 2),
         ("tcm_unit_celsius", 1),
     )
 

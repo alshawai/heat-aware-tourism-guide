@@ -19,6 +19,32 @@ function validDate(value: string) {
   );
 }
 
+function formatMetric(value: number | null, unit?: string) {
+  return value === null
+    ? "Unavailable"
+    : `${value.toFixed(1)}${unit ? ` ${unit}` : ""}`;
+}
+
+function formatHour(validTime: string, timezone: string) {
+  return `${validTime.slice(11, 16)} ${timezone}`;
+}
+
+function formatParameterName(name: string) {
+  return name
+    .replaceAll("_", " ")
+    .replaceAll(":", " ")
+    .replace(/\b\w/g, (character) => character.toUpperCase());
+}
+
+function parameterUnit(name: string) {
+  if (name.includes("humidity") || name.includes("cloud_cover")) return "%";
+  if (name.includes("precipitation")) return "mm";
+  if (name.includes("irradiance")) return "W/m2";
+  if (name.includes("elevation")) return "m";
+  if (name.includes("index") || name.includes("temperature")) return "C";
+  return "";
+}
+
 export function TripSetupScreen() {
   const {
     curatedTripSetup,
@@ -26,11 +52,15 @@ export function TripSetupScreen() {
     tripAnalysis,
     setTripAnalysis,
   } = useAppState();
-  const { date, hour, cautious } = curatedTripSetup;
+  const { date, startHour, endHour, cautious } = curatedTripSetup;
   const [dateError, setDateError] = useState("");
+  const [startError, setStartError] = useState("");
+  const [endError, setEndError] = useState("");
   const [health, setHealth] = useState<HealthState>({ status: "checking" });
   const [requestState, setRequestState] = useState<RequestState>("idle");
   const dateRef = useRef<HTMLInputElement>(null);
+  const startRef = useRef<HTMLSelectElement>(null);
+  const endRef = useRef<HTMLSelectElement>(null);
 
   async function checkHealth(signal?: AbortSignal) {
     setHealth({ status: "checking" });
@@ -67,12 +97,26 @@ export function TripSetupScreen() {
 
   async function submit(event?: FormEvent) {
     event?.preventDefault();
-    if (!validDate(date)) {
-      setDateError("Enter a valid date.");
-      dateRef.current?.focus();
+    const invalidDate = !validDate(date);
+    const invalidOrder = startHour >= endHour;
+    const invalidLength = !invalidOrder && endHour - startHour > 12;
+    setDateError(invalidDate ? "Enter a valid date." : "");
+    setStartError(
+      invalidOrder ? "Start time must be earlier than end time." : ""
+    );
+    setEndError(
+      invalidOrder
+        ? "End time must be later than start time."
+        : invalidLength
+          ? "The time window cannot exceed 12 hours."
+          : ""
+    );
+    if (invalidDate || invalidOrder || invalidLength) {
+      if (invalidDate) dateRef.current?.focus();
+      else if (invalidOrder) startRef.current?.focus();
+      else endRef.current?.focus();
       return;
     }
-    setDateError("");
     if (health.status !== "available" || requestState === "submitting") return;
 
     const request: TripAnalysisRequest = {
@@ -84,7 +128,8 @@ export function TripSetupScreen() {
       landmark_name: "The Alamo",
       district_name: "Downtown San Antonio",
       date,
-      hour,
+      start_hour: startHour,
+      end_hour: endHour,
       cautious,
       execution_mode: health.mode,
     };
@@ -112,8 +157,8 @@ export function TripSetupScreen() {
         <span className="step-label">Curated San Antonio trip</span>
         <h1>Trip Setup</h1>
         <p>
-          Configure one analysis for the best time, nearby hotels, and walking
-          route for this fixed journey.
+          Select a date and time window for environmental conditions at The
+          Alamo.
         </p>
       </header>
 
@@ -166,16 +211,21 @@ export function TripSetupScreen() {
               )}
             </div>
             <div className="field">
-              <label htmlFor="trip-hour">Hour</label>
+              <label htmlFor="trip-start-hour">Start time</label>
               <select
-                id="trip-hour"
-                value={hour}
+                ref={startRef}
+                id="trip-start-hour"
+                value={startHour}
                 disabled={busy}
+                aria-invalid={Boolean(startError)}
+                aria-describedby={startError ? "start-hour-error" : undefined}
                 onChange={(event) => {
                   setCuratedTripSetup({
                     ...curatedTripSetup,
-                    hour: Number(event.target.value),
+                    startHour: Number(event.target.value),
                   });
+                  setStartError("");
+                  setEndError("");
                   setRequestState("idle");
                 }}
               >
@@ -185,6 +235,42 @@ export function TripSetupScreen() {
                   </option>
                 ))}
               </select>
+              {startError && (
+                <span id="start-hour-error" className="field-error">
+                  {startError}
+                </span>
+              )}
+            </div>
+            <div className="field">
+              <label htmlFor="trip-end-hour">End time</label>
+              <select
+                ref={endRef}
+                id="trip-end-hour"
+                value={endHour}
+                disabled={busy}
+                aria-invalid={Boolean(endError)}
+                aria-describedby={endError ? "end-hour-error" : undefined}
+                onChange={(event) => {
+                  setCuratedTripSetup({
+                    ...curatedTripSetup,
+                    endHour: Number(event.target.value),
+                  });
+                  setStartError("");
+                  setEndError("");
+                  setRequestState("idle");
+                }}
+              >
+                {HOURS.map((value) => (
+                  <option key={value} value={value}>
+                    {String(value).padStart(2, "0")}:00
+                  </option>
+                ))}
+              </select>
+              {endError && (
+                <span id="end-hour-error" className="field-error">
+                  {endError}
+                </span>
+              )}
             </div>
           </div>
 
@@ -279,6 +365,76 @@ export function TripSetupScreen() {
         >
           <CheckCircle2 size={24} />
           <div>
+            {tripAnalysis.state === "series_ready" &&
+              tripAnalysis.environment && (
+                <>
+                  <h2>Environmental conditions</h2>
+                  <div className="series-summary">
+                    <div>
+                      <span>Temperature anchor</span>
+                      <strong>
+                        {tripAnalysis.environment.temperature_anchor_celsius.toFixed(
+                          1
+                        )}{" "}
+                        C
+                      </strong>
+                    </div>
+                    <div>
+                      <span>Data source</span>
+                      <strong>
+                        {tripAnalysis.environment.provenance.source}
+                      </strong>
+                    </div>
+                    <div>
+                      <span>Data date</span>
+                      <strong>
+                        {tripAnalysis.environment.provenance.data_date}
+                      </strong>
+                    </div>
+                  </div>
+                  <div className="series-table-wrap">
+                    <table className="series-table">
+                      <caption>Hourly environmental readings</caption>
+                      <thead>
+                        <tr>
+                          <th scope="col">Time</th>
+                          {Object.keys(
+                            tripAnalysis.environment.entries[0].parameters
+                          ).map((parameter) => (
+                            <th scope="col" key={parameter}>
+                              {formatParameterName(parameter)}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {tripAnalysis.environment.entries.map((entry) => (
+                          <tr key={entry.valid_time}>
+                            <th scope="row">
+                              {formatHour(
+                                entry.valid_time,
+                                tripAnalysis.environment!.timezone
+                              )}
+                            </th>
+                            {Object.keys(entry.parameters).map((parameter) => (
+                              <td key={parameter}>
+                                {formatMetric(
+                                  entry.parameters[parameter],
+                                  parameterUnit(parameter)
+                                )}
+                              </td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <p className="series-warning">
+                    <AlertTriangle size={17} />
+                    {tripAnalysis.environment.warning}
+                  </p>
+                </>
+              )}
             {tripAnalysis.state === "success" && <h2>Trip analysis ready</h2>}
             {tripAnalysis.state === "degraded" && (
               <>

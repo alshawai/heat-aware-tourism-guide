@@ -48,7 +48,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
     ranking: null,
     mode: queryMode ?? "success",
     tripAnalysis: null,
-    curatedTripSetup: { date: "2026-08-23", hour: 8, cautious: false },
+    curatedTripSetup: {
+      date: "2026-08-23",
+      startHour: 8,
+      endHour: 20,
+      cautious: false,
+    },
   });
   const value = useMemo<AppContextValue>(
     () => ({

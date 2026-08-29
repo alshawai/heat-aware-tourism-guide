@@ -15,6 +15,50 @@ function isResultSection(value: unknown) {
   return value === null || isObject(value);
 }
 
+function isNullableFiniteNumber(value: unknown) {
+  return (
+    value === null || (typeof value === "number" && Number.isFinite(value))
+  );
+}
+
+function validEnvironment(value: unknown) {
+  if (
+    !isObject(value) ||
+    !Array.isArray(value.entries) ||
+    value.entries.length === 0 ||
+    typeof value.timezone !== "string" ||
+    value.timezone.length === 0 ||
+    typeof value.temperature_anchor_celsius !== "number" ||
+    !Number.isFinite(value.temperature_anchor_celsius) ||
+    typeof value.warning !== "string" ||
+    !isObject(value.provenance)
+  ) {
+    return false;
+  }
+  const provenance = value.provenance;
+  return (
+    value.entries.every(
+      (entry) =>
+        isObject(entry) &&
+        typeof entry.valid_time === "string" &&
+        !Number.isNaN(Date.parse(entry.valid_time)) &&
+        isNullableFiniteNumber(entry.heat_index_celsius) &&
+        isNullableFiniteNumber(entry.humidity_percent) &&
+        isObject(entry.parameters) &&
+        Object.values(entry.parameters).every(isNullableFiniteNumber)
+    ) &&
+    typeof provenance.source === "string" &&
+    typeof provenance.data_date === "string" &&
+    typeof provenance.retrieved_at === "string" &&
+    typeof provenance.provider === "string" &&
+    typeof provenance.response_status === "string" &&
+    typeof provenance.fresh === "boolean" &&
+    (provenance.activity_id === null ||
+      typeof provenance.activity_id === "string") &&
+    isObject(provenance.request_configuration)
+  );
+}
+
 function validUnavailable(value: unknown) {
   return (
     isObject(value) &&
@@ -44,12 +88,13 @@ function isTripAnalysisResponse(
   if (
     !isObject(value) ||
     value.request_identity !==
-      `${request.mode}:${request.date}:${request.hour}` ||
+      `${request.mode}:${request.date}:${request.start_hour}-${request.end_hour}` ||
     value.mode !== request.mode ||
     value.execution_mode !== request.execution_mode ||
-    !["success", "degraded", "unavailable", "error"].includes(
+    !["series_ready", "success", "degraded", "unavailable", "error"].includes(
       String(value.state)
     ) ||
+    !(value.environment === null || validEnvironment(value.environment)) ||
     !isResultSection(value.best_time) ||
     !isResultSection(value.hotels) ||
     !isResultSection(value.routes)
@@ -57,6 +102,15 @@ function isTripAnalysisResponse(
     return false;
   }
   const hasResults = Boolean(value.best_time || value.hotels || value.routes);
+  if (value.state === "series_ready") {
+    return Boolean(
+      validEnvironment(value.environment) &&
+      !hasResults &&
+      value.unavailable === null &&
+      value.degraded_reasons === null
+    );
+  }
+  if (value.environment !== null) return false;
   if (value.state === "success") {
     return Boolean(
       value.best_time &&

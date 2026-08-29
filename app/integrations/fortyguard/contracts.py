@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from enum import Enum
 import math
@@ -214,13 +214,35 @@ class AreaHeatmapRequest:
         }
 
 
+ENVIRONMENT_PARAMETERS = (
+    "heat_index_celsius",
+    "apparent_temperature_celsius",
+    "wet_bulb_temperature_celsius",
+    "relative_humidity_percent",
+    "precipitation_mm",
+    "cloud_cover_octas",
+    "elevation",
+    "air_quality:idx",
+    "air_quality_pm2p5:idx",
+    "air_quality_pm10:idx",
+    "air_quality_no2:idx",
+    "aqi_us_co",
+    "air_quality_o3:idx",
+    "air_quality_so2:idx",
+    "methane_ppb",
+    "co2_ppm",
+    "solar_irradiance",
+)
+
+
 @dataclass(frozen=True)
 class EnvParamsEntry:
-    """One hour of the environmental series; missing values stay None, never zero."""
+    """One hour of all returned environmental parameters."""
 
     valid_time: datetime
     heat_index_celsius: float | None
     humidity_percent: float | None
+    parameters: Mapping[str, float | None] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -246,6 +268,29 @@ def _series_list(series: object, field: str) -> list[object]:
     return list(series)
 
 
+_FLAT_METADATA_KEYS = frozenset(
+    {"timestamps", "timestamp", "timezone", "count", "forecast", "mode"}
+)
+
+
+def _is_series(value: object) -> bool:
+    """Report whether a flat-shape value is a parameter series rather than metadata.
+
+    The flat shape mixes scalar metadata (``offset``, ``interval``) in among the
+    parameter arrays, so shape decides what is a series instead of a fixed name
+    list. That keeps every real environmental parameter without having to
+    enumerate metadata the provider may add later.
+
+    Known limitation: a genuine parameter that is scalar-shaped is
+    indistinguishable from metadata here and is dropped silently. A live call on
+    2026-08-29 returned 15 of the 17 requested parameters, with ``elevation``
+    and ``solar_irradiance`` absent; whether the provider omitted them or sent
+    them as scalars is undetermined, and ``elevation`` is time-invariant so the
+    scalar case is plausible. Resolving it needs the raw payload.
+    """
+    return isinstance(value, Sequence) and not isinstance(value, (str, bytes))
+
+
 def normalize_env_params_response(
     payload: Mapping[str, object], *, request: EnvParamsRequest
 ) -> EnvParamsResult:
@@ -254,13 +299,12 @@ def normalize_env_params_response(
     timestamps, timezone, series = _env_params_series(payload)
     entries = tuple(
         EnvParamsEntry(
-            _parse_datetime(timestamp),
-            _series_value(heat, "heat index"),
-            _series_value(humidity, "humidity"),
+            valid_time=_parse_datetime(timestamp),
+            heat_index_celsius=series["heat_index_celsius"][index],
+            humidity_percent=series["relative_humidity_percent"][index],
+            parameters={name: values[index] for name, values in series.items()},
         )
-        for timestamp, heat, humidity in zip(
-            timestamps, series["heat"], series["humidity"], strict=True
-        )
+        for index, timestamp in enumerate(timestamps)
     )
     if not entries:
         raise ValueError("env params response contains no entries")
@@ -274,7 +318,7 @@ def normalize_env_params_response(
 
 def _env_params_series(
     payload: Mapping[str, object],
-) -> tuple[Sequence[object], str, dict[str, list[object]]]:
+) -> tuple[Sequence[object], str, dict[str, list[float | None]]]:
     """Extract timestamps, timezone, and the consumed series from either provider shape.
 
     Two provider shapes are reality: the documented ``metadata`` + ``locations``
@@ -290,7 +334,7 @@ def _env_params_series(
 
 def _documented_series(
     payload: Mapping[str, object], metadata: Mapping[str, object]
-) -> tuple[Sequence[object], str, dict[str, list[object]]]:
+) -> tuple[Sequence[object], str, dict[str, list[float | None]]]:
     timestamps = metadata.get("timestamps")
     if not isinstance(timestamps, Sequence) or isinstance(timestamps, (str, bytes)):
         raise ValueError("missing freshness metadata")
@@ -311,16 +355,19 @@ def _documented_series(
     if not isinstance(parameters, Mapping):
         raise ValueError("malformed env params parameters")
     series = {
-        "heat": _series_list(parameters.get("heat_index_celsius"), "heat index"),
-        "humidity": _series_list(parameters.get("relative_humidity_percent"), "humidity"),
+        name: [_series_value(value, _series_error_name(name)) for value in _series_list(raw, name)]
+        for name, raw in parameters.items()
     }
-    _require_aligned(series, timestamps)
+    for name in ("heat_index_celsius", "relative_humidity_percent"):
+        if name not in series:
+            raise ValueError(f"missing {_series_error_name(name)} series")
+    _ensure_legacy_series(series, timestamps)
     return timestamps, timezone, series
 
 
 def _flat_series(
     payload: Mapping[str, object],
-) -> tuple[Sequence[object], str, dict[str, list[object]]]:
+) -> tuple[Sequence[object], str, dict[str, list[float | None]]]:
     timezone = payload.get("timezone")
     if not isinstance(timezone, str) or not timezone:
         raise ValueError("missing timezone metadata")
@@ -336,14 +383,36 @@ def _flat_series(
         else:
             raise ValueError("missing freshness metadata")
     series = {
-        "heat": _series_list(payload.get("heat_index_celsius"), "heat index"),
-        "humidity": _series_list(payload.get("relative_humidity_percent"), "humidity"),
+        name: [
+            _series_value(value, _series_error_name(name)) for value in _series_list(values, name)
+        ]
+        for name, values in payload.items()
+        if name not in _FLAT_METADATA_KEYS and _is_series(values)
     }
-    _require_aligned(series, timestamps)
+    for name in ("heat_index_celsius", "relative_humidity_percent"):
+        if name not in series:
+            raise ValueError(f"missing {_series_error_name(name)} series")
+    _ensure_legacy_series(series, timestamps)
     return timestamps, timezone, series
 
 
-def _require_aligned(series: dict[str, list[object]], timestamps: Sequence[object]) -> None:
+def _series_error_name(name: str) -> str:
+    return {
+        "heat_index_celsius": "heat index",
+        "relative_humidity_percent": "humidity",
+    }.get(name, name)
+
+
+def _ensure_legacy_series(
+    series: dict[str, list[float | None]], timestamps: Sequence[object]
+) -> None:
+    length = len(timestamps)
+    for name in ("heat_index_celsius", "relative_humidity_percent"):
+        series.setdefault(name, [None] * length)
+    _require_aligned(series, timestamps)
+
+
+def _require_aligned(series: dict[str, list[float | None]], timestamps: Sequence[object]) -> None:
     if any(len(values) != len(timestamps) for values in series.values()):
         raise ValueError("env params series must be time-aligned with timestamps")
 

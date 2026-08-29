@@ -35,6 +35,10 @@ expansion) and responses (envelope unwrap, shape translation).
    - `valid_time_from_request` — the heatmap result carries no freshness, so
      the requested `date_time` is used as the tile valid time. This is
      definitionally true for what we asked, though not provider-attested.
+     Version 2 (point path) derives the hour from the requested window's start
+     when one was submitted (`filter_type` 2), because the returned readings
+     describe that window; full-day requests keep midnight. The area path stays
+     at version 1 — it submits no window.
    - `point_to_aoi_expansion` — a point request was expanded to a square AOI
      before submission.
    - `live_envelope_unwrapped` — the documented `data` envelope was hoisted.

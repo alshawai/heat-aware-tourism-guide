@@ -166,6 +166,16 @@ class TestSeriesReadyResponse:
                 provenance=_provenance(),
             )
 
+    @pytest.mark.parametrize("humidity", [-0.1, 100.1, 999.0])
+    def test_entry_rejects_out_of_range_humidity(self, humidity: float) -> None:
+        """Widening the entry to carry every parameter must not drop this bound."""
+        with pytest.raises(ValueError, match="between 0 and 100"):
+            EnvironmentSeriesEntry(
+                valid_time=datetime.fromisoformat("2026-08-23T08:00:00-05:00"),
+                heat_index_celsius=33.2,
+                humidity_percent=humidity,
+            )
+
 
 class TestTemporalTripApi:
     def test_endpoint_accepts_a_valid_window(self) -> None:

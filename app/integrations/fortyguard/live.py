@@ -21,7 +21,12 @@ from shapely.ops import transform as shapely_ops_transform
 from app.domain.environment import TimeWindow
 from app.domain.provenance import Transformation
 from app.integrations.fortyguard.client import ActivityMetadata, FortyGuardClient
-from app.integrations.fortyguard.contracts import AnalyticType, EnvParamsRequest, HeatmapRequest
+from app.integrations.fortyguard.contracts import (
+    ENVIRONMENT_PARAMETERS,
+    AnalyticType,
+    EnvParamsRequest,
+    HeatmapRequest,
+)
 from app.integrations.fortyguard.errors import ProviderError, ProviderErrorKind
 from app.integrations.fortyguard.transport import HttpFortyGuardTransport
 from app.settings import FortyGuardPollingSettings
@@ -175,6 +180,21 @@ def _point_square_feature_collection(
     }
 
 
+def _tile_valid_time(request: HeatmapRequest) -> str:
+    """Stamp tiles with the hour the readings were actually requested for.
+
+    A windowed request is submitted as the range filter (``filter_type`` 2 with
+    ``start_time``/``end_time``), so the readings that come back describe that
+    window rather than midnight. Stamping the window start keeps the tile inside
+    the traveler window that :func:`app.domain.environment.select_anchor_celsius`
+    tests, which midnight would fall outside of for every daytime window.
+    Full-day requests (``filter_type`` 3) carry no hour and keep midnight.
+    """
+    window = request.window
+    hour = 0 if window is None else window.start_hour
+    return f"{request.start_date.isoformat()}T{hour:02d}:00:00+00:00"
+
+
 def translate_heatmap_response(
     result: Mapping[str, object], *, request: HeatmapRequest
 ) -> dict[str, object]:
@@ -196,7 +216,7 @@ def translate_heatmap_response(
         raise ProviderError(
             ProviderErrorKind.MALFORMED_RESPONSE, detail="map_data contains no features"
         )
-    valid_time = f"{request.start_date.isoformat()}T00:00:00+00:00"
+    valid_time = _tile_valid_time(request)
     unit = "C" if request.analytic_type is AnalyticType.TCM else "hours"
     internal_features: list[dict[str, object]] = []
     for index, feature in enumerate(features):
@@ -259,11 +279,17 @@ def _tile_value(properties: Mapping[str, object], analytic_type: AnalyticType) -
 
 
 def request_transformations(request: HeatmapRequest) -> tuple[Transformation, ...]:
-    """The inference stamps every live heatmap result carries (ADR 0002)."""
+    """The inference stamps every live point heatmap result carries (ADR 0002).
+
+    ``valid_time_from_request`` is version 2: the rule now derives the tile hour
+    from the requested window's start rather than always stamping midnight, so
+    consumers can tell window-derived valid times from the date-only rule (ADR
+    0002 §3). The area path still applies version 1 — it submits no window.
+    """
     stamps = [
         Transformation("live_envelope_unwrapped", 1),
         Transformation("point_to_aoi_expansion", 1),
-        Transformation("valid_time_from_request", 1),
+        Transformation("valid_time_from_request", 2),
     ]
     if request.analytic_type is AnalyticType.TCM:
         stamps.append(Transformation("tcm_unit_celsius", 1))
@@ -473,7 +499,12 @@ def build_documented_area_heatmap_payload(
 
 
 def area_request_transformations(analytic_type: AnalyticType) -> tuple[Transformation, ...]:
-    """The inference stamps every live area heatmap result carries (ADR 0002)."""
+    """The inference stamps every live area heatmap result carries (ADR 0002).
+
+    ``valid_time_from_request`` stays version 1 here: area requests submit no
+    hour window (always ``filter_type`` 3), so the tile valid time is still
+    midnight derived from the request date alone.
+    """
     stamps = [
         Transformation("live_envelope_unwrapped", 1),
         Transformation("route_to_aoi_buffer", 1),
@@ -655,9 +686,9 @@ def map_tiles_to_route_segments(
 def build_documented_env_params_payload(request: EnvParamsRequest) -> dict[str, object]:
     """Build the documented /v1/env_params payload for a single-point series request.
 
-    The caller-supplied Celsius anchor is the documented ``temperature`` input;
-    ``analysis`` explicitly lists only the two consumed parameters so the
-    request stays within the three-parameter plan limit (ADR 0001). An optional
+    The complete documented parameter set is requested by default. The caller-supplied
+    Celsius anchor is the documented ``temperature`` input. Parameters are kept
+    provider-shaped so newly added fields are not silently discarded. An optional
     hour selects the single-hour filter; the default is the full-day series.
     Out-of-contract dates are rejected before any billable submission, matching
     the heatmap path (ADR 0001 §3). Env-params dates are validated as anchored
@@ -684,7 +715,7 @@ def build_documented_env_params_payload(request: EnvParamsRequest) -> dict[str, 
         "longitude": request.longitude,
         "temperature": request.temperature_anchor_celsius,
         "date_time": date_time,
-        "analysis": ["heat_index_celsius", "relative_humidity_percent"],
+        "analysis": list(ENVIRONMENT_PARAMETERS),
     }
 
 

@@ -181,6 +181,7 @@ def _environment_result(
             valid_time=entry.valid_time,
             heat_index_celsius=entry.heat_index_celsius,
             humidity_percent=entry.humidity_percent,
+            parameters=dict(entry.parameters),
         )
         for entry in outcome.result.entries
         if request.window.contains_hour(entry.valid_time.hour)

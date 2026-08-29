@@ -693,7 +693,7 @@ dd {
 }
 .setup-fields {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 18px;
 }
 .field {
@@ -786,6 +786,7 @@ dd {
 }
 .setup-outcome > div {
   min-width: 0;
+  width: 100%;
 }
 .setup-outcome h2 {
   margin: 0 0 8px;
@@ -797,6 +798,79 @@ dd {
   margin: 10px 0 18px;
   padding-left: 20px;
   color: var(--muted);
+}
+.series-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1px;
+  margin: 18px 0;
+  background: var(--line);
+  border: 1px solid var(--line);
+}
+.series-summary > div {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+  padding: 14px;
+  background: #f8faf7;
+}
+.series-summary span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+.series-summary strong {
+  overflow-wrap: anywhere;
+}
+.series-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+  border: 1px solid var(--line);
+}
+.series-table {
+  width: 100%;
+  min-width: 520px;
+  border-collapse: collapse;
+  text-align: left;
+}
+.series-table caption {
+  padding: 14px 16px;
+  color: var(--ink);
+  font-weight: 800;
+  text-align: left;
+}
+.series-table th,
+.series-table td {
+  padding: 11px 16px;
+  border-top: 1px solid var(--line);
+  white-space: nowrap;
+}
+.series-table thead th {
+  background: #edf2eb;
+  color: var(--muted);
+  font-size: 12px;
+  text-transform: uppercase;
+}
+.series-table tbody th {
+  color: var(--ink);
+}
+.series-table tbody tr:nth-child(even) {
+  background: #faf9f5;
+}
+.setup-outcome .series-warning {
+  display: flex;
+  gap: 9px;
+  align-items: flex-start;
+  margin: 16px 0 18px;
+  padding: 12px 14px;
+  background: #fff3d9;
+  color: #684c1b;
+  font-size: 13px;
+}
+.series-warning svg {
+  flex: none;
+  margin-top: 2px;
 }
 .setup-outcome.degraded {
   border-left-color: #c18320;
@@ -908,6 +982,9 @@ dd {
   }
   .setup-outcome {
     align-items: flex-start;
+  }
+  .series-summary {
+    grid-template-columns: minmax(0, 1fr);
   }
   .setup-card > button,
   .setup-outcome button,

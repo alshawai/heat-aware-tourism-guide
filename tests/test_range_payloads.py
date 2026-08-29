@@ -11,23 +11,57 @@ behaviour is preserved.
 
 from __future__ import annotations
 
-from datetime import date, timedelta
-from typing import cast
+from datetime import date, datetime, timedelta, timezone
+from typing import Any, cast
 
 import pytest
 
-from app.domain.environment import MAX_WINDOW_HOURS
+from app.domain.environment import MAX_WINDOW_HOURS, select_anchor_celsius
 from app.integrations.fortyguard.contracts import (
     AnalyticType,
     EnvParamsRequest,
     HeatmapRequest,
+    normalize_heatmap_response,
 )
 from app.integrations.fortyguard.errors import ProviderError, ProviderErrorKind
 from app.integrations.fortyguard.live import (
     build_documented_env_params_payload,
     build_documented_heatmap_payload,
+    translate_heatmap_response,
 )
 from app.services.execution import env_params_request_payload, heatmap_request_payload
+
+
+def _raw_tcm_map_data() -> dict[str, object]:
+    """A completed live tcm result: the provider stamps no per-feature time."""
+    return {
+        "map_data": {
+            "type": "FeatureCollection",
+            "features": [
+                {
+                    "type": "Feature",
+                    "geometry": {
+                        "type": "Polygon",
+                        "coordinates": [
+                            [
+                                [-98.5, 29.4],
+                                [-98.4, 29.4],
+                                [-98.4, 29.5],
+                                [-98.5, 29.5],
+                                [-98.5, 29.4],
+                            ]
+                        ],
+                    },
+                    "properties": {
+                        "average_temperature": 36.5,
+                        "min_temperature": 28.1,
+                        "max_temperature": 41.2,
+                    },
+                }
+            ],
+        },
+        "stats_data": {"units": "celsius", "analytic_type": "tcm"},
+    }
 
 
 def _tcm_request(**overrides: object) -> HeatmapRequest:
@@ -222,3 +256,51 @@ class TestRequestIdentityPayloads:
         identity = env_params_request_payload(_env_request())
         assert "start_hour" not in identity
         assert "end_hour" not in identity
+
+
+# --- Translated tile timestamps: the anchor contract --- #
+
+
+class TestWindowedTileValidTime:
+    """A windowed request must produce tiles the anchor policy accepts.
+
+    The provider echoes no per-feature timestamp, so the translator stamps one
+    from the request. Stamping midnight put every tile outside the traveler
+    window, which made ``select_anchor_celsius`` reject live readings for any
+    daytime window and reported the trip as ``unavailable``.
+    """
+
+    def test_range_request_stamps_tiles_with_the_window_start_hour(self) -> None:
+        request = _tcm_request(start_hour=8, end_hour=14)
+        translated = translate_heatmap_response(_raw_tcm_map_data(), request=request)
+        feature = cast(list[dict[str, Any]], translated["features"])[0]
+        properties = cast(dict[str, Any], feature["properties"])
+        assert properties["valid_time"] == f"{date.today().isoformat()}T08:00:00+00:00"
+
+    def test_full_day_request_still_stamps_midnight(self) -> None:
+        translated = translate_heatmap_response(_raw_tcm_map_data(), request=_tcm_request())
+        feature = cast(list[dict[str, Any]], translated["features"])[0]
+        properties = cast(dict[str, Any], feature["properties"])
+        assert properties["valid_time"] == f"{date.today().isoformat()}T00:00:00+00:00"
+
+    def test_windowed_tiles_anchor_inside_the_traveler_window(self) -> None:
+        request = _tcm_request(start_hour=8, end_hour=14)
+        window = request.window
+        assert window is not None
+        result = normalize_heatmap_response(
+            translate_heatmap_response(_raw_tcm_map_data(), request=request),
+            request=request,
+            retrieved_at=datetime(2026, 8, 29, tzinfo=timezone.utc),
+        )
+        assert select_anchor_celsius(result.tiles, window) == 36.5
+
+    def test_late_window_also_anchors(self) -> None:
+        request = _tcm_request(start_hour=15, end_hour=21)
+        window = request.window
+        assert window is not None
+        result = normalize_heatmap_response(
+            translate_heatmap_response(_raw_tcm_map_data(), request=request),
+            request=request,
+            retrieved_at=datetime(2026, 8, 29, tzinfo=timezone.utc),
+        )
+        assert select_anchor_celsius(result.tiles, window) == 36.5
