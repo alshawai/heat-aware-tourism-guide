@@ -108,6 +108,18 @@ directly.
   unavailable error. Every replay is labelled (`source="cache"/"fixture"`,
   `stale=True`, true data date) and never presented as a current forecast
   (ADR 0004).
+- **OSM object identity** — The immutable pair of OpenStreetMap object type
+  (`node`, `way`, or `relation`) and numeric ID. Hotel candidates preserve all
+  contributing object identities after a confirmed merge; a name or location
+  is not an object identity.
+- **Usable hotel** — A discovered `tourism=hotel` object or confirmed merged
+  group with a nonblank name and valid WGS84 node coordinates or way/relation
+  center. Fewer than five usable hotels is explicitly unavailable, not an
+  empty success.
+- **Conservative hotel deduplication** — Hotel objects merge on identical OSM
+  identity, compatible explicit relation membership, or a normalized name
+  corroborated by matching address, website, or operator. Proximity and name
+  alone never establish identity.
 - **Source of truth for provider behavior** — The official FortyGuard docs
   (reconciled in `docs/research/issue-7-san-antonio-provider-validation.md`
   and ADR 0001), with the quickstart repo as reference only.

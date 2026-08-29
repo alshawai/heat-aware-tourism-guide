@@ -3,6 +3,10 @@ import { mockHotelRanking } from "../mocks/mockHotelRanking";
 import { mockTripAnalyze } from "../mocks/mockTripAnalyze";
 import type {
   ExecutionMode,
+  HotelRankRequest,
+  HotelRankResponse,
+  LocationSelection,
+  RequestOptions,
   TripAnalysisRequest,
   TripAnalysisResponse,
 } from "../types";
@@ -59,6 +63,23 @@ function validEnvironment(value: unknown) {
   );
 }
 
+function isHotelRankResponse(value: unknown): value is HotelRankResponse {
+  return (
+    isObject(value) &&
+    (value.state === "available" || value.state === "unavailable") &&
+    typeof value.district_name === "string" &&
+    (value.execution_mode === "fixture" || value.execution_mode === "live") &&
+    typeof value.discovered_count === "number" &&
+    typeof value.usable_count === "number" &&
+    isObject(value.components) &&
+    (value.ranking === null ||
+      (isObject(value.ranking) &&
+        isObject(value.ranking.weights) &&
+        typeof value.ranking.weight_label === "string" &&
+        Array.isArray(value.ranking.hotels)))
+  );
+}
+
 function validUnavailable(value: unknown) {
   return (
     isObject(value) &&
@@ -81,6 +102,112 @@ function validReasons(value: unknown): value is Record<string, string> {
   );
 }
 
+function validHeatInterpretation(value: unknown) {
+  const noaaBands = [
+    "below_caution",
+    "caution",
+    "extreme_caution",
+    "danger",
+    "extreme_danger",
+  ];
+  const providerBands = [
+    "provider_lower",
+    "provider_moderate",
+    "provider_higher",
+    "provider_very_high",
+  ];
+  const bandLabels: Record<string, string> = {
+    below_caution: "Below NOAA caution",
+    caution: "Caution",
+    extreme_caution: "Extreme caution",
+    danger: "Danger",
+    extreme_danger: "Extreme danger",
+    provider_lower: "Lower provider temperature",
+    provider_moderate: "Moderate provider temperature",
+    provider_higher: "Higher provider temperature",
+    provider_very_high: "Very high provider temperature",
+  };
+  if (!isObject(value)) return false;
+  const expectedBands =
+    value.metric === "heat_index_celsius" ? noaaBands : providerBands;
+  const actualHeatIndex =
+    value.metric === "heat_index_celsius" &&
+    typeof value.value_celsius === "number";
+  const hasValue = typeof value.value_celsius === "number";
+  const expectedThreshold =
+    expectedBands[value.guidance_policy === "cautious" ? 1 : 2];
+  const expectedAction =
+    typeof value.band === "string" &&
+    expectedBands.indexOf(value.band) >=
+      expectedBands.indexOf(expectedThreshold);
+  const expectedPolicy =
+    value.guidance_policy === "cautious"
+      ? "cautious_guidance_one_band_earlier"
+      : "standard_heat_guidance";
+  const expectedUnavailableLabel =
+    value.metric === "heat_index_celsius"
+      ? "NOAA Heat Index unavailable"
+      : "Provider temperature unavailable";
+  const expectedUnavailablePolicy =
+    value.metric === "heat_index_celsius"
+      ? "no_heat_index_available"
+      : "metric_unavailable";
+  return (
+    (value.metric === "tcm" || value.metric === "heat_index_celsius") &&
+    (value.value_celsius === null || typeof value.value_celsius === "number") &&
+    (value.band === null || expectedBands.includes(String(value.band))) &&
+    ((value.band === null && typeof value.band_label === "string") ||
+      value.band_label === bandLabels[String(value.band)]) &&
+    (value.action_threshold_band === null ||
+      expectedBands.includes(String(value.action_threshold_band))) &&
+    (value.guidance_policy === "standard" ||
+      value.guidance_policy === "cautious") &&
+    value.is_actual_heat_index === actualHeatIndex &&
+    value.noaa_heat_index_available === actualHeatIndex &&
+    (hasValue
+      ? value.band !== null &&
+        value.action_threshold_band === expectedThreshold &&
+        value.action_required === expectedAction &&
+        value.policy_applied === expectedPolicy
+      : value.band === null &&
+        value.action_threshold_band === null &&
+        value.action_required === false &&
+        value.band_label === expectedUnavailableLabel &&
+        value.policy_applied === expectedUnavailablePolicy) &&
+    typeof value.policy_applied === "string" &&
+    value.policy_applied.length > 0
+  );
+}
+
+function validRoutes(value: unknown) {
+  if (value === null) return true;
+  if (
+    !isObject(value) ||
+    !validHeatInterpretation(value.heat_interpretation) ||
+    !isObject(value.heat_interpretation) ||
+    value.heat_interpretation.metric !== value.heat_metric ||
+    value.heat_interpretation.value_celsius !== value.corridor_heat_value ||
+    !Array.isArray(value.alternatives)
+  ) {
+    return false;
+  }
+  return value.alternatives.every(
+    (route) =>
+      isObject(route) &&
+      validHeatInterpretation(route.heat_interpretation) &&
+      isObject(route.heat_interpretation) &&
+      route.heat_interpretation.metric === route.heat_metric &&
+      route.heat_interpretation.value_celsius === route.heat_value
+  );
+}
+
+function validBestTime(value: unknown) {
+  return (
+    value === null ||
+    (isObject(value) && validHeatInterpretation(value.heat_interpretation))
+  );
+}
+
 function isTripAnalysisResponse(
   value: unknown,
   request: TripAnalysisRequest
@@ -95,9 +222,9 @@ function isTripAnalysisResponse(
       String(value.state)
     ) ||
     !(value.environment === null || validEnvironment(value.environment)) ||
-    !isResultSection(value.best_time) ||
+    !validBestTime(value.best_time) ||
     !isResultSection(value.hotels) ||
-    !isResultSection(value.routes)
+    !validRoutes(value.routes)
   ) {
     return false;
   }
@@ -178,10 +305,36 @@ export const dataClient = {
     }
     return value;
   },
-  rankHotels: mockHotelRanking,
-  searchLocations(query: string) {
+  async rankHotels(
+    location: LocationSelection,
+    options: RequestOptions = {}
+  ): Promise<HotelRankResponse> {
+    // Explicit mock scenarios remain available for deterministic previews and tests.
+    if (options.mode !== undefined || options.scenario !== undefined) {
+      return mockHotelRanking(location, options);
+    }
+    const executionMode = await this.getHealth(options.signal);
+    const request: HotelRankRequest = {
+      // The current hotel flow is scoped to the canonical district AOI.
+      district_name: "Downtown San Antonio",
+      execution_mode: executionMode,
+    };
+    const value = await readJson(
+      await fetch("/api/hotels/rank", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(request),
+        signal: options.signal,
+      })
+    );
+    if (!isHotelRankResponse(value)) {
+      throw new Error("Invalid hotel ranking response");
+    }
+    return value;
+  },
+  searchLocations(query: string, locations = scenarioLocations) {
     const normalized = query.trim().toLowerCase();
-    return scenarioLocations.filter(
+    return locations.filter(
       (location) =>
         !normalized ||
         `${location.name} ${location.context}`

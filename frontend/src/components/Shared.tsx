@@ -32,14 +32,21 @@ export function LocationPicker({
   title,
   description,
   onContinue,
+  locations,
+  allowMapSelection = true,
 }: {
   title: string;
   description: string;
   onContinue: (location: LocationSelection) => void;
+  locations?: LocationSelection[];
+  allowMapSelection?: boolean;
 }) {
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<LocationSelection | null>(null);
-  const results = useMemo(() => dataClient.searchLocations(query), [query]);
+  const results = useMemo(
+    () => dataClient.searchLocations(query, locations),
+    [locations, query]
+  );
   const center: [number, number] = selected
     ? [selected.latitude, selected.longitude]
     : [29.8, -95.5];
@@ -102,7 +109,7 @@ export function LocationPicker({
               attribution="&copy; OpenStreetMap contributors"
               url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
             />
-            <MapClick onSelect={setSelected} />
+            {allowMapSelection && <MapClick onSelect={setSelected} />}
             {selected && (
               <CircleMarker
                 center={[selected.latitude, selected.longitude]}
@@ -115,9 +122,11 @@ export function LocationPicker({
               />
             )}
           </MapContainer>
-          <span className="map-hint">
-            Click anywhere on the map to set a custom point.
-          </span>
+          {allowMapSelection && (
+            <span className="map-hint">
+              Click anywhere on the map to set a custom point.
+            </span>
+          )}
         </div>
       </div>
       <div className="selection-bar">
@@ -131,7 +140,11 @@ export function LocationPicker({
           ) : (
             <>
               <span>No place selected</span>
-              <strong>Search or click the map to continue</strong>
+              <strong>
+                {allowMapSelection
+                  ? "Search or click the map to continue"
+                  : "Search to continue"}
+              </strong>
             </>
           )}
         </div>

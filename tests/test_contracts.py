@@ -12,6 +12,9 @@ from app.domain.contracts import (
     ExecutionMode,
     HeatStatus,
     HeatMetricName,
+    GuidancePolicy,
+    HeatBand,
+    HeatInterpretation,
     HourlyEntry,
     Metric,
     MetricLabel,
@@ -392,6 +395,36 @@ class TestMalformedPayloads:
     def test_metric_empty_unit(self) -> None:
         with pytest.raises(ValueError, match="unit"):
             Metric(value=35.0, unit="", label=MetricLabel.PROVIDER_TCM, is_actual_heat_index=False)
+
+    def test_heat_interpretation_rejects_noaa_claims_for_provider_tcm(self) -> None:
+        with pytest.raises(ValueError, match="NOAA Heat Index availability"):
+            HeatInterpretation(
+                metric=HeatMetricName.TCM,
+                value_celsius=35,
+                band=HeatBand.PROVIDER_HIGHER,
+                band_label="Higher provider temperature",
+                action_threshold_band=HeatBand.PROVIDER_HIGHER,
+                guidance_policy=GuidancePolicy.STANDARD,
+                is_actual_heat_index=False,
+                noaa_heat_index_available=True,
+                action_required=True,
+                policy_applied="standard_heat_guidance",
+            )
+
+    def test_heat_interpretation_rejects_bands_for_missing_values(self) -> None:
+        with pytest.raises(ValueError, match="missing metric values"):
+            HeatInterpretation(
+                metric=HeatMetricName.HEAT_INDEX_CELSIUS,
+                value_celsius=None,
+                band=HeatBand.CAUTION,
+                band_label="NOAA Heat Index unavailable",
+                action_threshold_band=None,
+                guidance_policy=GuidancePolicy.STANDARD,
+                is_actual_heat_index=False,
+                noaa_heat_index_available=False,
+                action_required=False,
+                policy_applied="no_heat_index_available",
+            )
 
     def test_hourly_entry_invalid_hour(self) -> None:
         with pytest.raises(ValueError, match="hour"):

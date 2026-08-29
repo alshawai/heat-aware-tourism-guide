@@ -59,6 +59,36 @@ class HeatMetricName(str, Enum):
     HEAT_INDEX_CELSIUS = "heat_index_celsius"
 
 
+class HeatBand(str, Enum):
+    BELOW_CAUTION = "below_caution"
+    CAUTION = "caution"
+    EXTREME_CAUTION = "extreme_caution"
+    DANGER = "danger"
+    EXTREME_DANGER = "extreme_danger"
+    PROVIDER_LOWER = "provider_lower"
+    PROVIDER_MODERATE = "provider_moderate"
+    PROVIDER_HIGHER = "provider_higher"
+    PROVIDER_VERY_HIGH = "provider_very_high"
+
+
+class GuidancePolicy(str, Enum):
+    STANDARD = "standard"
+    CAUTIOUS = "cautious"
+
+
+HEAT_BAND_LABELS = {
+    HeatBand.BELOW_CAUTION: "Below NOAA caution",
+    HeatBand.CAUTION: "Caution",
+    HeatBand.EXTREME_CAUTION: "Extreme caution",
+    HeatBand.DANGER: "Danger",
+    HeatBand.EXTREME_DANGER: "Extreme danger",
+    HeatBand.PROVIDER_LOWER: "Lower provider temperature",
+    HeatBand.PROVIDER_MODERATE: "Moderate provider temperature",
+    HeatBand.PROVIDER_HIGHER: "Higher provider temperature",
+    HeatBand.PROVIDER_VERY_HIGH: "Very high provider temperature",
+}
+
+
 class EnrichmentState(str, Enum):
     AVAILABLE = "available"
     UNAVAILABLE = "unavailable"
@@ -161,6 +191,134 @@ class Metric:
             raise ValueError("NOAA Heat Index label requires an actual heat index")
         if self.label is MetricLabel.PROVIDER_TCM and self.is_actual_heat_index:
             raise ValueError("provider TCM must not be marked as actual heat index")
+
+
+@dataclass(frozen=True)
+class HeatInterpretation:
+    """Typed, product-facing interpretation of one Celsius heat metric."""
+
+    metric: HeatMetricName
+    value_celsius: float | None
+    band: HeatBand | None
+    band_label: str
+    action_threshold_band: HeatBand | None
+    guidance_policy: GuidancePolicy
+    is_actual_heat_index: bool
+    noaa_heat_index_available: bool
+    action_required: bool
+    policy_applied: str
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.metric, HeatMetricName):
+            raise ValueError("interpretation metric must be a HeatMetricName value")
+        if self.value_celsius is not None and not math.isfinite(self.value_celsius):
+            raise ValueError("interpretation value must be finite or None")
+        if not self.band_label:
+            raise ValueError("interpretation band_label is required")
+        if not isinstance(self.guidance_policy, GuidancePolicy):
+            raise ValueError("interpretation guidance_policy must be a GuidancePolicy value")
+        if not isinstance(self.is_actual_heat_index, bool):
+            raise ValueError("interpretation actual heat-index flag must be boolean")
+        if not isinstance(self.noaa_heat_index_available, bool):
+            raise ValueError("interpretation NOAA availability must be boolean")
+        if not isinstance(self.action_required, bool):
+            raise ValueError("interpretation action_required must be boolean")
+        if not self.policy_applied:
+            raise ValueError("interpretation policy_applied is required")
+        if self.is_actual_heat_index and not self.noaa_heat_index_available:
+            raise ValueError("actual heat index must be available")
+        if self.metric is HeatMetricName.TCM and self.is_actual_heat_index:
+            raise ValueError("provider TCM must not be marked as actual heat index")
+        if self.metric is HeatMetricName.TCM and self.noaa_heat_index_available:
+            raise ValueError("provider TCM must not claim NOAA Heat Index availability")
+        expected_actual = (
+            self.metric is HeatMetricName.HEAT_INDEX_CELSIUS and self.value_celsius is not None
+        )
+        if self.is_actual_heat_index is not expected_actual:
+            raise ValueError("actual heat-index flag must match the metric and value")
+        if self.noaa_heat_index_available is not expected_actual:
+            raise ValueError("NOAA availability must match actual Heat Index data")
+        if self.value_celsius is None and (
+            self.band is not None or self.action_threshold_band is not None or self.action_required
+        ):
+            raise ValueError("missing metric values cannot have heat bands or an action")
+        if self.value_celsius is None:
+            expected_unavailable_label = (
+                "NOAA Heat Index unavailable"
+                if self.metric is HeatMetricName.HEAT_INDEX_CELSIUS
+                else "Provider temperature unavailable"
+            )
+            expected_unavailable_policy = (
+                "no_heat_index_available"
+                if self.metric is HeatMetricName.HEAT_INDEX_CELSIUS
+                else "metric_unavailable"
+            )
+            if (
+                self.band_label != expected_unavailable_label
+                or self.policy_applied != expected_unavailable_policy
+            ):
+                raise ValueError("missing metric copy and policy marker must match its metric")
+        noaa_bands = {
+            HeatBand.BELOW_CAUTION,
+            HeatBand.CAUTION,
+            HeatBand.EXTREME_CAUTION,
+            HeatBand.DANGER,
+            HeatBand.EXTREME_DANGER,
+        }
+        provider_bands = {
+            HeatBand.PROVIDER_LOWER,
+            HeatBand.PROVIDER_MODERATE,
+            HeatBand.PROVIDER_HIGHER,
+            HeatBand.PROVIDER_VERY_HIGH,
+        }
+        expected_bands = (
+            noaa_bands if self.metric is HeatMetricName.HEAT_INDEX_CELSIUS else provider_bands
+        )
+        if self.value_celsius is not None and (
+            self.band is None or self.action_threshold_band is None
+        ):
+            raise ValueError("available metric values require a band and action threshold")
+        if self.band is not None and self.band not in expected_bands:
+            raise ValueError("interpretation band must match its metric")
+        if self.band is not None and self.band_label != HEAT_BAND_LABELS[self.band]:
+            raise ValueError("interpretation band label must match its band")
+        if (
+            self.action_threshold_band is not None
+            and self.action_threshold_band not in expected_bands
+        ):
+            raise ValueError("action threshold band must match its metric")
+        ordered_bands = (
+            (
+                HeatBand.BELOW_CAUTION,
+                HeatBand.CAUTION,
+                HeatBand.EXTREME_CAUTION,
+                HeatBand.DANGER,
+                HeatBand.EXTREME_DANGER,
+            )
+            if self.metric is HeatMetricName.HEAT_INDEX_CELSIUS
+            else (
+                HeatBand.PROVIDER_LOWER,
+                HeatBand.PROVIDER_MODERATE,
+                HeatBand.PROVIDER_HIGHER,
+                HeatBand.PROVIDER_VERY_HIGH,
+            )
+        )
+        expected_threshold = ordered_bands[
+            1 if self.guidance_policy is GuidancePolicy.CAUTIOUS else 2
+        ]
+        if self.value_celsius is not None and self.action_threshold_band is not expected_threshold:
+            raise ValueError("action threshold must match the guidance policy")
+        if self.band is not None and self.action_required is not (
+            ordered_bands.index(self.band) >= ordered_bands.index(expected_threshold)
+        ):
+            raise ValueError("action state must match the observation and threshold bands")
+        expected_policy = (
+            "cautious_guidance_one_band_earlier"
+            if self.guidance_policy is GuidancePolicy.CAUTIOUS
+            else "standard_heat_guidance"
+        )
+        if self.value_celsius is not None and self.policy_applied != expected_policy:
+            raise ValueError("policy marker must match the guidance policy")
 
 
 @dataclass(frozen=True)
@@ -373,6 +531,7 @@ class BestTimeResult:
     metric_label: MetricLabel
     provenance: Provenance
     hourly_coverage: float = 1.0
+    heat_interpretation: HeatInterpretation | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.metric_label, MetricLabel):
@@ -397,7 +556,13 @@ class BestTimeResult:
         recommendation = next(
             entry.metric.value for entry in self.hourly if entry.hour == self.recommendation_hour
         )
-        if recommendation != min(entry.metric.value for entry in self.hourly):
+        policy_selected = (
+            self.heat_interpretation is not None
+            and self.heat_interpretation.guidance_policy is GuidancePolicy.CAUTIOUS
+        )
+        if not policy_selected and recommendation != min(
+            entry.metric.value for entry in self.hourly
+        ):
             raise ValueError("recommendation_hour must be a coolest available hour")
 
 
@@ -520,6 +685,7 @@ class RouteOption:
     recommended: bool
     recommendation_reason: str | None
     shade_model_label: str | None
+    heat_interpretation: HeatInterpretation | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.heat_metric, HeatMetricName):
@@ -558,6 +724,11 @@ class RouteOption:
             raise ValueError("shade metadata requires a modeled shade value")
         if self.modeled_shade_percent is not None and not self.shade_model_label:
             raise ValueError("modeled shade requires a model label")
+        if self.heat_interpretation is not None and (
+            self.heat_interpretation.metric is not self.heat_metric
+            or self.heat_interpretation.value_celsius != self.heat_value
+        ):
+            raise ValueError("route option heat interpretation must match its metric and value")
 
 
 @dataclass(frozen=True)
@@ -576,6 +747,7 @@ class RouteComparisonResult:
     comparison_scope: str
     provenance: Provenance
     fallback_reason: str | None = None
+    heat_interpretation: HeatInterpretation | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.heat_metric, HeatMetricName):
@@ -619,6 +791,11 @@ class RouteComparisonResult:
             shortest = min(self.alternatives, key=lambda route: route.distance_m)
             if recommended[0].identity != shortest.identity:
                 raise ValueError("insufficient confidence must recommend the shortest route")
+        if self.heat_interpretation is not None and (
+            self.heat_interpretation.metric is not self.heat_metric
+            or self.heat_interpretation.value_celsius != self.corridor_heat_value
+        ):
+            raise ValueError("route comparison heat interpretation must match its metric and value")
 
 
 @dataclass(frozen=True)

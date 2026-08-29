@@ -1,6 +1,7 @@
 """Temporal trip orchestration tests for issue #44 phase 4."""
 
 from pathlib import Path
+import shutil
 from typing import Any, Mapping
 
 import pytest
@@ -20,6 +21,16 @@ from app.integrations.fortyguard.contracts import EnvParamsRequest, HeatmapReque
 from app.services.execution import EnvParamsExecution, HeatmapExecution
 from app.services.trip_adapters import TemporalTripAnalysisAdapter
 from app.settings import AppSettings
+
+FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
+
+
+def _copy_hotel_fixture(tmp_path: Path) -> None:
+    for name in (
+        "hotel-heat-analysis.json",
+        "hotel-heat-analysis.acquisition.json",
+    ):
+        shutil.copyfile(FIXTURES / name, tmp_path / name)
 
 
 def _request() -> TripAnalysisRequest:
@@ -211,6 +222,7 @@ def test_production_wiring_uses_temporal_adapter_for_live_trip_requests(
         "build_live_env_params_execution",
         lambda *args, **kwargs: env_execution,
     )
+    _copy_hotel_fixture(tmp_path)
     app = wiring.create_production_app(
         AppSettings(
             allow_live=True,
@@ -257,6 +269,7 @@ def test_trip_endpoint_maps_orchestration_budget_failure_to_503(tmp_path: Path) 
             live_loader=lambda request: _env_payload(),
         ),
     )
+    _copy_hotel_fixture(tmp_path)
     client = TestClient(
         create_app(
             tmp_path / "heatmap.json",

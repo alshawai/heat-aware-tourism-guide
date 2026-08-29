@@ -3,12 +3,19 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import math
 import os
 from pathlib import Path
 from typing import Mapping
 
+from app.domain.hotels import BoundingBox
+
 DEFAULT_BASE_URL = "https://api.fortyguard.com"
 DEFAULT_LEDGER_PATH = Path("data/ledger.jsonl")
+DEFAULT_OVERPASS_ENDPOINT = "https://overpass-api.de/api/interpreter"
+DEFAULT_OVERPASS_USER_AGENT = (
+    "HeatAwareTourismGuide/0.1 (contact: https://github.com/alshawai/heat-aware-tourism-guide)"
+)
 _DEFAULT_ENV_FILE = Path(".env")
 
 
@@ -37,12 +44,25 @@ class FortyGuardAreaSettings:
 
 
 @dataclass(frozen=True)
+class OverpassSettings:
+    """Bounded hotel-discovery provider and district configuration."""
+
+    endpoint: str = DEFAULT_OVERPASS_ENDPOINT
+    user_agent: str = DEFAULT_OVERPASS_USER_AGENT
+    timeout_seconds: float = 30.0
+    max_attempts: int = 2
+    retry_delay_seconds: float = 30.0
+    district_aoi: BoundingBox = BoundingBox(29.421, -98.490, 29.429, -98.482)
+
+
+@dataclass(frozen=True)
 class AppSettings:
     allow_live: bool
     fortyguard_api_key: str | None
     fortyguard_base_url: str
     polling: FortyGuardPollingSettings = FortyGuardPollingSettings()
     area: FortyGuardAreaSettings = FortyGuardAreaSettings()
+    overpass: OverpassSettings = OverpassSettings()
     call_budget: int | None = None
     ledger_path: Path | None = DEFAULT_LEDGER_PATH
 
@@ -173,8 +193,56 @@ def load_settings(
         fortyguard_base_url=base_url,
         polling=polling or _polling_from_env(merged),
         area=area or _area_from_env(merged),
+        overpass=_overpass_from_env(merged),
         call_budget=_call_budget_from_env(merged),
         ledger_path=_ledger_path_from_env(process_env, file_values),
+    )
+
+
+def _overpass_from_env(merged: Mapping[str, str]) -> OverpassSettings:
+    def positive_int(name: str, default: int) -> int:
+        raw = merged.get(name, "").strip()
+        if not raw:
+            return default
+        try:
+            value = int(raw)
+        except ValueError:
+            raise SettingsError(f"{name} must be an integer") from None
+        if value < 1:
+            raise SettingsError(f"{name} must be a positive integer")
+        return value
+
+    def float_value(name: str, default: float, *, allow_zero: bool = False) -> float:
+        raw = merged.get(name, "").strip()
+        if not raw:
+            return default
+        try:
+            value = float(raw)
+        except ValueError:
+            raise SettingsError(f"{name} must be a number") from None
+        if not math.isfinite(value) or (value < 0 if allow_zero else value <= 0):
+            qualifier = "non-negative" if allow_zero else "positive"
+            raise SettingsError(f"{name} must be {qualifier}")
+        return value
+
+    bbox_raw = merged.get("HOTEL_DISTRICT_BBOX", "29.421,-98.490,29.429,-98.482")
+    try:
+        coordinates = tuple(float(part.strip()) for part in bbox_raw.split(","))
+        if len(coordinates) != 4:
+            raise ValueError
+        district_aoi = BoundingBox(*coordinates)
+    except ValueError:
+        raise SettingsError(
+            "HOTEL_DISTRICT_BBOX must be valid south,west,north,east coordinates"
+        ) from None
+
+    return OverpassSettings(
+        endpoint=merged.get("OVERPASS_ENDPOINT", "").strip() or DEFAULT_OVERPASS_ENDPOINT,
+        user_agent=merged.get("OVERPASS_USER_AGENT", "").strip() or DEFAULT_OVERPASS_USER_AGENT,
+        timeout_seconds=float_value("OVERPASS_TIMEOUT_SECONDS", 30.0),
+        max_attempts=positive_int("OVERPASS_MAX_ATTEMPTS", 2),
+        retry_delay_seconds=float_value("OVERPASS_RETRY_DELAY_SECONDS", 30.0, allow_zero=True),
+        district_aoi=district_aoi,
     )
 
 

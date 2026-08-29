@@ -43,26 +43,70 @@ export type TripResponse = {
   provenance: { bestTime: Provenance; routes: Provenance };
 };
 
-export type HotelComponent = {
-  label: string;
-  value: number;
-  contribution: number;
+export type HotelComponentName = "night" | "hot_hours" | "persistence" | "day";
+
+export type HotelComponentMetadata = {
+  component: HotelComponentName;
+  available: boolean;
+  unit: "C" | "hours";
+  threshold_celsius: number | null;
+  provenance: string | null;
+  coverage: number | null;
+  confidence: "high" | "limited" | "insufficient" | null;
+  caveats: string[];
+  provenance_details?: Record<string, unknown> | null;
+  missing_reason: string | null;
 };
-export type Hotel = {
-  id: string;
+
+export type HotelComponentAssignment = {
+  component: HotelComponentName;
+  value: number | null;
+  unit: "C" | "hours";
+  threshold_celsius: number | null;
+  provenance: string;
+  tile_id: string | null;
+  tile_resolution_m: number;
+  quality: string;
+  distance_m: number | null;
+  coverage: number | null;
+  caveats: string[];
+  correlation_key?: string | null;
+  percentile: number | null;
+};
+
+export type HotelRankingHotel = {
+  identity: { object_type: "node" | "way" | "relation"; object_id: number };
   name: string;
-  percentile: number;
-  tieLabel?: string;
-  components: HotelComponent[];
-  latitude: number;
-  longitude: number;
+  complete: boolean;
+  relative_aggregate: number | null;
+  rank: number | null;
+  components: Record<HotelComponentName, HotelComponentAssignment>;
+  /** Candidate-relative percentile derived locally from relative_aggregate. */
+  relative_percentile?: number | null;
 };
-export type HotelResponse = {
-  location: LocationSelection;
-  hotels: Hotel[];
-  usableCount: number;
-  weights: Record<string, number>;
-  provenance: Provenance;
+
+export type HotelRanking = {
+  weights: Record<HotelComponentName, number>;
+  weight_label: "product defaults" | "custom";
+  complete_candidate_count: number;
+  ranked_output: boolean;
+  hotels: HotelRankingHotel[];
+};
+
+export type HotelRankResponse = {
+  state: "available" | "unavailable";
+  district_name: string;
+  execution_mode: ExecutionMode;
+  reason: string | null;
+  discovered_count: number;
+  usable_count: number;
+  components: Partial<Record<HotelComponentName, HotelComponentMetadata>>;
+  ranking: HotelRanking | null;
+};
+
+export type HotelRankRequest = {
+  district_name: string;
+  execution_mode: ExecutionMode;
 };
 export type RequestOptions = {
   scenario?: string;
@@ -123,12 +167,38 @@ export type TripAnalysisResponse = {
   execution_mode: ExecutionMode;
   state: "series_ready" | "success" | "degraded" | "unavailable" | "error";
   environment: EnvironmentSeriesResult | null;
-  best_time: Record<string, unknown> | null;
+  best_time:
+    | ({ heat_interpretation?: HeatInterpretation } & Record<string, unknown>)
+    | null;
   hotels: Record<string, unknown> | null;
   routes: Record<string, unknown> | null;
   unavailable: { reason: string; recoverable: boolean } | null;
   degraded_reasons: Record<string, string> | null;
 };
+
+export type HeatInterpretation = {
+  metric: "tcm" | "heat_index_celsius";
+  value_celsius: number | null;
+  band: HeatBand | null;
+  band_label: string;
+  action_threshold_band: HeatBand | null;
+  guidance_policy: "standard" | "cautious";
+  is_actual_heat_index: boolean;
+  noaa_heat_index_available: boolean;
+  action_required: boolean;
+  policy_applied: string;
+};
+
+export type HeatBand =
+  | "below_caution"
+  | "caution"
+  | "extreme_caution"
+  | "danger"
+  | "extreme_danger"
+  | "provider_lower"
+  | "provider_moderate"
+  | "provider_higher"
+  | "provider_very_high";
 
 export type CuratedTripSetup = {
   date: string;

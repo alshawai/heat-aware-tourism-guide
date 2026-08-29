@@ -608,6 +608,11 @@ dd {
   display: grid;
   gap: 17px;
 }
+.weight-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
 .weight-editor label {
   display: grid;
   grid-template-columns: 1fr 90px 20px;
@@ -626,6 +631,46 @@ dd {
 .invalid-total,
 .validation-message {
   color: var(--accent);
+}
+.evidence-summary,
+.assignment-evidence {
+  margin-top: 28px;
+}
+.evidence-grid,
+.assignment-evidence {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.evidence-grid article,
+.assignment-evidence article {
+  padding: 20px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+}
+.evidence-grid h3,
+.assignment-evidence h2 {
+  margin-top: 0;
+}
+.evidence-grid dl,
+.assignment-evidence dl {
+  display: grid;
+  gap: 7px;
+}
+.evidence-grid dl div,
+.assignment-evidence dl div {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+}
+.evidence-grid dt,
+.assignment-evidence dt {
+  color: var(--muted);
+}
+.evidence-grid dd,
+.assignment-evidence dd {
+  margin: 0;
+  text-align: right;
 }
 .trip-setup {
   max-width: 1120px;
@@ -958,6 +1003,10 @@ dd {
   }
   .component-list {
     grid-template-columns: repeat(2, 1fr);
+  }
+  .evidence-grid,
+  .assignment-evidence {
+    grid-template-columns: 1fr;
   }
   .provenance dl {
     display: grid;
