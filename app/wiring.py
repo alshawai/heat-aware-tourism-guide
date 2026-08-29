@@ -8,28 +8,44 @@ ledger, and execution from application settings.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 import json
 import logging
 from pathlib import Path
-from typing import Mapping, Sequence
+from dataclasses import replace
+from threading import Lock
+from typing import Callable, Mapping, Sequence
 
 from fastapi import FastAPI
+from shapely.geometry.base import BaseGeometry
 
 from app.api import create_app
-from app.domain.contracts import TripAnalysisAdapter
+from app.domain.contracts import ExecutionMode, TripAnalysisAdapter
+from app.domain.hotel_heat_score import ComponentEvidence
+from app.domain.hotels import BoundingBox, DiscoveryState, HotelDiscoveryResult
 from app.domain.ledger import CreditLedger
+from app.domain.provenance import CacheKey
 from app.domain.security import sanitize_payload
 from app.integrations.fortyguard.client import FortyGuardClient
+from app.integrations.fortyguard.contracts import (
+    AnalyticType,
+    HeatmapRequest,
+    normalize_heatmap_response,
+)
+from app.integrations.fortyguard.errors import ProviderError
 from app.integrations.fortyguard.live import (
+    LiveAreaHeatmapAdapter,
     LiveEnvParamsAdapter,
     LiveFortyGuardTransport,
     LiveHeatmapAdapter,
 )
 from app.integrations.overpass.client import OverpassClient
+from app.integrations.overpass.errors import OverpassError
 from app.integrations.overpass.transport import HttpOverpassTransport
 from app.services.cache import CacheService
 from app.services.hotel_discovery import HotelDiscoveryService
+from app.services.hotel_heat_score import HotelHeatAnalysisService
+from app.services.hotel_heat_score import build_fixture_hotel_heat_analysis_service
 from app.services.execution import EnvParamsExecution, HeatmapExecution
 from app.services.ledger_store import JsonlLedgerStore
 from app.services.trip_adapters import (
@@ -102,6 +118,254 @@ def build_hotel_discovery_service(
     )
 
 
+def build_live_hotel_heat_analysis_service(
+    settings: AppSettings,
+    *,
+    client: FortyGuardClient,
+    cache: CacheService | None = None,
+    fixture_path: Path | None = None,
+) -> HotelHeatAnalysisService:
+    """Compose four shared district analyses behind the hotel ranking boundary."""
+    discovery = build_hotel_discovery_service(settings, cache=cache)
+    district = settings.overpass.district_aoi
+    area = settings.area
+    adapter = LiveAreaHeatmapAdapter(
+        client,
+        polling=settings.polling,
+        buffer_m=area.buffer_m,
+        max_vertices=area.max_vertices,
+        use_bounding_box=area.use_bounding_box,
+    )
+    route = _bbox_route(district)
+    shared_tcm: dict[str, ComponentEvidence] = {}
+    shared_tcm_lock = Lock()
+    fixture_service = (
+        build_fixture_hotel_heat_analysis_service(fixture_path, district_aoi=district)
+        if fixture_path is not None
+        else None
+    )
+
+    def load(component: str) -> ComponentEvidence | None:
+        analytic = (
+            AnalyticType.TCM
+            if component in {"night", "day"}
+            else (AnalyticType.EXCEEDANCE if component == "hot_hours" else AnalyticType.PERSISTENCE)
+        )
+        if analytic is AnalyticType.TCM:
+            with shared_tcm_lock:
+                cached_tcm = shared_tcm.get("evidence")
+            if cached_tcm is not None:
+                return replace(cached_tcm, component=component)
+        try:
+            payload = adapter.load(
+                route,
+                analytic_type=analytic,
+                start_date=date.today(),
+                forecast=True,
+                threshold_celsius=35.0 if analytic is not AnalyticType.TCM else None,
+                direction="above" if analytic is not AnalyticType.TCM else None,
+                granularity=area.granularity,
+            )
+        except (ConnectionError, OSError, ProviderError, TimeoutError, ValueError):
+            if cache is not None:
+                midpoint = route[len(route) // 2]
+                request_date = date.today()
+                request = HeatmapRequest(
+                    analytic,
+                    midpoint[0],
+                    midpoint[1],
+                    request_date,
+                    True,
+                    35.0 if analytic is not AnalyticType.TCM else None,
+                    "above" if analytic is not AnalyticType.TCM else None,
+                    area.granularity,
+                )
+                cache_payload = {
+                    "analytic_type": analytic.value,
+                    "latitude": midpoint[0],
+                    "longitude": midpoint[1],
+                    "start_date": request_date.isoformat(),
+                    "forecast": True,
+                    "threshold_celsius": request.threshold_celsius,
+                    "direction": request.direction,
+                    "granularity": area.granularity,
+                }
+                cached = cache.get(
+                    CacheKey.create("/v1/heatmap", "v1", cache_payload, "fortyguard-config-v1")
+                )
+                if cached is not None:
+                    replayed = normalize_heatmap_response(
+                        cached.payload,
+                        request=request,
+                        retrieved_at=cached.provenance.retrieved_at,
+                        activity_id=cached.provenance.activity_id,
+                        source="cache",
+                        data_date=cached.provenance.data_date,
+                        stale=True,
+                    )
+                    evidence = ComponentEvidence(
+                        component,
+                        tuple(replayed._spatial_tiles()),
+                        "C" if analytic is AnalyticType.TCM else "hours",
+                        request.threshold_celsius,
+                        "cache:fortyguard",
+                        float(area.granularity),
+                        caveats=("replayed cached evidence; stale",),
+                        provenance_details={
+                            "source": "cache",
+                            "retrieved_at": cached.provenance.retrieved_at.isoformat(),
+                            "data_date": cached.provenance.data_date,
+                            "stale": True,
+                            "forecast": cached.provenance.forecast,
+                            "activity_id": cached.provenance.activity_id,
+                            "transformations": [],
+                        },
+                        correlation_key=(
+                            "shared-date-tcm" if component in {"night", "day"} else None
+                        ),
+                    )
+                    return evidence
+            if fixture_service is None:
+                return None
+            fixture_evidence = fixture_service.load_component(component)
+            if fixture_evidence is None:
+                return None
+            details = dict(fixture_evidence.provenance_details or {})
+            details["stale"] = True
+            replayed_evidence = replace(
+                fixture_evidence,
+                provenance="fixture:canonical-district-hotel-analysis",
+                caveats=fixture_evidence.caveats + ("replayed matching fixture evidence; stale",),
+                provenance_details=details,
+            )
+            return replayed_evidence
+        request_date = date.today()
+        midpoint = route[len(route) // 2]
+        result = normalize_heatmap_response(
+            payload.payload,
+            request=HeatmapRequest(
+                analytic,
+                midpoint[0],
+                midpoint[1],
+                request_date,
+                True,
+                35.0 if analytic is not AnalyticType.TCM else None,
+                "above" if analytic is not AnalyticType.TCM else None,
+                area.granularity,
+            ),
+            retrieved_at=datetime.now(timezone.utc),
+            activity_id=payload.activity_id,
+            source="provider",
+            data_date=request_date.isoformat(),
+            transformations=payload.transformations,
+        )
+        if cache is not None:
+            cache.put(
+                "/v1/heatmap",
+                "v1",
+                {
+                    "analytic_type": analytic.value,
+                    "latitude": midpoint[0],
+                    "longitude": midpoint[1],
+                    "start_date": request_date.isoformat(),
+                    "forecast": True,
+                    "threshold_celsius": 35.0 if analytic is not AnalyticType.TCM else None,
+                    "direction": "above" if analytic is not AnalyticType.TCM else None,
+                    "granularity": area.granularity,
+                },
+                payload.payload,
+                retrieved_at=result.provenance.retrieved_at,
+                data_date=result.provenance.data_date,
+                activity_id=result.provenance.activity_id,
+                forecast=True,
+                provider_config_version="fortyguard-config-v1",
+            )
+        units = "C" if analytic is AnalyticType.TCM else "hours"
+        caveats = (
+            (
+                "date-level TCM value; night window 00:00-05:00 is not a verified interval maximum; "
+                "night and day use the same date-level basis",
+            )
+            if component == "night"
+            else (
+                "date-level TCM value; day window 10:00-17:00 is not a verified interval maximum; "
+                "night and day use the same date-level basis",
+            )
+            if component == "day"
+            else ()
+        )
+        coverage = result.polygon_lookup(_bbox_geometry(district)).coverage
+        evidence = ComponentEvidence(
+            component,
+            tuple(result._spatial_tiles()),
+            units,
+            35.0 if analytic is not AnalyticType.TCM else None,
+            "provider:fortyguard",
+            float(area.granularity),
+            coverage=coverage,
+            caveats=caveats,
+            provenance_details={
+                "source": result.provenance.source,
+                "retrieved_at": result.provenance.retrieved_at.isoformat(),
+                "data_date": result.provenance.data_date,
+                "stale": result.provenance.stale,
+                "forecast": result.provenance.forecast,
+                "activity_id": result.provenance.activity_id,
+                "transformations": [
+                    {"name": item.name, "version": item.version}
+                    for item in result.provenance.transformations
+                ],
+            },
+            correlation_key="shared-date-tcm" if analytic is AnalyticType.TCM else None,
+        )
+        if analytic is AnalyticType.TCM:
+            with shared_tcm_lock:
+                shared_tcm["evidence"] = evidence
+        return evidence
+
+    return HotelHeatAnalysisService(
+        lambda: _live_discovery_with_fixture(
+            discovery.discover, fixture_service.discover if fixture_service is not None else None
+        ),
+        load,
+        aoi=_bbox_geometry(district),
+        supported_modes=frozenset({ExecutionMode.LIVE}),
+        district_name="Downtown San Antonio",
+    )
+
+
+def _live_discovery_with_fixture(
+    live: Callable[[], HotelDiscoveryResult], fallback: Callable[[], HotelDiscoveryResult] | None
+) -> HotelDiscoveryResult:
+    try:
+        result = live()
+        if result.state is not DiscoveryState.UNAVAILABLE:
+            return result
+    except (ConnectionError, OSError, OverpassError, ValueError):
+        if fallback is None:
+            raise
+    if fallback is None:
+        return result
+    replayed = fallback()
+    return replace(replayed, source="fixture", stale=True)
+
+
+def _bbox_route(bbox: BoundingBox) -> tuple[tuple[float, float], ...]:
+    return (
+        (bbox.south, bbox.west),
+        (bbox.south, bbox.east),
+        (bbox.north, bbox.east),
+        (bbox.north, bbox.west),
+        (bbox.south, bbox.west),
+    )
+
+
+def _bbox_geometry(bbox: BoundingBox) -> BaseGeometry:
+    from shapely.geometry import box
+
+    return box(bbox.west, bbox.south, bbox.east, bbox.north)
+
+
 def build_live_heatmap_execution(
     settings: AppSettings,
     *,
@@ -161,6 +425,7 @@ def create_production_app(
     env_params_fixture_path: Path | None = None,
     frontend_dist: Path | None = None,
     trip_adapter: TripAnalysisAdapter | None = None,
+    hotel_heat_analysis_service: HotelHeatAnalysisService | None = None,
 ) -> FastAPI:
     """Create the production app; misconfigured live mode fails fast at startup."""
     from app.settings import load_settings
@@ -203,6 +468,19 @@ def create_production_app(
                 lambda request: {"unavailable": "live trip adapter is not configured"}
             ),
         )
+    if hotel_heat_analysis_service is None:
+        if resolved.allow_live:
+            hotel_heat_analysis_service = build_live_hotel_heat_analysis_service(
+                resolved,
+                client=client,
+                cache=cache,
+                fixture_path=heatmap_fixture.parent / "hotel-heat-analysis.json",
+            )
+        else:
+            hotel_heat_analysis_service = build_fixture_hotel_heat_analysis_service(
+                heatmap_fixture.parent / "hotel-heat-analysis.json",
+                district_aoi=resolved.overpass.district_aoi,
+            )
     return create_app(
         heatmap_fixture,
         execution=execution,
@@ -210,4 +488,6 @@ def create_production_app(
         allow_live=resolved.allow_live,
         frontend_dist=dist,
         trip_adapter=trip_adapter,
+        hotel_heat_analysis_service=hotel_heat_analysis_service,
+        district_aoi=resolved.overpass.district_aoi,
     )

@@ -1,0 +1,412 @@
+{
+  "schema_version": "hotel-heat-analysis-v1",
+  "district_name": "Downtown San Antonio",
+  "aoi": {
+    "south": 29.421,
+    "west": -98.49,
+    "north": 29.429,
+    "east": -98.482
+  },
+  "hotel_discovery": {
+    "source": "fixture",
+    "source_timestamp": "2026-08-24T12:00:00-05:00",
+    "retrieved_at": null,
+    "stale": false,
+    "discovered_count": 7,
+    "hotels": [
+      {
+        "primary_identity": { "object_type": "node", "object_id": 110001 },
+        "source_identities": [{ "object_type": "node", "object_id": 110001 }],
+        "name": "Alamo Plaza Hotel",
+        "latitude": 29.425,
+        "longitude": -98.4896,
+        "address": { "street": "East Houston Street" },
+        "website": "https://example.test/alamo-plaza",
+        "operator": "Canonical Lodging"
+      },
+      {
+        "primary_identity": { "object_type": "way", "object_id": 220002 },
+        "source_identities": [{ "object_type": "way", "object_id": 220002 }],
+        "name": "River Walk House",
+        "latitude": 29.425,
+        "longitude": -98.488,
+        "address": { "street": "Navarro Street" },
+        "website": "https://example.test/river-walk"
+      },
+      {
+        "primary_identity": { "object_type": "relation", "object_id": 330003 },
+        "source_identities": [
+          { "object_type": "relation", "object_id": 330003 }
+        ],
+        "name": "Mission Courtyard Hotel",
+        "latitude": 29.425,
+        "longitude": -98.4864,
+        "address": { "street": "Losoya Street" },
+        "operator": "Mission Stays"
+      },
+      {
+        "primary_identity": { "object_type": "node", "object_id": 110004 },
+        "source_identities": [{ "object_type": "node", "object_id": 110004 }],
+        "name": "Commerce Street Inn",
+        "latitude": 29.425,
+        "longitude": -98.4848,
+        "address": { "street": "East Commerce Street" }
+      },
+      {
+        "primary_identity": { "object_type": "way", "object_id": 220005 },
+        "source_identities": [{ "object_type": "way", "object_id": 220005 }],
+        "name": "Hemisfair Hotel",
+        "latitude": 29.425,
+        "longitude": -98.4832,
+        "address": { "street": "Bowie Street" },
+        "website": "https://example.test/hemisfair"
+      },
+      {
+        "primary_identity": { "object_type": "node", "object_id": 110006 },
+        "source_identities": [{ "object_type": "node", "object_id": 110006 }],
+        "name": "Market Square Lodge",
+        "latitude": 29.425,
+        "longitude": -98.4824,
+        "address": { "street": "East Market Street" }
+      }
+    ]
+  },
+  "components": {
+    "night": {
+      "unit": "C",
+      "threshold_celsius": null,
+      "provenance": "fixture:canonical-district-night-tcm",
+      "tile_resolution_m": 80,
+      "grid_rows": 11,
+      "coverage": 0.96,
+      "caveats": [
+        "Night heat is a date-level historical analysis for 2026-08-24, not a forecast or a nightly climatology.",
+        "Hotel values share nominal 80 m tiles; hotels assigned the same tile retain ties."
+      ],
+      "tiles": [
+        {
+          "id": "night-01",
+          "bounds": [-98.49, 29.421, -98.4892, 29.429],
+          "value": 28.4,
+          "valid_time": "2026-08-24T02:00:00-05:00",
+          "forecast": false
+        },
+        {
+          "id": "night-02",
+          "bounds": [-98.4892, 29.421, -98.4884, 29.429],
+          "value": 28.8,
+          "valid_time": "2026-08-24T02:00:00-05:00",
+          "forecast": false
+        },
+        {
+          "id": "night-03",
+          "bounds": [-98.4884, 29.421, -98.4876, 29.429],
+          "value": 29.1,
+          "valid_time": "2026-08-24T02:00:00-05:00",
+          "forecast": false
+        },
+        {
+          "id": "night-04",
+          "bounds": [-98.4876, 29.421, -98.4868, 29.429],
+          "value": 29.1,
+          "valid_time": "2026-08-24T02:00:00-05:00",
+          "forecast": false
+        },
+        {
+          "id": "night-05",
+          "bounds": [-98.4868, 29.421, -98.486, 29.429],
+          "value": 29.7,
+          "valid_time": "2026-08-24T02:00:00-05:00",
+          "forecast": false
+        },
+        {
+          "id": "night-06",
+          "bounds": [-98.486, 29.421, -98.4852, 29.429],
+          "value": 30.0,
+          "valid_time": "2026-08-24T02:00:00-05:00",
+          "forecast": false
+        },
+        {
+          "id": "night-07",
+          "bounds": [-98.4852, 29.421, -98.4844, 29.429],
+          "value": 30.2,
+          "valid_time": "2026-08-24T02:00:00-05:00",
+          "forecast": false
+        },
+        {
+          "id": "night-08",
+          "bounds": [-98.4844, 29.421, -98.4836, 29.429],
+          "value": 30.5,
+          "valid_time": "2026-08-24T02:00:00-05:00",
+          "forecast": false
+        },
+        {
+          "id": "night-09",
+          "bounds": [-98.4836, 29.421, -98.4828, 29.429],
+          "value": 30.8,
+          "valid_time": "2026-08-24T02:00:00-05:00",
+          "forecast": false
+        },
+        {
+          "id": "night-10",
+          "bounds": [-98.4828, 29.421, -98.482, 29.429],
+          "value": 30.8,
+          "valid_time": "2026-08-24T02:00:00-05:00",
+          "forecast": false
+        }
+      ]
+    },
+    "hot_hours": {
+      "unit": "hours",
+      "threshold_celsius": 35,
+      "provenance": "fixture:canonical-district-exceedance-above-35C",
+      "tile_resolution_m": 80,
+      "grid_rows": 11,
+      "coverage": 0.94,
+      "caveats": [
+        "Hot hours counts hours above 35 C on the historical date 2026-08-24; it is not a multi-day average.",
+        "Coverage is district-analysis coverage and does not imply building-level conditions."
+      ],
+      "tiles": [
+        {
+          "id": "hot-hours-01",
+          "bounds": [-98.49, 29.421, -98.4892, 29.429],
+          "value": 3,
+          "valid_time": "2026-08-24",
+          "forecast": false
+        },
+        {
+          "id": "hot-hours-02",
+          "bounds": [-98.4892, 29.421, -98.4884, 29.429],
+          "value": 4,
+          "valid_time": "2026-08-24",
+          "forecast": false
+        },
+        {
+          "id": "hot-hours-03",
+          "bounds": [-98.4884, 29.421, -98.4876, 29.429],
+          "value": 4,
+          "valid_time": "2026-08-24",
+          "forecast": false
+        },
+        {
+          "id": "hot-hours-04",
+          "bounds": [-98.4876, 29.421, -98.4868, 29.429],
+          "value": 5,
+          "valid_time": "2026-08-24",
+          "forecast": false
+        },
+        {
+          "id": "hot-hours-05",
+          "bounds": [-98.4868, 29.421, -98.486, 29.429],
+          "value": 6,
+          "valid_time": "2026-08-24",
+          "forecast": false
+        },
+        {
+          "id": "hot-hours-06",
+          "bounds": [-98.486, 29.421, -98.4852, 29.429],
+          "value": 6,
+          "valid_time": "2026-08-24",
+          "forecast": false
+        },
+        {
+          "id": "hot-hours-07",
+          "bounds": [-98.4852, 29.421, -98.4844, 29.429],
+          "value": 7,
+          "valid_time": "2026-08-24",
+          "forecast": false
+        },
+        {
+          "id": "hot-hours-08",
+          "bounds": [-98.4844, 29.421, -98.4836, 29.429],
+          "value": 8,
+          "valid_time": "2026-08-24",
+          "forecast": false
+        },
+        {
+          "id": "hot-hours-09",
+          "bounds": [-98.4836, 29.421, -98.4828, 29.429],
+          "value": 8,
+          "valid_time": "2026-08-24",
+          "forecast": false
+        },
+        {
+          "id": "hot-hours-10",
+          "bounds": [-98.4828, 29.421, -98.482, 29.429],
+          "value": 9,
+          "valid_time": "2026-08-24",
+          "forecast": false
+        }
+      ]
+    },
+    "persistence": {
+      "unit": "hours",
+      "threshold_celsius": 35,
+      "provenance": "fixture:canonical-district-persistence-above-35C",
+      "tile_resolution_m": 80,
+      "grid_rows": 11,
+      "coverage": 0.93,
+      "caveats": [
+        "Persistence is the longest consecutive run above 35 C on 2026-08-24, not persistence across dates.",
+        "The date-level duration should not be read as a forecast for the selected trip date."
+      ],
+      "tiles": [
+        {
+          "id": "persistence-01",
+          "bounds": [-98.49, 29.421, -98.4892, 29.429],
+          "value": 2,
+          "valid_time": "2026-08-24",
+          "forecast": false
+        },
+        {
+          "id": "persistence-02",
+          "bounds": [-98.4892, 29.421, -98.4884, 29.429],
+          "value": 2,
+          "valid_time": "2026-08-24",
+          "forecast": false
+        },
+        {
+          "id": "persistence-03",
+          "bounds": [-98.4884, 29.421, -98.4876, 29.429],
+          "value": 3,
+          "valid_time": "2026-08-24",
+          "forecast": false
+        },
+        {
+          "id": "persistence-04",
+          "bounds": [-98.4876, 29.421, -98.4868, 29.429],
+          "value": 4,
+          "valid_time": "2026-08-24",
+          "forecast": false
+        },
+        {
+          "id": "persistence-05",
+          "bounds": [-98.4868, 29.421, -98.486, 29.429],
+          "value": 4,
+          "valid_time": "2026-08-24",
+          "forecast": false
+        },
+        {
+          "id": "persistence-06",
+          "bounds": [-98.486, 29.421, -98.4852, 29.429],
+          "value": 5,
+          "valid_time": "2026-08-24",
+          "forecast": false
+        },
+        {
+          "id": "persistence-07",
+          "bounds": [-98.4852, 29.421, -98.4844, 29.429],
+          "value": 5,
+          "valid_time": "2026-08-24",
+          "forecast": false
+        },
+        {
+          "id": "persistence-08",
+          "bounds": [-98.4844, 29.421, -98.4836, 29.429],
+          "value": 6,
+          "valid_time": "2026-08-24",
+          "forecast": false
+        },
+        {
+          "id": "persistence-09",
+          "bounds": [-98.4836, 29.421, -98.4828, 29.429],
+          "value": 7,
+          "valid_time": "2026-08-24",
+          "forecast": false
+        },
+        {
+          "id": "persistence-10",
+          "bounds": [-98.4828, 29.421, -98.482, 29.429],
+          "value": 7,
+          "valid_time": "2026-08-24",
+          "forecast": false
+        }
+      ]
+    },
+    "day": {
+      "unit": "C",
+      "threshold_celsius": null,
+      "provenance": "fixture:canonical-district-day-tcm",
+      "tile_resolution_m": 80,
+      "grid_rows": 11,
+      "coverage": 0.95,
+      "caveats": [
+        "Day heat is a date-level historical snapshot at 15:00 local time on 2026-08-24, not a daily maximum.",
+        "Day and night snapshots describe their explicit times only and must not be generalized to other dates."
+      ],
+      "tiles": [
+        {
+          "id": "day-01",
+          "bounds": [-98.49, 29.421, -98.4892, 29.429],
+          "value": 36.2,
+          "valid_time": "2026-08-24T15:00:00-05:00",
+          "forecast": false
+        },
+        {
+          "id": "day-02",
+          "bounds": [-98.4892, 29.421, -98.4884, 29.429],
+          "value": 36.8,
+          "valid_time": "2026-08-24T15:00:00-05:00",
+          "forecast": false
+        },
+        {
+          "id": "day-03",
+          "bounds": [-98.4884, 29.421, -98.4876, 29.429],
+          "value": 37.1,
+          "valid_time": "2026-08-24T15:00:00-05:00",
+          "forecast": false
+        },
+        {
+          "id": "day-04",
+          "bounds": [-98.4876, 29.421, -98.4868, 29.429],
+          "value": 37.5,
+          "valid_time": "2026-08-24T15:00:00-05:00",
+          "forecast": false
+        },
+        {
+          "id": "day-05",
+          "bounds": [-98.4868, 29.421, -98.486, 29.429],
+          "value": 37.5,
+          "valid_time": "2026-08-24T15:00:00-05:00",
+          "forecast": false
+        },
+        {
+          "id": "day-06",
+          "bounds": [-98.486, 29.421, -98.4852, 29.429],
+          "value": 38.0,
+          "valid_time": "2026-08-24T15:00:00-05:00",
+          "forecast": false
+        },
+        {
+          "id": "day-07",
+          "bounds": [-98.4852, 29.421, -98.4844, 29.429],
+          "value": 38.4,
+          "valid_time": "2026-08-24T15:00:00-05:00",
+          "forecast": false
+        },
+        {
+          "id": "day-08",
+          "bounds": [-98.4844, 29.421, -98.4836, 29.429],
+          "value": 38.8,
+          "valid_time": "2026-08-24T15:00:00-05:00",
+          "forecast": false
+        },
+        {
+          "id": "day-09",
+          "bounds": [-98.4836, 29.421, -98.4828, 29.429],
+          "value": 39.1,
+          "valid_time": "2026-08-24T15:00:00-05:00",
+          "forecast": false
+        },
+        {
+          "id": "day-10",
+          "bounds": [-98.4828, 29.421, -98.482, 29.429],
+          "value": 39.1,
+          "valid_time": "2026-08-24T15:00:00-05:00",
+          "forecast": false
+        }
+      ]
+    }
+  }
+}

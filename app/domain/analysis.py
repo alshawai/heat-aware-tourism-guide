@@ -124,6 +124,7 @@ class PointMatch:
     quality: str
     distance_m: float | None
     metadata: SpatialMetadata | None = None
+    tile_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -301,7 +302,13 @@ def join_point_to_tiles(
         value = matched_values[0] if len(set(matched_values)) == 1 else None
         metadata = _merged_metadata(all_matched) if value is not None else None
         quality = "mixed_provenance" if value is not None and metadata is None else "boundary"
-        return PointMatch(value if metadata is not None else None, quality, 0.0, metadata)
+        return PointMatch(
+            value if metadata is not None else None,
+            quality,
+            0.0,
+            metadata,
+            min((tile.identity for tile in all_matched), default=None),
+        )
     if containing_tiles:
         value = (
             containing_tiles[0].value if len(set(t.value for t in containing_tiles)) == 1 else None
@@ -310,7 +317,9 @@ def join_point_to_tiles(
         metadata = _merged_metadata(containing_tiles) if value is not None else None
         if value is not None and metadata is None:
             return PointMatch(None, "mixed_provenance", 0.0)
-        return PointMatch(value, quality, 0.0, metadata)
+        return PointMatch(
+            value, quality, 0.0, metadata, min(tile.identity for tile in containing_tiles)
+        )
     if nearest_max_distance_m is None or not unique_tiles:
         return PointMatch(None, "no_match", None)
     crs = _local_crs(point)
@@ -331,7 +340,13 @@ def join_point_to_tiles(
         metadata = _merged_metadata(nearest_tiles)
         if metadata is None:
             return PointMatch(None, "mixed_provenance", distance)
-        return PointMatch(nearest_values.pop(), "nearest_fallback", distance, metadata)
+        return PointMatch(
+            nearest_values.pop(),
+            "nearest_fallback",
+            distance,
+            metadata,
+            min(tile.identity for tile in nearest_tiles),
+        )
     return PointMatch(None, "no_match", distance)
 
 

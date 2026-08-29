@@ -1,6 +1,7 @@
 """Call ledger: honest call accounting with call-count budget enforcement (ADR 0004 §5)."""
 
 from datetime import date, datetime, timezone
+from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
@@ -32,6 +33,25 @@ def test_ledger_counts_calls_and_authorizes_against_the_call_budget() -> None:
     assert ledger.remaining == 0
     with pytest.raises(BudgetExceededError, match="call budget exceeded"):
         ledger.authorize_call()
+
+
+def test_ledger_reserves_budget_slots_for_concurrent_calls() -> None:
+    ledger = CreditLedger(budget=1)
+
+    def authorize() -> str:
+        try:
+            ledger.authorize_call()
+        except BudgetExceededError:
+            return "rejected"
+        return "reserved"
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = list(executor.map(lambda _: authorize(), range(2)))
+
+    assert sorted(results) == ["rejected", "reserved"]
+    assert ledger.remaining == 0
+    ledger.release_call()
+    assert ledger.remaining == 1
 
 
 def test_ledger_records_calls_the_provider_did_not_price() -> None:

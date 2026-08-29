@@ -57,65 +57,75 @@ class FortyGuardClient:
         interval_seconds: float = 5.0,
         status_404_grace_checks: int = 3,
     ) -> tuple[Mapping[str, object], ActivityMetadata]:
+        reservation: int | None = None
         if self._ledger is not None:
-            self._ledger.authorize_call()
-        response = self._transport.post(endpoint, payload, self._api_key)
-        status_code = response.get("status_code")
-        if isinstance(status_code, int) and status_code >= 400:
-            raise classify_provider_error(status_code, "activity submission failed")
-        activity_id = response.get("activity_id")
-        if not isinstance(activity_id, str) or not activity_id:
-            raise ProviderError(ProviderErrorKind.MALFORMED_RESPONSE, detail="missing activity id")
-        submitted_at = self._clock()
-        self._emit(
-            "fortyguard.submitted",
-            {
-                "activity_id": activity_id,
-                "endpoint": endpoint,
-                "request": sanitize_payload(payload),
-            },
-        )
-        transitions: list[str] = []
-
-        def get_status(_: str) -> Mapping[str, object]:
-            return self._transport.get(f"/v1/status/{activity_id}", self._api_key)
-
-        result = poll_activity(
-            activity_id,
-            get_status=get_status,
-            sleep=sleep,
-            max_polls=max_polls,
-            interval_seconds=interval_seconds,
-            status_404_grace_checks=status_404_grace_checks,
-            on_transition=transitions.append,
-            on_event=self._emit,
-        )
-        metadata = ActivityMetadata(
-            activity_id,
-            submitted_at,
-            endpoint,
-            tuple(sorted(payload)),
-            tuple(transitions),
-            _response_metadata(result),
-        )
-        credits_used = result.get("credits_used")
-        if credits_used is not None and (
-            isinstance(credits_used, bool) or not isinstance(credits_used, int) or credits_used < 0
-        ):
-            raise ProviderError(
-                ProviderErrorKind.MALFORMED_RESPONSE, detail="invalid credit usage metadata"
+            reservation = self._ledger.authorize_call()
+        try:
+            response = self._transport.post(endpoint, payload, self._api_key)
+            status_code = response.get("status_code")
+            if isinstance(status_code, int) and status_code >= 400:
+                raise classify_provider_error(status_code, "activity submission failed")
+            activity_id = response.get("activity_id")
+            if not isinstance(activity_id, str) or not activity_id:
+                raise ProviderError(
+                    ProviderErrorKind.MALFORMED_RESPONSE, detail="missing activity id"
+                )
+            submitted_at = self._clock()
+            self._emit(
+                "fortyguard.submitted",
+                {
+                    "activity_id": activity_id,
+                    "endpoint": endpoint,
+                    "request": sanitize_payload(payload),
+                },
             )
-        if self._ledger is not None:
-            # The call happened, so it is logged whether or not the provider
-            # priced it. A silent provider means unknown cost, not zero cost
-            # (ADR 0004 §5); credits are reconciled from the account endpoint.
-            self._ledger.record(
-                UsageRecord(activity_id, endpoint, credits_used, self._clock(), "completed")
+            transitions: list[str] = []
+
+            def get_status(_: str) -> Mapping[str, object]:
+                return self._transport.get(f"/v1/status/{activity_id}", self._api_key)
+
+            result = poll_activity(
+                activity_id,
+                get_status=get_status,
+                sleep=sleep,
+                max_polls=max_polls,
+                interval_seconds=interval_seconds,
+                status_404_grace_checks=status_404_grace_checks,
+                on_transition=transitions.append,
+                on_event=self._emit,
             )
-        self._emit(
-            "fortyguard.completed", {"activity_id": activity_id, **_response_metadata(result)}
-        )
-        return result, metadata
+            metadata = ActivityMetadata(
+                activity_id,
+                submitted_at,
+                endpoint,
+                tuple(sorted(payload)),
+                tuple(transitions),
+                _response_metadata(result),
+            )
+            credits_used = result.get("credits_used")
+            if credits_used is not None and (
+                isinstance(credits_used, bool)
+                or not isinstance(credits_used, int)
+                or credits_used < 0
+            ):
+                raise ProviderError(
+                    ProviderErrorKind.MALFORMED_RESPONSE, detail="invalid credit usage metadata"
+                )
+            if self._ledger is not None:
+                # The call happened, so it is logged whether or not the provider
+                # priced it. A silent provider means unknown cost, not zero cost
+                # (ADR 0004 §5); credits are reconciled from the account endpoint.
+                self._ledger.record(
+                    UsageRecord(activity_id, endpoint, credits_used, self._clock(), "completed"),
+                    reservation=reservation,
+                )
+            self._emit(
+                "fortyguard.completed", {"activity_id": activity_id, **_response_metadata(result)}
+            )
+            return result, metadata
+        finally:
+            if reservation is not None and self._ledger is not None:
+                self._ledger.release_call(reservation)
 
     def _emit(self, event: str, fields: Mapping[str, object]) -> None:
         if self._event_sink is not None:

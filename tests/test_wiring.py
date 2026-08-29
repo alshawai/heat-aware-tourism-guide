@@ -237,6 +237,57 @@ def test_create_production_app_enables_live_only_with_settings() -> None:
     assert live_client.get("/health").json()["mode"] == "live"
 
 
+def test_default_fixture_production_app_ranks_hotels_with_four_component_evidence() -> None:
+    app = create_production_app(
+        AppSettings(
+            allow_live=False,
+            fortyguard_api_key=None,
+            fortyguard_base_url="https://api.example.test",
+        )
+    )
+
+    response = TestClient(app).post(
+        "/api/hotels/rank",
+        json={"district_name": "Downtown San Antonio", "execution_mode": "fixture"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["state"] == "available"
+    assert payload["ranking"]["ranked_output"] is True
+    assert len(payload["ranking"]["hotels"]) == 6
+    assert set(payload["components"]) == {"night", "hot_hours", "persistence", "day"}
+    assert payload["components"]["night"]["unit"] == "C"
+    assert payload["components"]["day"]["unit"] == "C"
+    assert payload["components"]["hot_hours"]["unit"] == "hours"
+    assert payload["components"]["persistence"]["unit"] == "hours"
+    assert payload["components"]["hot_hours"]["threshold_celsius"] == 35.0
+    assert payload["components"]["persistence"]["threshold_celsius"] == 35.0
+
+
+def test_production_hotel_live_mode_replays_canonical_fixture_when_provider_unavailable() -> None:
+    app = create_production_app(
+        AppSettings(
+            allow_live=True,
+            fortyguard_api_key="key-1",
+            fortyguard_base_url="https://api.example.test",
+        )
+    )
+
+    response = TestClient(app).post(
+        "/api/hotels/rank",
+        json={"district_name": "Downtown San Antonio", "execution_mode": "live"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["state"] == "available"
+    assert all(
+        component["provenance"] == "fixture:canonical-district-hotel-analysis"
+        for component in payload["components"].values()
+    )
+
+
 def test_heatmap_route_accepts_granularity_from_request_body() -> None:
     from app.integrations.fortyguard.contracts import HeatmapRequest
     from app.services.execution import HeatmapExecution

@@ -71,7 +71,7 @@ class HotelDiscoveryResult:
     discovered_count: int
     usable_count: int
     source_timestamp: datetime | None
-    retrieved_at: datetime
+    retrieved_at: datetime | None
     source: str
     stale: bool
     reason: str | None = None

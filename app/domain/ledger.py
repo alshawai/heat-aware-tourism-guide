@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import date, datetime
+from threading import Lock
 from typing import Callable, Mapping, Sequence
 
 
@@ -65,6 +66,9 @@ class CreditLedger:
         self.planned_optional: dict[str, int] = {}
         self._on_record = on_record
         self._on_reconcile = on_reconcile
+        self._reservations: set[int] = set()
+        self._next_reservation = 0
+        self._lock = Lock()
 
     @property
     def call_count(self) -> int:
@@ -92,26 +96,50 @@ class CreditLedger:
     def remaining(self) -> int:
         if self.budget is None:
             raise RuntimeError("record-only ledger has no budget")
-        return self.budget - self.call_count
+        with self._lock:
+            return self.budget - self.call_count - len(self._reservations)
 
     def plan_optional(self, subject: str, credits: int) -> None:
         if credits < 0:
             raise ValueError("planned credits must be non-negative")
         self.planned_optional[subject] = credits
 
-    def authorize_call(self) -> None:
+    def authorize_call(self) -> int | None:
         """Check the budget *before* spending. Raises if no call is left."""
-        if self.budget is not None and self.remaining <= 0:
-            raise BudgetExceededError(
-                f"call budget exceeded: {self.call_count} of {self.budget} calls used"
-            )
+        with self._lock:
+            if self.budget is not None:
+                if self.budget - self.call_count - len(self._reservations) <= 0:
+                    raise BudgetExceededError(
+                        f"call budget exceeded: {self.call_count} of {self.budget} calls used"
+                    )
+                self._next_reservation += 1
+                self._reservations.add(self._next_reservation)
+                return self._next_reservation
+            return None
 
-    def record(self, usage: UsageRecord) -> None:
-        if any(record.activity_id == usage.activity_id for record in self.records):
-            return
-        if usage.credits_used is not None and usage.credits_used < 0:
-            raise ValueError("reported credits must be non-negative")
-        self.records.append(usage)
+    def release_call(self, reservation: int | None = None) -> None:
+        """Return a reserved slot when submission does not complete a call."""
+        with self._lock:
+            if reservation is not None:
+                self._reservations.discard(reservation)
+            elif self._reservations:
+                self._reservations.pop()
+
+    def record(self, usage: UsageRecord, *, reservation: int | None = None) -> None:
+        with self._lock:
+            if any(record.activity_id == usage.activity_id for record in self.records):
+                if reservation is not None:
+                    self._reservations.discard(reservation)
+                elif self._reservations:
+                    self._reservations.pop()
+                return
+            if usage.credits_used is not None and usage.credits_used < 0:
+                raise ValueError("reported credits must be non-negative")
+            self.records.append(usage)
+            if reservation is not None:
+                self._reservations.discard(reservation)
+            elif self._reservations:
+                self._reservations.pop()
         if self._on_record is not None:
             self._on_record(usage)
 
