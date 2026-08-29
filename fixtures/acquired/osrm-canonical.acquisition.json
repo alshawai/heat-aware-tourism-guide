@@ -1,0 +1,22 @@
+{
+  "source": "synthesized",
+  "endpoint": "https://routing.openstreetmap.de/routed-foot/route/v1",
+  "request_configuration": {
+    "origin": {"latitude": 29.4245914, "longitude": -98.4864288},
+    "destination": {"latitude": 29.425833, "longitude": -98.485833},
+    "profile": "foot",
+    "alternatives": true,
+    "overview": "full",
+    "geometries": "geojson",
+    "steps": false,
+    "provider_instance": "fossgis-routed-foot",
+    "request_version": "osrm-route-v1"
+  },
+  "retrieved_at": null,
+  "data_date": "2026-08-23",
+  "status": "ok",
+  "schema_version": "v1",
+  "provider_config_version": "osrm-config-v1",
+  "activity_id": null,
+  "transformations": []
+}
