@@ -251,7 +251,15 @@ def create_app(
                 allow_live=allow_live,
                 trip_adapter=trip_adapter,
             )
-        except (KeyError, TypeError, ValueError) as error:
+        except (
+            BudgetExceededError,
+            KeyError,
+            TypeError,
+            ValueError,
+            OSError,
+            RuntimeError,
+            ProviderError,
+        ) as error:
             raise _http_error(error) from error
 
     @app.post("/api/hotels/rank")
@@ -318,14 +326,16 @@ def _heatmap_request(body: dict[str, object]) -> HeatmapRequest:
     if isinstance(granularity, bool) or not isinstance(granularity, int):
         raise ValueError("granularity must be an integer")
     return HeatmapRequest(
-        AnalyticType(body["analytic_type"]),
-        latitude,
-        longitude,
-        date.fromisoformat(start_date),
-        _required_bool(body, "forecast", default=True),
-        threshold,
-        direction,
-        granularity,
+        analytic_type=AnalyticType(body["analytic_type"]),
+        latitude=latitude,
+        longitude=longitude,
+        start_date=date.fromisoformat(start_date),
+        forecast=_required_bool(body, "forecast", default=True),
+        threshold_celsius=threshold,
+        direction=direction,
+        granularity=granularity,
+        start_hour=_optional_hour(body, "start_hour"),
+        end_hour=_optional_hour(body, "end_hour"),
     )
 
 
@@ -338,21 +348,22 @@ def _env_params_request(body: dict[str, object]) -> EnvParamsRequest:
     anchor = body.get("temperature_anchor_celsius")
     if anchor is not None:
         anchor = _finite_number(anchor, "temperature_anchor_celsius")
-    hour = body.get("hour")
-    if hour is not None:
-        if isinstance(hour, bool) or not isinstance(hour, int):
-            raise ValueError("hour must be an integer")
+    hour = _optional_hour(body, "hour")
     return EnvParamsRequest(
-        latitude,
-        longitude,
-        date.fromisoformat(start_date),
-        anchor,
+        latitude=latitude,
+        longitude=longitude,
+        start_date=date.fromisoformat(start_date),
+        temperature_anchor_celsius=anchor,
         hour=hour,
+        start_hour=_optional_hour(body, "start_hour"),
+        end_hour=_optional_hour(body, "end_hour"),
     )
 
 
 def _parse_trip_request(body: dict[str, object]) -> TripAnalysisRequest:
     """Parse the frontend request into the provider-independent contract."""
+    if "hour" in body:
+        raise ValueError("hour is no longer accepted; provide start_hour and end_hour")
     provider_fields = {
         "heat_metric",
         "heat_value",
@@ -377,7 +388,8 @@ def _parse_trip_request(body: dict[str, object]) -> TripAnalysisRequest:
     landmark = body.get("landmark_name")
     district = body.get("district_name")
     trip_date = body.get("date")
-    hour = body.get("hour")
+    start_hour = _required_hour(body, "start_hour")
+    end_hour = _required_hour(body, "end_hour")
     mode = body.get("mode")
     if not isinstance(landmark, str) or not landmark:
         raise ValueError("landmark_name must be a non-empty string")
@@ -385,8 +397,6 @@ def _parse_trip_request(body: dict[str, object]) -> TripAnalysisRequest:
         raise ValueError("district_name must be a non-empty string")
     if not isinstance(trip_date, str) or not trip_date:
         raise ValueError("date must be a non-empty string")
-    if isinstance(hour, bool) or not isinstance(hour, int):
-        raise ValueError("hour must be an integer between 0 and 23")
     if not isinstance(mode, str):
         raise ValueError("mode must be curated or exploratory")
 
@@ -397,7 +407,8 @@ def _parse_trip_request(body: dict[str, object]) -> TripAnalysisRequest:
         landmark_name=landmark,
         district_name=district,
         date=trip_date,
-        hour=hour,
+        start_hour=start_hour,
+        end_hour=end_hour,
         cautious=_required_bool(body, "cautious", default=False),
     )
 
@@ -430,6 +441,24 @@ def _execution_mode(body: dict[str, object], *, allow_live: bool) -> ExecutionMo
     if mode is ExecutionMode.LIVE and not allow_live:
         raise ValueError("live execution is not enabled for this server")
     return mode
+
+
+def _required_hour(body: dict[str, object], field: str) -> int:
+    if field not in body:
+        raise ValueError(f"{field} is required")
+    value = body[field]
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError(f"{field} must be a whole hour between 0 and 23")
+    return value
+
+
+def _optional_hour(body: dict[str, object], field: str) -> int | None:
+    value = body.get(field)
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError(f"{field} must be an integer")
+    return value
 
 
 def _finite_number(value: object, field: str) -> float:

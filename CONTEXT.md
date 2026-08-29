@@ -19,15 +19,18 @@ directly.
   and route decisions for one trip. It is one setup, not separate walk and
   hotel configurations.
 - **Curated trip** — A trip whose places are fixed to the canonical trip while
-  the traveler may choose its date, hour, and guidance preference. An
-  **exploratory trip** permits place selection and is outside the curated flow.
+  the traveler may choose its date, same-day time window, and guidance
+  preference. An **exploratory trip** permits place selection and is outside
+  the curated flow.
 - **Cautious guidance** — An optional traveler preference requesting the
   product's more conservative heat interpretation. The interpretation policy
   belongs to the heat-classification domain; trip setup only captures the
   preference. Synonym to avoid: "cautious mode".
 - **Trip analysis request** — One product-level request containing a complete
-  trip setup and asking for the connected best-time, hotel, and route
-  decisions. It is not a collection of traveler-visible provider requests.
+  trip setup. Its temporal-preparation stage asks the server for one ranged
+  point heatmap followed by one identically ranged env-params series; later
+  issues consume that series for best-time, hotel, and route decisions. It is
+  not a collection of traveler-visible provider requests.
 - **Supported live-data geography** — The United States, the geographic area
   in which the product may request live provider data. This is distinct from
   the canonical trip's San Antonio location and from fixture replay.
@@ -56,13 +59,16 @@ directly.
   (`analytic_type`), `value_celsius` (tcm) or `metric_value` + unit (`hours`),
   source, valid time, forecast flag, threshold/direction, activity id. The
   single internal heatmap shape for fixture and live data.
-- **Temperature anchor** — The caller-supplied °C value required by the
-  environmental-parameters request. The returned series is fixed to this
-  anchor and is never a real 24-hour forecast; results carry the standing
-  warning.
+- **Temperature anchor** — The °C value required by the
+  environmental-parameters request. Direct env-params callers supply it; the
+  temporal trip pipeline derives it conservatively as the maximum TCM value
+  in the traveler's range. The returned series is fixed to this anchor and is
+  never a real 24-hour forecast; results carry the standing warning.
 - **Env-params series** — Environmental parameters normalized as per-hour
   entries (`valid_time`, nullable metric values) aligned with the provider's
-  `metadata.timestamps`. Missing values stay `None`, never zero.
+  `metadata.timestamps`. Missing values stay `None`, never zero. Temporal trip
+  preparation returns this raw series as `series_ready`; it does not classify
+  heat or recommend a visit time.
 - **Submit-once** — The billable-submission rule: one POST per
   `submit_and_poll`; transient failures are retried as status GETs only
   (ADR 0003). Transport retries never resubmit billable work.

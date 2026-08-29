@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from enum import Enum
 import math
@@ -20,6 +20,7 @@ from app.domain.analysis import (
     join_point_to_tiles,
     join_polygon_to_tiles,
 )
+from app.domain.environment import TimeWindow
 from app.domain.provenance import Provenance, Transformation
 from app.domain.security import sanitize_payload
 from app.integrations.fortyguard.client import ActivityMetadata
@@ -44,6 +45,8 @@ class HeatmapRequest:
     threshold_celsius: float | None = None
     direction: str | None = None
     granularity: int = 60
+    start_hour: int | None = None
+    end_hour: int | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.analytic_type, AnalyticType):
@@ -70,6 +73,22 @@ class HeatmapRequest:
             or self.granularity not in (60, 80, 100)
         ):
             raise ValueError("granularity must be 60, 80, or 100 meters")
+        _validate_hour_window(self.start_hour, self.end_hour)
+
+    @property
+    def window(self) -> TimeWindow | None:
+        """The validated traveler window, or ``None`` for a full-day request.
+
+        Re-deriving from the validated hours hands callers the domain type (with
+        its ``start_time``/``end_time`` rendering) instead of raw integers.
+        """
+        return _validate_hour_window(self.start_hour, self.end_hour)
+
+    @property
+    def hours(self) -> range | None:
+        """The hours covered by the window, or ``None`` for a full-day request."""
+        window = self.window
+        return window.hours if window is not None else None
 
     def to_payload(self) -> dict[str, object]:
         payload: dict[str, object] = {
@@ -84,7 +103,25 @@ class HeatmapRequest:
             payload["threshold_celsius"] = self.threshold_celsius
         if self.direction is not None:
             payload["direction"] = self.direction
+        if self.start_hour is not None and self.end_hour is not None:
+            payload["start_hour"] = self.start_hour
+            payload["end_hour"] = self.end_hour
         return payload
+
+
+def _validate_hour_window(start_hour: int | None, end_hour: int | None) -> TimeWindow | None:
+    """Validate an optional whole-hour window by delegating to the domain rule.
+
+    The one-day / whole-hours / at-most-twelve-hours rule lives in
+    :class:`app.domain.environment.TimeWindow`; this helper only maps the
+    all-or-nothing field contract onto it. Both bounds must be set together or
+    neither — a single bound is a caller mistake, not a full-day request.
+    """
+    if start_hour is None and end_hour is None:
+        return None
+    if (start_hour is None) != (end_hour is None):
+        raise ValueError("start_hour and end_hour must be set together")
+    return TimeWindow(start_hour or 0, end_hour or 0)
 
 
 @dataclass(frozen=True)
@@ -95,6 +132,8 @@ class EnvParamsRequest:
     temperature_anchor_celsius: float | None
     is_real_forecast: bool = False
     hour: int | None = None
+    start_hour: int | None = None
+    end_hour: int | None = None
 
     def __post_init__(self) -> None:
         _validate_us_coordinates(self.latitude, self.longitude)
@@ -114,6 +153,14 @@ class EnvParamsRequest:
                 or not 0 <= self.hour <= 23
             ):
                 raise ValueError("hour must be an integer between 0 and 23")
+        if self.hour is not None and (self.start_hour is not None or self.end_hour is not None):
+            raise ValueError("hour and start_hour/end_hour must not be set together")
+        _validate_hour_window(self.start_hour, self.end_hour)
+
+    @property
+    def window(self) -> TimeWindow | None:
+        """The validated traveler window, or ``None`` for full-day/single-hour requests."""
+        return _validate_hour_window(self.start_hour, self.end_hour)
 
     def to_payload(self) -> dict[str, object]:
         payload: dict[str, object] = {
@@ -126,6 +173,9 @@ class EnvParamsRequest:
         }
         if self.hour is not None:
             payload["hour"] = self.hour
+        if self.start_hour is not None and self.end_hour is not None:
+            payload["start_hour"] = self.start_hour
+            payload["end_hour"] = self.end_hour
         return payload
 
 
@@ -164,13 +214,35 @@ class AreaHeatmapRequest:
         }
 
 
+ENVIRONMENT_PARAMETERS = (
+    "heat_index_celsius",
+    "apparent_temperature_celsius",
+    "wet_bulb_temperature_celsius",
+    "relative_humidity_percent",
+    "precipitation_mm",
+    "cloud_cover_octas",
+    "elevation",
+    "air_quality:idx",
+    "air_quality_pm2p5:idx",
+    "air_quality_pm10:idx",
+    "air_quality_no2:idx",
+    "aqi_us_co",
+    "air_quality_o3:idx",
+    "air_quality_so2:idx",
+    "methane_ppb",
+    "co2_ppm",
+    "solar_irradiance",
+)
+
+
 @dataclass(frozen=True)
 class EnvParamsEntry:
-    """One hour of the environmental series; missing values stay None, never zero."""
+    """One hour of all returned environmental parameters."""
 
     valid_time: datetime
     heat_index_celsius: float | None
     humidity_percent: float | None
+    parameters: Mapping[str, float | None] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -196,6 +268,29 @@ def _series_list(series: object, field: str) -> list[object]:
     return list(series)
 
 
+_FLAT_METADATA_KEYS = frozenset(
+    {"timestamps", "timestamp", "timezone", "count", "forecast", "mode"}
+)
+
+
+def _is_series(value: object) -> bool:
+    """Report whether a flat-shape value is a parameter series rather than metadata.
+
+    The flat shape mixes scalar metadata (``offset``, ``interval``) in among the
+    parameter arrays, so shape decides what is a series instead of a fixed name
+    list. That keeps every real environmental parameter without having to
+    enumerate metadata the provider may add later.
+
+    Known limitation: a genuine parameter that is scalar-shaped is
+    indistinguishable from metadata here and is dropped silently. A live call on
+    2026-08-29 returned 15 of the 17 requested parameters, with ``elevation``
+    and ``solar_irradiance`` absent; whether the provider omitted them or sent
+    them as scalars is undetermined, and ``elevation`` is time-invariant so the
+    scalar case is plausible. Resolving it needs the raw payload.
+    """
+    return isinstance(value, Sequence) and not isinstance(value, (str, bytes))
+
+
 def normalize_env_params_response(
     payload: Mapping[str, object], *, request: EnvParamsRequest
 ) -> EnvParamsResult:
@@ -204,13 +299,12 @@ def normalize_env_params_response(
     timestamps, timezone, series = _env_params_series(payload)
     entries = tuple(
         EnvParamsEntry(
-            _parse_datetime(timestamp),
-            _series_value(heat, "heat index"),
-            _series_value(humidity, "humidity"),
+            valid_time=_parse_datetime(timestamp),
+            heat_index_celsius=series["heat_index_celsius"][index],
+            humidity_percent=series["relative_humidity_percent"][index],
+            parameters={name: values[index] for name, values in series.items()},
         )
-        for timestamp, heat, humidity in zip(
-            timestamps, series["heat"], series["humidity"], strict=True
-        )
+        for index, timestamp in enumerate(timestamps)
     )
     if not entries:
         raise ValueError("env params response contains no entries")
@@ -224,7 +318,7 @@ def normalize_env_params_response(
 
 def _env_params_series(
     payload: Mapping[str, object],
-) -> tuple[Sequence[object], str, dict[str, list[object]]]:
+) -> tuple[Sequence[object], str, dict[str, list[float | None]]]:
     """Extract timestamps, timezone, and the consumed series from either provider shape.
 
     Two provider shapes are reality: the documented ``metadata`` + ``locations``
@@ -240,7 +334,7 @@ def _env_params_series(
 
 def _documented_series(
     payload: Mapping[str, object], metadata: Mapping[str, object]
-) -> tuple[Sequence[object], str, dict[str, list[object]]]:
+) -> tuple[Sequence[object], str, dict[str, list[float | None]]]:
     timestamps = metadata.get("timestamps")
     if not isinstance(timestamps, Sequence) or isinstance(timestamps, (str, bytes)):
         raise ValueError("missing freshness metadata")
@@ -261,16 +355,19 @@ def _documented_series(
     if not isinstance(parameters, Mapping):
         raise ValueError("malformed env params parameters")
     series = {
-        "heat": _series_list(parameters.get("heat_index_celsius"), "heat index"),
-        "humidity": _series_list(parameters.get("relative_humidity_percent"), "humidity"),
+        name: [_series_value(value, _series_error_name(name)) for value in _series_list(raw, name)]
+        for name, raw in parameters.items()
     }
-    _require_aligned(series, timestamps)
+    for name in ("heat_index_celsius", "relative_humidity_percent"):
+        if name not in series:
+            raise ValueError(f"missing {_series_error_name(name)} series")
+    _ensure_legacy_series(series, timestamps)
     return timestamps, timezone, series
 
 
 def _flat_series(
     payload: Mapping[str, object],
-) -> tuple[Sequence[object], str, dict[str, list[object]]]:
+) -> tuple[Sequence[object], str, dict[str, list[float | None]]]:
     timezone = payload.get("timezone")
     if not isinstance(timezone, str) or not timezone:
         raise ValueError("missing timezone metadata")
@@ -286,14 +383,36 @@ def _flat_series(
         else:
             raise ValueError("missing freshness metadata")
     series = {
-        "heat": _series_list(payload.get("heat_index_celsius"), "heat index"),
-        "humidity": _series_list(payload.get("relative_humidity_percent"), "humidity"),
+        name: [
+            _series_value(value, _series_error_name(name)) for value in _series_list(values, name)
+        ]
+        for name, values in payload.items()
+        if name not in _FLAT_METADATA_KEYS and _is_series(values)
     }
-    _require_aligned(series, timestamps)
+    for name in ("heat_index_celsius", "relative_humidity_percent"):
+        if name not in series:
+            raise ValueError(f"missing {_series_error_name(name)} series")
+    _ensure_legacy_series(series, timestamps)
     return timestamps, timezone, series
 
 
-def _require_aligned(series: dict[str, list[object]], timestamps: Sequence[object]) -> None:
+def _series_error_name(name: str) -> str:
+    return {
+        "heat_index_celsius": "heat index",
+        "relative_humidity_percent": "humidity",
+    }.get(name, name)
+
+
+def _ensure_legacy_series(
+    series: dict[str, list[float | None]], timestamps: Sequence[object]
+) -> None:
+    length = len(timestamps)
+    for name in ("heat_index_celsius", "relative_humidity_percent"):
+        series.setdefault(name, [None] * length)
+    _require_aligned(series, timestamps)
+
+
+def _require_aligned(series: dict[str, list[float | None]], timestamps: Sequence[object]) -> None:
     if any(len(values) != len(timestamps) for values in series.values()):
         raise ValueError("env params series must be time-aligned with timestamps")
 

@@ -117,7 +117,8 @@ def test_trip_analysis_endpoint_returns_ranked_hotels_and_route_decision() -> No
                 "landmark_name": "The Alamo",
                 "district_name": "Downtown San Antonio",
                 "date": "2026-08-23",
-                "hour": 8,
+                "start_hour": 8,
+                "end_hour": 20,
             }
         ).encode()
         response = urlopen(
@@ -146,7 +147,7 @@ def test_trip_analysis_endpoint_returns_ranked_hotels_and_route_decision() -> No
         thread.join(timeout=2)
 
 
-def test_trip_analysis_endpoint_returns_unavailable_for_unmatched_hour() -> None:
+def test_trip_analysis_endpoint_returns_unavailable_for_unmatched_window() -> None:
     server = create_fixture_server(
         Path("fixtures/heatmap-historical.json"),
         trip_adapter=FixtureTripAnalysisAdapter(Path("fixtures/trip-analysis.json")),
@@ -164,7 +165,8 @@ def test_trip_analysis_endpoint_returns_unavailable_for_unmatched_hour() -> None
                 "landmark_name": "The Alamo",
                 "district_name": "Downtown San Antonio",
                 "date": "2026-08-23",
-                "hour": 9,
+                "start_hour": 9,
+                "end_hour": 20,
             }
         ).encode()
         response = urlopen(
@@ -204,7 +206,8 @@ def test_trip_analysis_returns_explicit_unavailable_contract() -> None:
                 "landmark_name": "The Alamo",
                 "district_name": "Downtown San Antonio",
                 "date": "2026-08-23",
-                "hour": 14,
+                "start_hour": 8,
+                "end_hour": 20,
             }
         ).encode()
         response = urlopen(
@@ -247,7 +250,8 @@ def test_trip_analysis_rejects_untrusted_metric_and_provenance_fields() -> None:
                 "landmark_name": "The Alamo",
                 "district_name": "Downtown San Antonio",
                 "date": "2026-08-23",
-                "hour": 14,
+                "start_hour": 8,
+                "end_hour": 20,
                 "heat_metric": "heat_index_celsius",
                 "heat_value": 38,
                 "heat_threshold": 35,
@@ -298,7 +302,8 @@ def test_trip_analysis_rejects_malformed_adapter_response() -> None:
                 "landmark_name": "The Alamo",
                 "district_name": "Downtown San Antonio",
                 "date": "2026-08-23",
-                "hour": 14,
+                "start_hour": 8,
+                "end_hour": 20,
             }
         ).encode()
         with pytest.raises(HTTPError) as caught:

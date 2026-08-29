@@ -8,7 +8,11 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.api import create_app
-from app.integrations.fortyguard.contracts import EnvParamsRequest, HeatmapRequest
+from app.integrations.fortyguard.contracts import (
+    ENVIRONMENT_PARAMETERS,
+    EnvParamsRequest,
+    HeatmapRequest,
+)
 from app.integrations.fortyguard.errors import ProviderError, ProviderErrorKind
 from app.integrations.fortyguard.live import LiveEnvParamsPayload
 from app.services.execution import EnvParamsExecution, HeatmapExecution
@@ -354,7 +358,7 @@ def test_env_params_live_loader_receives_documented_date_windows() -> None:
     date_time = cast(dict[str, Any], payload["date_time"])
     assert date_time["filter_type"] == 3
     assert payload["temperature"] == 35.0
-    assert payload["analysis"] == ["heat_index_celsius", "relative_humidity_percent"]
+    assert payload["analysis"] == list(ENVIRONMENT_PARAMETERS)
     hourly = build_documented_env_params_payload(
         EnvParamsRequest(29.4241, -98.4936, date(2026, 8, 24), 35.0, hour=13)
     )

@@ -6,6 +6,7 @@ import pytest
 
 from app.integrations.fortyguard.client import FortyGuardClient, poll_activity
 from app.integrations.fortyguard.contracts import (
+    ENVIRONMENT_PARAMETERS,
     AnalyticType,
     EnvParamsRequest,
     HeatmapRequest,
@@ -381,7 +382,7 @@ def test_adapter_load_translates_and_stamps_transformations() -> None:
     assert stamps == {
         "live_envelope_unwrapped": 1,
         "point_to_aoi_expansion": 1,
-        "valid_time_from_request": 1,
+        "valid_time_from_request": 2,
         "tcm_unit_celsius": 1,
     }
     result = normalize_heatmap_response(
@@ -556,7 +557,7 @@ def test_env_params_documented_payload_full_day_and_hourly() -> None:
     payload = build_documented_env_params_payload(_env_request())
     assert payload["date_time"] == {"start_date": "2026-08-24", "filter_type": 3}
     assert payload["temperature"] == 35.0
-    assert payload["analysis"] == ["heat_index_celsius", "relative_humidity_percent"]
+    assert payload["analysis"] == list(ENVIRONMENT_PARAMETERS)
     hourly = build_documented_env_params_payload(_env_request(hour=13))
     assert hourly["date_time"] == {
         "start_date": "2026-08-24",

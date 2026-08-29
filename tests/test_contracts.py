@@ -79,7 +79,8 @@ def _valid_request(**overrides: object) -> TripAnalysisRequest:
         "landmark_name": "The Alamo",
         "district_name": "Downtown San Antonio",
         "date": "2026-08-23",
-        "hour": 14,
+        "start_hour": 8,
+        "end_hour": 20,
         "cautious": False,
     }
     defaults.update(overrides)
@@ -284,7 +285,7 @@ class TestIncompleteFields:
 
     def test_request_hour_out_of_range(self) -> None:
         with pytest.raises(ValueError, match="hour"):
-            _valid_request(hour=24)
+            _valid_request(end_hour=24)
 
     def test_response_success_missing_best_time(self) -> None:
         with pytest.raises(ValueError, match="BestTimeResult"):
@@ -801,7 +802,8 @@ class TestApiContractValidation:
                     "landmark_name": "The Alamo",
                     "district_name": "Downtown",
                     "date": "2026-08-23",
-                    "hour": 14,
+                    "start_hour": 8,
+                    "end_hour": 20,
                 }
             )
 
@@ -817,12 +819,13 @@ class TestApiContractValidation:
                 "landmark_name": "The Alamo",
                 "district_name": "Downtown",
                 "date": "2026-08-23",
-                "hour": 12,
+                "start_hour": 8,
+                "end_hour": 20,
                 "mode": "curated",
             }
         )
         assert request.cautious is False
-        assert request.hour == 12
+        assert request.window.hours == range(8, 20)
 
     def test_full_contract_body_accepted(self) -> None:
         from app.api import _parse_trip_request
@@ -837,14 +840,16 @@ class TestApiContractValidation:
                 "landmark_name": "The Alamo",
                 "district_name": "Downtown San Antonio",
                 "date": "2026-08-23",
-                "hour": 14,
+                "start_hour": 8,
+                "end_hour": 20,
                 "cautious": True,
             }
         )
         assert request.mode is TripMode.EXPLORATORY
         assert request.landmark_name == "The Alamo"
         assert request.cautious is True
-        assert request.hour == 14
+        assert request.start_hour == 8
+        assert request.end_hour == 20
 
     def test_string_cautious_value_rejected(self) -> None:
         from app.api import _parse_trip_request
@@ -860,7 +865,8 @@ class TestApiContractValidation:
                     "landmark_name": "The Alamo",
                     "district_name": "Downtown",
                     "date": "2026-08-23",
-                    "hour": 14,
+                    "start_hour": 8,
+                    "end_hour": 20,
                     "cautious": "false",
                 }
             )

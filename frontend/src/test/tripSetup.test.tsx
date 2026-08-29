@@ -10,10 +10,11 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { App } from "../app/App";
 
 const successResponse = {
-  request_identity: "curated:2026-08-23:8",
+  request_identity: "curated:2026-08-23:8-20",
   mode: "curated",
   execution_mode: "fixture",
   state: "success",
+  environment: null,
   best_time: {
     hourly: [],
     heat_interpretation: {
@@ -88,7 +89,8 @@ describe("curated Trip Setup", () => {
       screen.getByText("Downtown San Antonio / Alamo Plaza")
     ).toBeInTheDocument();
     expect(screen.getByLabelText("Date")).toHaveValue("2026-08-23");
-    expect(screen.getByLabelText("Hour")).toHaveValue("8");
+    expect(screen.getByLabelText("Start time")).toHaveValue("8");
+    expect(screen.getByLabelText("End time")).toHaveValue("20");
     expect(screen.getByLabelText(/Cautious guidance/)).not.toBeChecked();
     expect(screen.getByText(/United States/)).toBeInTheDocument();
 
@@ -117,7 +119,8 @@ describe("curated Trip Setup", () => {
           landmark_name: "The Alamo",
           district_name: "Downtown San Antonio",
           date: "2026-08-23",
-          hour: 8,
+          start_hour: 8,
+          end_hour: 20,
           cautious: false,
           execution_mode: "fixture",
         }),
@@ -168,6 +171,107 @@ describe("curated Trip Setup", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
+  it("validates time order and the 12-hour maximum without submitting", async () => {
+    const fetchMock = mockFetch(
+      jsonResponse({ status: "ok", mode: "fixture" })
+    );
+    const user = userEvent.setup();
+
+    render(<App />);
+    await screen.findByText("Fixture replay");
+    const start = screen.getByLabelText("Start time");
+    const end = screen.getByLabelText("End time");
+
+    await user.selectOptions(start, "20");
+    await user.click(screen.getByRole("button", { name: "Analyze trip" }));
+    expect(
+      screen.getByText("Start time must be earlier than end time.")
+    ).toBeInTheDocument();
+    expect(end).toHaveAttribute("aria-invalid", "true");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    await user.selectOptions(start, "0");
+    await user.selectOptions(end, "13");
+    await user.click(screen.getByRole("button", { name: "Analyze trip" }));
+    expect(
+      screen.getByText("The time window cannot exceed 12 hours.")
+    ).toBeInTheDocument();
+    expect(end).toHaveFocus();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("accepts and displays the raw nullable environmental series", async () => {
+    mockFetch(
+      jsonResponse({ status: "ok", mode: "fixture" }),
+      jsonResponse({
+        ...successResponse,
+        state: "series_ready",
+        environment: {
+          entries: [
+            {
+              valid_time: "2026-08-23T08:00:00-05:00",
+              heat_index_celsius: 31.4,
+              humidity_percent: 72.5,
+              parameters: {
+                heat_index_celsius: 31.4,
+                relative_humidity_percent: 72.5,
+                apparent_temperature_celsius: 35.1,
+              },
+            },
+            {
+              valid_time: "2026-08-23T09:00:00-05:00",
+              heat_index_celsius: null,
+              humidity_percent: 68,
+              parameters: {
+                heat_index_celsius: null,
+                relative_humidity_percent: 68,
+                apparent_temperature_celsius: null,
+              },
+            },
+          ],
+          timezone: "GMT-5",
+          temperature_anchor_celsius: 34.2,
+          warning: "fixed temperature anchor; not a real 24-hour forecast",
+          provenance: {
+            source: "fixture",
+            data_date: "2026-08-23",
+            confidence: "sufficient",
+            retrieved_at: "2026-08-24T00:00:00+00:00",
+            transformation_version: "trip-environment-series-v1",
+            provider: "fortyguard",
+            response_status: "completed",
+            request_configuration: {},
+            fresh: true,
+            coverage: null,
+            note: null,
+            activity_id: null,
+          },
+        },
+        best_time: null,
+        hotels: null,
+        routes: null,
+      })
+    );
+    const user = userEvent.setup();
+
+    render(<App />);
+    await screen.findByText("Fixture replay");
+    await user.click(screen.getByRole("button", { name: "Analyze trip" }));
+
+    expect(
+      await screen.findByRole("heading", { name: "Environmental conditions" })
+    ).toBeInTheDocument();
+    expect(screen.getByText("08:00 GMT-5")).toBeInTheDocument();
+    expect(screen.getByText("31.4 C")).toBeInTheDocument();
+    expect(screen.getAllByText("Unavailable")).toHaveLength(2);
+    expect(screen.getByText("68.0 %")).toBeInTheDocument();
+    expect(screen.getByText("34.2 C")).toBeInTheDocument();
+    expect(
+      screen.getByText("fixed temperature anchor; not a real 24-hour forecast")
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/best time/i)).not.toBeInTheDocument();
+  });
+
   it("announces busy state and disables setup controls", async () => {
     let resolveAnalysis!: (response: Response) => void;
     const pending = new Promise<Response>((resolve) => {
@@ -182,7 +286,8 @@ describe("curated Trip Setup", () => {
 
     expect(screen.getByRole("status")).toHaveTextContent("Analyzing trip...");
     expect(screen.getByLabelText("Date")).toBeDisabled();
-    expect(screen.getByLabelText("Hour")).toBeDisabled();
+    expect(screen.getByLabelText("Start time")).toBeDisabled();
+    expect(screen.getByLabelText("End time")).toBeDisabled();
     expect(screen.getByLabelText(/Cautious guidance/)).toBeDisabled();
     resolveAnalysis(jsonResponse(successResponse));
     expect(await screen.findByText("Trip analysis ready")).toBeInTheDocument();
@@ -219,7 +324,7 @@ describe("curated Trip Setup", () => {
       within(outcome).getByText("Lower provider temperature")
     ).toBeInTheDocument();
 
-    await user.selectOptions(screen.getByLabelText("Hour"), "9");
+    await user.selectOptions(screen.getByLabelText("Start time"), "9");
     expect(screen.queryByText(/Trip analysis ready/)).not.toBeInTheDocument();
   });
 
@@ -259,7 +364,7 @@ describe("curated Trip Setup", () => {
       jsonResponse({ status: "ok", mode: "fixture" }),
       jsonResponse({
         ...successResponse,
-        request_identity: "curated:2026-08-23:9",
+        request_identity: "curated:2026-08-23:9-20",
       }),
       jsonResponse({ status: "ok", mode: "fixture" })
     );
@@ -267,7 +372,7 @@ describe("curated Trip Setup", () => {
 
     render(<App />);
     await screen.findByText("Fixture replay");
-    await user.selectOptions(screen.getByLabelText("Hour"), "9");
+    await user.selectOptions(screen.getByLabelText("Start time"), "9");
     await user.click(screen.getByRole("button", { name: "Analyze trip" }));
     await screen.findByText("Trip analysis ready");
 
@@ -279,7 +384,7 @@ describe("curated Trip Setup", () => {
     );
 
     expect(await screen.findByText("Trip analysis ready")).toBeInTheDocument();
-    expect(screen.getByLabelText("Hour")).toHaveValue("9");
+    expect(screen.getByLabelText("Start time")).toHaveValue("9");
   });
 
   it("clears a retained result when application mode changes", async () => {
@@ -315,7 +420,7 @@ describe("curated Trip Setup", () => {
       "mismatched request identity",
       jsonResponse({
         ...successResponse,
-        request_identity: "curated:2026-08-23:9",
+        request_identity: "curated:2026-08-23:9-20",
       }),
     ],
     [

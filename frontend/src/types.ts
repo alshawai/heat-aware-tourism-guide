@@ -116,6 +116,36 @@ export type RequestOptions = {
 
 export type ExecutionMode = "fixture" | "live";
 
+export type ApiProvenance = {
+  source: string;
+  data_date: string;
+  confidence: "sufficient" | "insufficient";
+  retrieved_at: string;
+  transformation_version: string;
+  provider: string;
+  response_status: string;
+  request_configuration: Record<string, unknown>;
+  fresh: boolean;
+  coverage: number | null;
+  note: string | null;
+  activity_id: string | null;
+};
+
+export type EnvironmentSeriesEntry = {
+  valid_time: string;
+  heat_index_celsius: number | null;
+  humidity_percent: number | null;
+  parameters: Record<string, number | null>;
+};
+
+export type EnvironmentSeriesResult = {
+  entries: EnvironmentSeriesEntry[];
+  timezone: string;
+  temperature_anchor_celsius: number;
+  warning: string;
+  provenance: ApiProvenance;
+};
+
 export type TripAnalysisRequest = {
   mode: "curated";
   origin_latitude: number;
@@ -125,7 +155,8 @@ export type TripAnalysisRequest = {
   landmark_name: "The Alamo";
   district_name: "Downtown San Antonio";
   date: string;
-  hour: number;
+  start_hour: number;
+  end_hour: number;
   cautious: boolean;
   execution_mode: ExecutionMode;
 };
@@ -134,7 +165,8 @@ export type TripAnalysisResponse = {
   request_identity: string;
   mode: "curated";
   execution_mode: ExecutionMode;
-  state: "success" | "degraded" | "unavailable" | "error";
+  state: "series_ready" | "success" | "degraded" | "unavailable" | "error";
+  environment: EnvironmentSeriesResult | null;
   best_time:
     | ({ heat_interpretation?: HeatInterpretation } & Record<string, unknown>)
     | null;
@@ -170,6 +202,7 @@ export type HeatBand =
 
 export type CuratedTripSetup = {
   date: string;
-  hour: number;
+  startHour: number;
+  endHour: number;
   cautious: boolean;
 };
