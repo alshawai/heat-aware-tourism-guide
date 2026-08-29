@@ -13,23 +13,24 @@ GeoJSON `FeatureCollection`. Two request paths produce that polygon:
    immediate vicinity of a coordinate. Transformation stamp:
    `point_to_aoi_expansion`.
 
-2. **Area path** — a route polyline or arbitrary polygon is buffered into a
-   corridor or used directly as the AOI. Returns a grid of tiles covering the
-   full region. Transformation stamp: `route_to_aoi_buffer`.
+2. **Area path** — a shared route corridor is represented by one buffered,
+   canonical bounding rectangle covering every returned route alternative.
+   The request is made for the best-time recommendation hour and the resulting
+   normalized tiles are joined back to each route locally.
 
 ## Decision table
 
-| Criterion                       | Point request                                           | Area request                                                                  |
-| ------------------------------- | ------------------------------------------------------- | ----------------------------------------------------------------------------- |
-| **Use when**                    | Single landmark, hotel, or coordinate                   | Route corridor, neighborhood, district                                        |
-| **Input**                       | `(lat, lon)` + `granularity` (60/80/100 m)              | Route geometry or polygon + `buffer_m`                                        |
-| **AOI construction**            | Square centered on point                                | Buffered polyline or caller polygon                                           |
-| **Returned tiles**              | 1–2 (single cell)                                       | N tiles covering the full AOI grid                                            |
-| **Granularity meaning**         | Side length of the expansion square AND tile resolution | Tile resolution within the submitted AOI                                      |
-| **Default granularity**         | 60 m (ADR 0001)                                         | 100 m (ADR 0001)                                                              |
-| **Consumer aggregation needed** | No — value is directly usable                           | Yes — tiles must be joined back to route segments or averaged over the region |
-| **Provenance transformation**   | `point_to_aoi_expansion` v1                             | `route_to_aoi_buffer` v1                                                      |
-| **Billable cost**               | Lower (small AOI)                                       | Higher (proportional to AOI area)                                             |
+| Criterion                       | Point request                                           | Area request                                                                                                     |
+| ------------------------------- | ------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| **Use when**                    | Single landmark, hotel, or coordinate                   | Route corridor, neighborhood, district                                                                           |
+| **Input**                       | `(lat, lon)` + `granularity` (60/80/100 m)              | Route geometry or polygon + `buffer_m`                                                                           |
+| **AOI construction**            | Square centered on point                                | Buffered polyline or caller polygon                                                                              |
+| **Returned tiles**              | 1–2 (single cell)                                       | N tiles covering the full AOI grid                                                                               |
+| **Granularity meaning**         | Side length of the expansion square AND tile resolution | Tile resolution within the submitted AOI                                                                         |
+| **Default granularity**         | 60 m (ADR 0001)                                         | 100 m (ADR 0001)                                                                                                 |
+| **Consumer aggregation needed** | No — value is directly usable                           | Yes — normalized tiles are joined back to every returned route; route heat is the maximum intersecting TCM value |
+| **Provenance transformation**   | `point_to_aoi_expansion` v1                             | `route_to_aoi_buffer` v1                                                                                         |
+| **Billable cost**               | Lower (small AOI)                                       | Higher (proportional to AOI area)                                                                                |
 
 ## When to use which
 
@@ -39,12 +40,12 @@ specific coordinate (e.g., "what is the temperature at the Alamo?"). It maps
 directly without aggregation.
 
 **Area request** — the right choice when the caller needs spatial coverage
-across a region: a walking route, a hotel neighborhood, or any geometry where
-multiple tiles are needed to answer the question (e.g., "what percentage of
-this route exceeds 35 °C?"). Area requests return a tile grid, and the
-consumer must aggregate tiles using the spatial join infrastructure
-(`join_polygon_to_tiles` in `app/domain/analysis.py`) or the route-segment
-mapper (`map_tiles_to_route_segments`).
+across multiple returned route alternatives. The route analysis service builds
+one canonical bounding rectangle around all route geometries, buffers it, and
+sends one TCM request at the selected best-time recommendation hour. The
+normalized shared tiles are aggregated locally per route using the maximum
+intersecting value and an independent coverage fraction. A missing or weakly
+covered route is explicit evidence loss, never a landmark-heat substitution.
 
 ## Granularity semantics
 

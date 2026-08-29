@@ -126,6 +126,26 @@ directly.
   identity, compatible explicit relation membership, or a normalized name
   corroborated by matching address, website, or operator. Proximity and name
   alone never establish identity.
+- **Route alternative** — One valid pedestrian route returned by the configured
+  routing provider for the trip endpoints. The product compares only returned
+  alternatives; it never fabricates a missing route or claims global optimality.
+- **Shared route heat AOI** — One buffered bounding rectangle covering every
+  returned route alternative when any alternative exceeds the representative
+  distance threshold. One TCM activity covers the AOI; each route's heat is
+  then calculated locally from the shared normalized tiles.
+- **Route heat** — The conservative maximum TCM value intersecting one returned
+  route at the best-time recommendation hour. It is never an average. When all
+  returned routes are at or below the representative distance threshold, they
+  reuse the retained landmark TCM value instead of starting another activity.
+- **Route heat gate** — The heat-policy interpretation applied to route heat.
+  Mild heat recommends the shortest returned route without shade work;
+  elevated heat defers the final recommendation until modeled shade is
+  available. Cautious guidance uses the same one-band-earlier policy as other
+  heat decisions.
+- **No suitable returned route** — The explicit state when the routing provider
+  returns no valid pedestrian routes, or when every returned route lacks enough
+  evidence for a recommendation. A single valid route is instead shown as the
+  only returned route with limited-comparison wording.
 - **Source of truth for provider behavior** — The official FortyGuard docs
   (reconciled in `docs/research/issue-7-san-antonio-provider-validation.md`
   and ADR 0001), with the quickstart repo as reference only.
@@ -137,6 +157,9 @@ directly.
 - ADR 0003 — bounded polling, 404 tolerance window, submit-once.
 - ADR 0004 — fixture acquisition sidecars, cache identity, degradation
   chain, JSONL cost ledger.
+- ADR 0005 — best-time decision orchestration and retained route-gating evidence.
+- ADR 0006 — returned-route heat AOI, conservative per-route aggregation, and
+  recommendation staging.
 - `docs/design/fortyguard-extraction.md` — extraction contract from issue #6.
 - Layout: `app/domain/` (pure contracts), `app/services/` (cache, execution,
   acquisition, sidecars, ledger store), `app/integrations/fortyguard/`

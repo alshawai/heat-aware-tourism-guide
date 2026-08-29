@@ -179,10 +179,96 @@ function validHeatInterpretation(value: unknown) {
   );
 }
 
+function validRouteGeometry(value: unknown) {
+  return (
+    Array.isArray(value) &&
+    value.length >= 2 &&
+    value.every(
+      (point) =>
+        Array.isArray(point) &&
+        point.length === 2 &&
+        point.every(
+          (coordinate) =>
+            typeof coordinate === "number" && Number.isFinite(coordinate)
+        ) &&
+        point[0] >= -180 &&
+        point[0] <= 180 &&
+        point[1] >= -90 &&
+        point[1] <= 90
+    )
+  );
+}
+
+function validExplicitRoutes(value: Record<string, unknown>) {
+  const routeSetStates = [
+    "alternatives_returned",
+    "single_route",
+    "no_suitable_returned_route",
+  ];
+  const decisionStates = [
+    "mild_shortest_recommended",
+    "shade_required",
+    "heat_unavailable",
+    "no_suitable_returned_route",
+  ];
+  if (
+    !routeSetStates.includes(String(value.route_set_state)) ||
+    !decisionStates.includes(String(value.decision_state)) ||
+    !Array.isArray(value.alternatives) ||
+    !isObject(value.routing_provenance)
+  ) {
+    return false;
+  }
+  if (value.route_set_state === "no_suitable_returned_route") {
+    return (
+      value.decision_state === "no_suitable_returned_route" &&
+      value.alternatives.length === 0 &&
+      value.recommended_id === null
+    );
+  }
+  if (
+    (value.route_set_state === "single_route" &&
+      value.alternatives.length !== 1) ||
+    (value.route_set_state === "alternatives_returned" &&
+      value.alternatives.length < 2)
+  ) {
+    return false;
+  }
+  const heatUnavailable = value.decision_state === "heat_unavailable";
+  const alternativesValid = value.alternatives.every(
+    (route) =>
+      isObject(route) &&
+      validRouteGeometry(route.geometry) &&
+      typeof route.identity === "string" &&
+      typeof route.distance_m === "number" &&
+      typeof route.duration_s === "number" &&
+      typeof route.recommended === "boolean" &&
+      (heatUnavailable
+        ? route.heat_value === null && route.heat_interpretation === null
+        : typeof route.heat_value === "number" &&
+          validHeatInterpretation(route.heat_interpretation) &&
+          isObject(route.heat_interpretation) &&
+          route.heat_interpretation.metric === route.heat_metric &&
+          route.heat_interpretation.value_celsius === route.heat_value)
+  );
+  const recommended = value.alternatives.filter(
+    (route) => isObject(route) && route.recommended === true
+  );
+  return (
+    alternativesValid &&
+    (value.decision_state === "mild_shortest_recommended"
+      ? typeof value.recommended_id === "string" && recommended.length === 1
+      : value.recommended_id === null && recommended.length === 0)
+  );
+}
+
 function validRoutes(value: unknown) {
   if (value === null) return true;
+  if (!isObject(value)) return false;
+  if (value.route_set_state !== undefined && value.route_set_state !== null) {
+    return validExplicitRoutes(value);
+  }
   if (
-    !isObject(value) ||
     !validHeatInterpretation(value.heat_interpretation) ||
     !isObject(value.heat_interpretation) ||
     value.heat_interpretation.metric !== value.heat_metric ||
@@ -289,7 +375,14 @@ function isTripAnalysisResponse(
       ...(!value.best_time ? ["best_time"] : []),
       ...(!value.hotels ? ["hotels"] : []),
       ...(!value.routes ? ["routes"] : []),
-      ...(isObject(value.routes) && value.routes.confidence === "insufficient"
+      ...(isObject(value.routes) &&
+      (value.routes.confidence === "insufficient" ||
+        [
+          "shade_required",
+          "heat_unavailable",
+          "no_suitable_returned_route",
+        ].includes(String(value.routes.decision_state)) ||
+        value.routes.route_set_state === "single_route")
         ? ["routes"]
         : []),
     ];

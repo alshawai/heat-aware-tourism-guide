@@ -261,20 +261,23 @@ and many other factors confound it.
 The route flow is:
 
 1. Fetch OSRM alternatives exactly once.
-2. Use the shortest route distance to select the short/long heuristic branch.
-3. For a short route, reuse the cached landmark heat result.
-4. For a long route, request one corridor heatmap and use a conservative maximum
-   value rather than a mean.
-5. If no elevated heat concern is detected, recommend the shortest route.
-6. If heat concern is elevated, calculate modeled building-shadow estimates for
-   every returned route using local solar geometry, route geometry, and OSM
-   building heights.
-7. Recommend the route with the highest modeled shade only when data coverage
-   is sufficient; otherwise recommend the shortest route with a clear
-   insufficient-confidence message.
+2. Retain only the valid returned routes and compare those routes only.
+3. If every returned route is at most the configurable representative distance,
+   reuse the selected-hour landmark TCM value with `landmark_reuse` evidence.
+4. If any returned route is longer, request one shared rectangular corridor AOI
+   for the recommendation hour and aggregate a conservative maximum TCM value
+   per route. The shared heat request is never a second routing request.
+5. If comparable heat is mild, recommend the shortest returned route.
+6. If any comparable route has elevated heat, expose all evidence with a
+   `shade_required` state and defer the final recommendation to modeled shade.
+7. A single returned route is shown as `single_route`; zero routes or missing
+   route heat evidence produces `no_suitable_returned_route` or
+   `heat_unavailable` with an explicit degraded reason.
 
 The initial representative-route threshold is 1,500 m and is configurable. It
-is an engineering heuristic, not a scientific boundary.
+is an engineering heuristic, not a scientific boundary. Route heat is evaluated
+at `BestTimeResult.recommendation_hour`, so the route and landmark evidence use
+the same selected hour.
 
 The shade value is described as “modeled shade estimate, based on OSM building
 data.” It is deterministic relative to the model assumptions, but it is not a
@@ -285,11 +288,12 @@ data.
 Every route result includes:
 
 - Distance and duration.
-- Heat metric and heat status.
-- Modeled building-shadow percentage, if computable.
-- Building-height coverage and confidence state.
+- Full returned route geometry when route comparison is available.
+- Heat metric, heat status, per-route coverage, and evidence source.
+- Explicit route-set and decision states.
+- Modeled building-shadow percentage, if computable in the shade phase.
+- Building-height coverage and confidence state when shade modeling is present.
 - Whether the route is recommended and why.
-- A label that it is the shadiest among returned alternatives, when applicable.
 
 ## Failure And Fallback Policy
 
