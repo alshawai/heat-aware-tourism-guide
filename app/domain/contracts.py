@@ -13,6 +13,8 @@ import math
 from datetime import date as calendar_date, datetime
 from typing import Protocol
 
+from app.domain.environment import TimeWindow
+
 
 # ---------------------------------------------------------------------------
 # Enums
@@ -30,6 +32,7 @@ class ExecutionMode(str, Enum):
 
 
 class ResultState(str, Enum):
+    SERIES_READY = "series_ready"
     SUCCESS = "success"
     DEGRADED = "degraded"
     UNAVAILABLE = "unavailable"
@@ -189,7 +192,8 @@ class TripAnalysisRequest:
     landmark_name: str
     district_name: str
     date: str
-    hour: int
+    start_hour: int
+    end_hour: int
     cautious: bool
 
     def __post_init__(self) -> None:
@@ -205,16 +209,15 @@ class TripAnalysisRequest:
             calendar_date.fromisoformat(self.date)
         except ValueError as error:
             raise ValueError("date must be an ISO date") from error
-        if (
-            isinstance(self.hour, bool)
-            or not isinstance(self.hour, int)
-            or not 0 <= self.hour <= 23
-        ):
-            raise ValueError("hour must be between 0 and 23")
+        TimeWindow(self.start_hour, self.end_hour)
         if not isinstance(self.cautious, bool):
             raise ValueError("cautious must be a boolean")
         if self.mode not in (TripMode.CURATED, TripMode.EXPLORATORY):
             raise ValueError("unknown trip mode")
+
+    @property
+    def window(self) -> TimeWindow:
+        return TimeWindow(self.start_hour, self.end_hour)
 
 
 @dataclass(frozen=True)
@@ -283,6 +286,66 @@ class RouteCandidateData:
 # ---------------------------------------------------------------------------
 # Response sub-shapes
 # ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class EnvironmentSeriesEntry:
+    """One environmental observation; unavailable provider metrics remain None."""
+
+    valid_time: datetime
+    heat_index_celsius: float | None
+    humidity_percent: float | None
+
+    def __post_init__(self) -> None:
+        if self.valid_time.tzinfo is None or self.valid_time.utcoffset() is None:
+            raise ValueError("environment valid_time must include a timezone")
+        for name, value in (
+            ("heat_index_celsius", self.heat_index_celsius),
+            ("humidity_percent", self.humidity_percent),
+        ):
+            if value is not None and (
+                isinstance(value, bool)
+                or not isinstance(value, (int, float))
+                or not math.isfinite(value)
+            ):
+                raise ValueError(f"{name} must be a finite number or None")
+        if self.humidity_percent is not None and not 0 <= self.humidity_percent <= 100:
+            raise ValueError("humidity_percent must be between 0 and 100")
+
+
+@dataclass(frozen=True)
+class EnvironmentSeriesResult:
+    """Raw fixed-anchor environmental series produced before any recommendation."""
+
+    entries: tuple[EnvironmentSeriesEntry, ...]
+    timezone: str
+    temperature_anchor_celsius: float
+    warning: str
+    provenance: Provenance
+
+    def __post_init__(self) -> None:
+        if not self.entries:
+            raise ValueError("environment entries are required")
+        if any(not isinstance(entry, EnvironmentSeriesEntry) for entry in self.entries):
+            raise ValueError("environment entries must be EnvironmentSeriesEntry values")
+        if not self.timezone:
+            raise ValueError("environment timezone is required")
+        if (
+            isinstance(self.temperature_anchor_celsius, bool)
+            or not isinstance(self.temperature_anchor_celsius, (int, float))
+            or not math.isfinite(self.temperature_anchor_celsius)
+        ):
+            raise ValueError("temperature_anchor_celsius must be finite")
+        if (
+            "fixed temperature anchor" not in self.warning
+            or "not a real 24-hour forecast" not in self.warning
+        ):
+            raise ValueError("environment requires the standing fixed-anchor warning")
+        if not isinstance(self.provenance, Provenance):
+            raise ValueError("environment provenance is required")
+        valid_times = [entry.valid_time for entry in self.entries]
+        if len(set(valid_times)) != len(valid_times):
+            raise ValueError("environment entries must not contain duplicate valid times")
 
 
 @dataclass(frozen=True)
@@ -569,6 +632,7 @@ class TripAnalysisResponse:
     execution_mode: ExecutionMode
     state: ResultState
 
+    environment: EnvironmentSeriesResult | None = None
     best_time: BestTimeResult | None = None
     hotels: HotelRankingResult | None = None
     routes: RouteComparisonResult | None = None
@@ -582,7 +646,16 @@ class TripAnalysisResponse:
             raise ValueError("execution_mode must be an ExecutionMode value")
         if not isinstance(self.state, ResultState):
             raise ValueError("state must be a ResultState value")
-        if self.state is ResultState.SUCCESS:
+        if self.state is ResultState.SERIES_READY:
+            if not isinstance(self.environment, EnvironmentSeriesResult):
+                raise ValueError("series_ready state requires environment")
+            if self.best_time is not None or self.hotels is not None or self.routes is not None:
+                raise ValueError("series_ready state must not include decision sections")
+            if self.unavailable is not None or self.degraded_reasons is not None:
+                raise ValueError("series_ready state must not include failure detail")
+        elif self.state is ResultState.SUCCESS:
+            if self.environment is not None:
+                raise ValueError("success state must not include the preparation environment")
             if not isinstance(self.best_time, BestTimeResult):
                 raise ValueError("success state requires a BestTimeResult")
             if not isinstance(self.hotels, HotelRankingResult):
@@ -602,11 +675,18 @@ class TripAnalysisResponse:
         elif self.state is ResultState.UNAVAILABLE:
             if not isinstance(self.unavailable, UnavailableResult):
                 raise ValueError("unavailable state requires unavailable detail")
-            if self.best_time is not None or self.hotels is not None or self.routes is not None:
+            if (
+                self.environment is not None
+                or self.best_time is not None
+                or self.hotels is not None
+                or self.routes is not None
+            ):
                 raise ValueError("unavailable state must not include result data")
             if self.degraded_reasons is not None:
                 raise ValueError("unavailable state must not include degraded_reasons")
         elif self.state is ResultState.DEGRADED:
+            if self.environment is not None:
+                raise ValueError("degraded state must not include the preparation environment")
             if self.best_time is None and self.hotels is None and self.routes is None:
                 raise ValueError("degraded state requires at least one partial result")
             if not self.degraded_reasons:
@@ -640,7 +720,12 @@ class TripAnalysisResponse:
         elif self.state is ResultState.ERROR:
             if not isinstance(self.unavailable, UnavailableResult):
                 raise ValueError("error state requires unavailable detail")
-            if self.best_time is not None or self.hotels is not None or self.routes is not None:
+            if (
+                self.environment is not None
+                or self.best_time is not None
+                or self.hotels is not None
+                or self.routes is not None
+            ):
                 raise ValueError("error state must not include result data")
             if self.degraded_reasons is not None:
                 raise ValueError("error state must not include degraded_reasons")

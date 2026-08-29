@@ -28,7 +28,8 @@ def _request() -> TripAnalysisRequest:
         landmark_name="The Alamo",
         district_name="Downtown San Antonio",
         date="2026-08-23",
-        hour=8,
+        start_hour=8,
+        end_hour=20,
         cautious=False,
     )
 
@@ -89,9 +90,9 @@ def test_route_distances_reflect_observed_canonical_osrm_response() -> None:
     assert by_identity["shady"].duration_s == 196.0
 
 
-def test_fixture_adapter_returns_unavailable_for_unmatched_hour() -> None:
+def test_fixture_adapter_returns_unavailable_for_unmatched_window() -> None:
     response = FixtureTripAnalysisAdapter(Path("fixtures/trip-analysis.json")).analyze(
-        replace(_request(), hour=9), ExecutionMode.FIXTURE
+        replace(_request(), start_hour=9), ExecutionMode.FIXTURE
     )
 
     assert response.state is ResultState.UNAVAILABLE

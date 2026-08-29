@@ -409,7 +409,7 @@ def _number_dict(value: object, field: str) -> dict[str, float]:
 
 
 def _request_identity(request: TripAnalysisRequest) -> str:
-    return f"{request.mode.value}:{request.date}:{request.hour}"
+    return f"{request.mode.value}:{request.date}:{request.start_hour}-{request.end_hour}"
 
 
 def _fixture_matches(scenario: Mapping[str, object], request: TripAnalysisRequest) -> bool:
@@ -420,7 +420,8 @@ def _fixture_matches(scenario: Mapping[str, object], request: TripAnalysisReques
         and _string(scenario.get("district_name"), "scenario district_name")
         == request.district_name
         and _string(scenario.get("date"), "scenario date") == request.date
-        and _integer(scenario.get("hour"), "scenario hour") == request.hour
+        and _integer(scenario.get("start_hour"), "scenario start_hour") == request.start_hour
+        and _integer(scenario.get("end_hour"), "scenario end_hour") == request.end_hour
         and math.isclose(
             _number(origin.get("latitude"), "origin latitude"), request.origin.latitude
         )

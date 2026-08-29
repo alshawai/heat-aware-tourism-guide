@@ -23,8 +23,8 @@ properties.
 
 ## Decision
 
-1. **The internal domain contract is unchanged and stays the single validated
-   schema.** Live provider shapes never leak into it. A dedicated live adapter
+1. **The internal domain contract stays the single validated schema.** Live
+   provider shapes never leak into it. A dedicated live adapter
    (`app/integrations/fortyguard/live.py`) owns all provider-specific behavior:
    documented payload construction, envelope handling, translation into the
    internal shape, and inference stamping.
@@ -58,8 +58,17 @@ properties.
 7. **Environment parameters are part of the same boundary.** A public
    `POST /api/env-params` route mirrors the heatmap gating. Requests ask for a
    full-day hourly series (filter_type 3) by default; an optional `hour`
-   selects filter_type 1. The request explicitly lists the two consumed
-   `analysis` parameters (within the 3-parameter plan limit).
+   selects filter_type 1. A validated traveler window selects filter_type 2
+   with matching `start_time` and `end_time` on both heatmap and environment
+   requests. The request explicitly lists the two consumed `analysis`
+   parameters (within the 3-parameter plan limit).
+8. **Trip temporal preparation is a series-only contract stage.**
+   `POST /api/trip/analyze` accepts a same-day half-open `start_hour` /
+   `end_hour` window of at most twelve whole hours; it no longer accepts a
+   selected visit `hour`. The initial `series_ready` response carries only the
+   raw nullable environment series, timezone, conservative temperature anchor,
+   provenance, and the fixed-anchor warning. Hotel, route, best-time, and
+   comfort decisions remain outside this preparation stage.
 
 ## Consequences
 
