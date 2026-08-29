@@ -13,7 +13,9 @@ test("analyzes the curated trip entirely from fixtures", async ({ page }) => {
 
   await expect(page.getByText("Fixture replay", { exact: true })).toBeVisible();
   await expect(
-    page.getByLabel("Curated trip places").getByText("The Alamo", { exact: true })
+    page
+      .getByLabel("Curated trip places")
+      .getByText("The Alamo", { exact: true })
   ).toBeVisible();
   const analysisResponse = page.waitForResponse((response) =>
     response.url().endsWith("/api/trip/analyze")
