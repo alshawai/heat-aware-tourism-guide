@@ -110,6 +110,7 @@ Project policies and heuristics, not published standards:
 - A 35 C exceedance/persistence threshold.
 - Hotel weights of 35/25/20/20 percent.
 - Shifting the action threshold one band earlier for cautious guidance.
+- Product-only `tcm` bands at 30, 35, and 40 C; these are not NOAA boundaries.
 - Maximum corridor heat aggregation.
 - A building-height coverage threshold for trusting modeled shade.
 

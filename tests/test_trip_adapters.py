@@ -9,6 +9,8 @@ from app.domain.contracts import (
     Confidence,
     Coordinates,
     ExecutionMode,
+    GuidancePolicy,
+    HeatBand,
     ResultState,
     TripAnalysisRequest,
     TripMode,
@@ -199,6 +201,180 @@ def test_route_corridor_heat_unit_is_explicit_and_validated() -> None:
 
     with pytest.raises(ValueError, match="heat_unit"):
         normalize_trip_analysis(payload, _request(), ExecutionMode.FIXTURE)
+
+
+def test_cautious_request_records_one_band_earlier_policy_for_each_heat_section() -> None:
+    payload = _payload()
+    response = normalize_trip_analysis(
+        payload,
+        replace(_request(), cautious=True),
+        ExecutionMode.FIXTURE,
+    )
+
+    assert response.best_time is not None
+    assert response.routes is not None
+    best_policy = response.best_time.heat_interpretation
+    route_policy = response.routes.heat_interpretation
+    assert best_policy is not None
+    assert route_policy is not None
+    assert best_policy.guidance_policy is GuidancePolicy.CAUTIOUS
+    assert best_policy.policy_applied == "cautious_guidance_one_band_earlier"
+    assert best_policy.band is HeatBand.PROVIDER_LOWER
+    assert route_policy.band is HeatBand.PROVIDER_HIGHER
+    assert response.routes.recommended_id == "shady"
+
+
+def test_cautious_request_changes_route_action_to_the_least_hot_returned_route() -> None:
+    payload = _payload()
+    routes = payload["routes"]
+    assert isinstance(routes, dict)
+    routes["recommended_id"] = "short"
+    routes["reason"] = "shortest returned route"
+    short = routes["alternatives"][0]
+    shady = routes["alternatives"][1]
+    assert isinstance(short, dict) and isinstance(shady, dict)
+    short["heat_value"] = 42
+    shady["heat_value"] = 36
+    shady["recommendation_reason"] = None
+
+    response = normalize_trip_analysis(
+        payload,
+        replace(_request(), cautious=True),
+        ExecutionMode.FIXTURE,
+    )
+
+    assert response.routes is not None
+    assert response.routes.recommended_id == "shady"
+    assert response.routes.reason == "cautious guidance selected the least-hot returned route"
+    assert [route.identity for route in response.routes.alternatives if route.recommended] == [
+        "shady"
+    ]
+
+
+def test_provider_metric_response_records_noaa_heat_index_as_unavailable() -> None:
+    response = normalize_trip_analysis(_payload(), _request(), ExecutionMode.FIXTURE)
+
+    assert response.best_time is not None
+    interpretation = response.best_time.heat_interpretation
+    assert interpretation is not None
+    assert interpretation.metric.value == "tcm"
+    assert interpretation.value_celsius == 29
+    assert interpretation.is_actual_heat_index is False
+    assert interpretation.noaa_heat_index_available is False
+    assert interpretation.band_label == "Lower provider temperature"
+
+
+def test_actual_heat_index_is_classified_with_noaa_names_without_relabeling_tcm() -> None:
+    payload = _payload()
+    best_time = payload["best_time"]
+    assert isinstance(best_time, dict)
+    hourly = best_time["hourly"]
+    assert isinstance(hourly, list)
+    for entry in hourly:
+        assert isinstance(entry, dict)
+        entry["heat_index_celsius"] = 38
+
+    response = normalize_trip_analysis(payload, _request(), ExecutionMode.FIXTURE)
+
+    assert response.best_time is not None
+    interpretation = response.best_time.heat_interpretation
+    assert interpretation is not None
+    assert response.best_time.metric_label.value == "provider_tcm"
+    assert interpretation.metric.value == "heat_index_celsius"
+    assert interpretation.is_actual_heat_index is True
+    assert interpretation.noaa_heat_index_available is True
+    assert interpretation.band is HeatBand.EXTREME_CAUTION
+
+
+def test_cautious_best_time_uses_each_hours_actual_heat_index() -> None:
+    payload = _payload()
+    best_time = payload["best_time"]
+    assert isinstance(best_time, dict)
+    best_time["hourly"] = [
+        {"hour": 8, "value": 28.0, "heat_index_celsius": 34.0},
+        {"hour": 14, "value": 27.0, "heat_index_celsius": 25.0},
+        {"hour": 19, "value": 31.0, "heat_index_celsius": 24.0},
+    ]
+    best_time["recommendation_hour"] = 8
+
+    response = normalize_trip_analysis(
+        payload,
+        replace(_request(), cautious=True),
+        ExecutionMode.FIXTURE,
+    )
+
+    assert response.best_time is not None
+    assert response.best_time.recommendation_hour == 19
+    assert response.best_time.heat_interpretation is not None
+    assert response.best_time.heat_interpretation.value_celsius == 24
+    assert response.best_time.heat_interpretation.is_actual_heat_index is True
+
+
+def test_cautious_best_time_prefers_an_hour_below_the_earlier_action_threshold() -> None:
+    payload = _payload()
+    best_time = payload["best_time"]
+    assert isinstance(best_time, dict)
+    best_time["hourly"] = [
+        {"hour": 8, "value": 33.0},
+        {"hour": 14, "value": 38.0},
+        {"hour": 19, "value": 29.0},
+    ]
+    best_time["recommendation_hour"] = 8
+
+    response = normalize_trip_analysis(
+        payload,
+        replace(_request(), cautious=True),
+        ExecutionMode.FIXTURE,
+    )
+
+    assert response.best_time is not None
+    assert response.best_time.recommendation_hour == 19
+    assert response.best_time.heat_interpretation is not None
+    assert response.best_time.heat_interpretation.action_required is False
+
+
+def test_cautious_best_time_explains_lowest_value_fallback_when_all_hours_trigger_action() -> None:
+    payload = _payload()
+    best_time = payload["best_time"]
+    assert isinstance(best_time, dict)
+    best_time["hourly"] = [
+        {"hour": 8, "value": 34.0},
+        {"hour": 14, "value": 38.0},
+        {"hour": 19, "value": 32.0},
+    ]
+    best_time["recommendation_hour"] = 19
+
+    response = normalize_trip_analysis(
+        payload,
+        replace(_request(), cautious=True),
+        ExecutionMode.FIXTURE,
+    )
+
+    assert response.best_time is not None
+    assert response.best_time.recommendation_hour == 19
+    assert (
+        "all periods meet the earlier action threshold" in response.best_time.recommendation_reason
+    )
+
+
+def test_insufficient_confidence_shortest_route_fallback_overrides_cautious_optimization() -> None:
+    payload = _payload()
+    routes = payload["routes"]
+    assert isinstance(routes, dict)
+    routes["recommended_id"] = "short"
+    routes["confidence"] = Confidence.INSUFFICIENT.value
+    routes["fallback_reason"] = "insufficient route comparison confidence"
+    payload["degraded_reasons"] = {"routes": "insufficient route comparison confidence"}
+
+    response = normalize_trip_analysis(
+        payload,
+        replace(_request(), cautious=True),
+        ExecutionMode.FIXTURE,
+    )
+
+    assert response.routes is not None
+    assert response.routes.recommended_id == "short"
+    assert response.routes.fallback_reason == "insufficient route comparison confidence"
 
 
 def test_duplicate_hourly_evidence_is_rejected() -> None:

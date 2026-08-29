@@ -28,6 +28,7 @@ from app.domain.contracts import (
     TripAnalysisResponse,
     UnavailableResult,
 )
+from app.domain.heat_policy import classify_heat
 from app.services.sidecars import load_acquisition_record
 
 
@@ -145,7 +146,9 @@ def normalize_trip_analysis(
     _require_section_reason("routes", route_value, degraded_reasons)
 
     best_time = (
-        _best_time(_mapping(best_value, "best_time"), execution_mode, request.date)
+        _best_time(
+            _mapping(best_value, "best_time"), execution_mode, request.date, request.cautious
+        )
         if best_value is not None
         else None
     )
@@ -155,7 +158,7 @@ def normalize_trip_analysis(
         else None
     )
     routes = (
-        _routes(_mapping(route_value, "routes"), execution_mode, request.date)
+        _routes(_mapping(route_value, "routes"), execution_mode, request.date, request.cautious)
         if route_value is not None
         else None
     )
@@ -186,7 +189,10 @@ def normalize_trip_analysis(
 
 
 def _best_time(
-    best_payload: Mapping[str, object], execution_mode: ExecutionMode, request_date: str
+    best_payload: Mapping[str, object],
+    execution_mode: ExecutionMode,
+    request_date: str,
+    cautious: bool,
 ) -> BestTimeResult:
     best_provenance = _provenance(best_payload, execution_mode)
     if best_provenance.data_date != request_date:
@@ -201,28 +207,65 @@ def _best_time(
     hourly_payload = best_payload.get("hourly")
     if not isinstance(hourly_payload, list):
         raise ValueError("best_time.hourly must be a list")
+    hourly_items = tuple(_mapping(entry, "hourly entry") for entry in hourly_payload)
     hourly = tuple(
         HourlyEntry(
-            hour=_integer(_mapping(entry, "hourly entry")["hour"], "hour"),
+            hour=_integer(entry["hour"], "hour"),
             metric=Metric(
-                value=_number(_mapping(entry, "hourly entry")["value"], "hourly value"),
+                value=_number(entry["value"], "hourly value"),
                 unit=_string(best_payload["unit"], "unit"),
                 label=metric_label,
                 is_actual_heat_index=metric_name is HeatMetricName.HEAT_INDEX_CELSIUS,
             ),
         )
-        for entry in hourly_payload
+        for entry in hourly_items
     )
+    heat_index_by_hour = {
+        _integer(entry["hour"], "hour"): (
+            _number(entry["value"], "hourly value")
+            if metric_name is HeatMetricName.HEAT_INDEX_CELSIUS
+            else _optional_number(entry.get("heat_index_celsius"), "heat_index_celsius")
+        )
+        for entry in hourly_items
+    }
+    recommendation_hour = _integer(best_payload["recommendation_hour"], "recommendation_hour")
+    recommendation_value = next(
+        (entry.metric.value for entry in hourly if entry.hour == recommendation_hour), None
+    )
+    if cautious:
+        recommendation_hour = _cautious_hour(hourly, metric_name, heat_index_by_hour)
+        recommendation_value = next(
+            entry.metric.value for entry in hourly if entry.hour == recommendation_hour
+        )
+    selected_heat_index = heat_index_by_hour[recommendation_hour]
+    interpretation_metric = (
+        HeatMetricName.HEAT_INDEX_CELSIUS if selected_heat_index is not None else metric_name
+    )
+    interpretation_value = (
+        selected_heat_index if selected_heat_index is not None else recommendation_value
+    )
+    interpretation = classify_heat(
+        interpretation_value,
+        metric=interpretation_metric,
+        cautious=cautious,
+        noaa_heat_index_available=selected_heat_index is not None,
+    )
+    recommendation_reason = _string(best_payload["recommendation_reason"], "recommendation_reason")
+    if cautious:
+        recommendation_reason = (
+            "more cautious guidance selected the coolest period below the earlier action threshold"
+            if not interpretation.action_required
+            else "more cautious guidance selected the lowest available metric value; all periods meet the earlier action threshold"
+        )
 
     return BestTimeResult(
         hourly=hourly,
-        recommendation_hour=_integer(best_payload["recommendation_hour"], "recommendation_hour"),
-        recommendation_reason=_string(
-            best_payload["recommendation_reason"], "recommendation_reason"
-        ),
+        recommendation_hour=recommendation_hour,
+        recommendation_reason=recommendation_reason,
         metric_label=metric_label,
         provenance=best_provenance,
         hourly_coverage=_number(best_payload["hourly_coverage"], "hourly_coverage"),
+        heat_interpretation=interpretation,
     )
 
 
@@ -266,7 +309,10 @@ def _hotels(
 
 
 def _routes(
-    route_payload: Mapping[str, object], execution_mode: ExecutionMode, request_date: str
+    route_payload: Mapping[str, object],
+    execution_mode: ExecutionMode,
+    request_date: str,
+    cautious: bool,
 ) -> RouteComparisonResult:
     route_provenance = _provenance(route_payload, execution_mode)
     if route_provenance.data_date != request_date:
@@ -279,15 +325,37 @@ def _routes(
     heat_status = HeatStatus(_string(route_payload["heat_status"], "heat_status"))
     route_metric = HeatMetricName(_string(route_payload["heat_metric"], "heat_metric"))
     route_unit = _string(route_payload["heat_unit"], "heat_unit")
+    route_values = tuple(
+        _number(_mapping(item, "route alternative")["heat_value"], "heat_value")
+        for item in alternatives_payload
+    )
+    original_recommended_id = recommended_id
+    if cautious and confidence is Confidence.SUFFICIENT:
+        recommended_id = _cautious_route_id(
+            alternatives_payload, route_metric, route_values, recommended_id
+        )
+    recommendation_reason = _string(route_payload["reason"], "reason")
+    cautious_selected_route = cautious and recommended_id != original_recommended_id
+    if cautious_selected_route:
+        recommendation_reason = "cautious guidance selected the least-hot returned route"
     alternatives = tuple(
-        _route_option(item, recommended_id, route_metric, route_unit, heat_status, confidence)
+        _route_option(
+            item,
+            recommended_id,
+            route_metric,
+            route_unit,
+            heat_status,
+            confidence,
+            cautious,
+            cautious_selected_route,
+        )
         for item in alternatives_payload
     )
     fallback_reason = route_payload.get("fallback_reason")
     return RouteComparisonResult(
         alternatives=alternatives,
         recommended_id=recommended_id,
-        reason=_string(route_payload["reason"], "reason"),
+        reason=recommendation_reason,
         heat_status=heat_status,
         corridor_heat_value=_number(route_payload["corridor_heat_value"], "corridor_heat_value"),
         heat_metric=route_metric,
@@ -299,6 +367,11 @@ def _routes(
         fallback_reason=_string(fallback_reason, "fallback_reason")
         if fallback_reason is not None
         else None,
+        heat_interpretation=classify_heat(
+            _number(route_payload["corridor_heat_value"], "corridor_heat_value"),
+            metric=route_metric,
+            cautious=cautious,
+        ),
     )
 
 
@@ -309,6 +382,8 @@ def _route_option(
     unit: str,
     status: HeatStatus,
     confidence: Confidence,
+    cautious: bool,
+    cautious_selected_route: bool,
 ) -> RouteOption:
     item = _mapping(value, "route alternative")
     identity = _string(item["identity"], "route identity")
@@ -327,13 +402,82 @@ def _route_option(
         shade_confidence=confidence if shade is not None else None,
         building_coverage=_number(item["building_coverage"], "building_coverage"),
         recommended=identity == recommended_id,
-        recommendation_reason=_string(item["recommendation_reason"], "recommendation_reason")
-        if item.get("recommendation_reason") is not None
-        else None,
+        recommendation_reason=_route_recommendation_reason(
+            item,
+            recommended=identity == recommended_id,
+            confidence=confidence,
+            cautious_selected_route=cautious_selected_route,
+        ),
         shade_model_label="modeled shade estimate based on OSM building data"
         if shade is not None
         else None,
+        heat_interpretation=classify_heat(
+            _number(item["heat_value"], "heat_value"),
+            metric=metric,
+            cautious=cautious,
+        ),
     )
+
+
+def _route_recommendation_reason(
+    item: Mapping[str, object],
+    *,
+    recommended: bool,
+    confidence: Confidence,
+    cautious_selected_route: bool,
+) -> str | None:
+    if recommended and confidence is Confidence.INSUFFICIENT:
+        return "shortest-route fallback because route comparison confidence is insufficient"
+    if recommended and cautious_selected_route:
+        return "cautious guidance selected this returned route"
+    reason = item.get("recommendation_reason")
+    return _string(reason, "recommendation_reason") if reason is not None else None
+
+
+def _cautious_route_id(
+    alternatives: list[object],
+    metric: HeatMetricName,
+    values: tuple[float, ...],
+    original_recommended_id: str,
+) -> str:
+    """Choose the least-hot returned route when cautious guidance is requested."""
+    if not alternatives:
+        raise ValueError("routes.alternatives must not be empty")
+    ranked = min(
+        enumerate(alternatives),
+        key=lambda candidate: (
+            classify_heat(values[candidate[0]], metric=metric, cautious=True).action_required,
+            values[candidate[0]],
+            _string(_mapping(candidate[1], "route alternative")["identity"], "route identity")
+            != original_recommended_id,
+            _number(_mapping(candidate[1], "route alternative")["distance_m"], "distance_m"),
+        ),
+    )
+    return _string(_mapping(ranked[1], "route alternative")["identity"], "route identity")
+
+
+def _cautious_hour(
+    hourly: tuple[HourlyEntry, ...],
+    metric: HeatMetricName,
+    heat_index_by_hour: dict[int, float | None],
+) -> int:
+    """Prefer a period below the cautious action threshold, then the coolest one."""
+    return min(
+        hourly,
+        key=lambda entry: _hour_policy_sort_key(entry, metric, heat_index_by_hour),
+    ).hour
+
+
+def _hour_policy_sort_key(
+    entry: HourlyEntry,
+    metric: HeatMetricName,
+    heat_index_by_hour: dict[int, float | None],
+) -> tuple[bool, float, int]:
+    heat_index = heat_index_by_hour[entry.hour]
+    selected_value = heat_index if heat_index is not None else entry.metric.value
+    selected_metric = HeatMetricName.HEAT_INDEX_CELSIUS if heat_index is not None else metric
+    interpretation = classify_heat(selected_value, metric=selected_metric, cautious=True)
+    return interpretation.action_required, selected_value, entry.hour
 
 
 def _provenance(section: Mapping[str, object], execution_mode: ExecutionMode) -> Provenance:
@@ -383,6 +527,12 @@ def _number(value: object, field: str) -> float:
     if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
         raise ValueError(f"{field} must be a finite number")
     return float(value)
+
+
+def _optional_number(value: object, field: str) -> float | None:
+    if value is None:
+        return None
+    return _number(value, field)
 
 
 def _string(value: object, field: str) -> str:

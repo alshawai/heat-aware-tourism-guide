@@ -91,12 +91,38 @@ export type TripAnalysisResponse = {
   mode: "curated";
   execution_mode: ExecutionMode;
   state: "success" | "degraded" | "unavailable" | "error";
-  best_time: Record<string, unknown> | null;
+  best_time:
+    | ({ heat_interpretation?: HeatInterpretation } & Record<string, unknown>)
+    | null;
   hotels: Record<string, unknown> | null;
   routes: Record<string, unknown> | null;
   unavailable: { reason: string; recoverable: boolean } | null;
   degraded_reasons: Record<string, string> | null;
 };
+
+export type HeatInterpretation = {
+  metric: "tcm" | "heat_index_celsius";
+  value_celsius: number | null;
+  band: HeatBand | null;
+  band_label: string;
+  action_threshold_band: HeatBand | null;
+  guidance_policy: "standard" | "cautious";
+  is_actual_heat_index: boolean;
+  noaa_heat_index_available: boolean;
+  action_required: boolean;
+  policy_applied: string;
+};
+
+export type HeatBand =
+  | "below_caution"
+  | "caution"
+  | "extreme_caution"
+  | "danger"
+  | "extreme_danger"
+  | "provider_lower"
+  | "provider_moderate"
+  | "provider_higher"
+  | "provider_very_high";
 
 export type CuratedTripSetup = {
   date: string;
