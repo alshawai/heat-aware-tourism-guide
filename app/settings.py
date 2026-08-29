@@ -16,6 +16,8 @@ DEFAULT_OVERPASS_ENDPOINT = "https://overpass-api.de/api/interpreter"
 DEFAULT_OVERPASS_USER_AGENT = (
     "HeatAwareTourismGuide/0.1 (contact: https://github.com/alshawai/heat-aware-tourism-guide)"
 )
+DEFAULT_OSRM_BASE_URL = "https://routing.openstreetmap.de/routed-foot/route/v1"
+DEFAULT_OSRM_USER_AGENT = DEFAULT_OVERPASS_USER_AGENT
 _DEFAULT_ENV_FILE = Path(".env")
 
 
@@ -44,6 +46,25 @@ class FortyGuardAreaSettings:
 
 
 @dataclass(frozen=True)
+class OsrmSettings:
+    """Configuration for the validated FOSSGIS pedestrian route instance."""
+
+    base_url: str = DEFAULT_OSRM_BASE_URL
+    profile: str = "foot"
+    user_agent: str = DEFAULT_OSRM_USER_AGENT
+    timeout_seconds: float = 15.0
+    alternatives: bool = True
+    overview: str = "full"
+    geometries: str = "geojson"
+    steps: bool = False
+    provider_instance: str = "fossgis-routed-foot"
+    schema_version: str = "v1"
+    provider_config_version: str = "osrm-config-v1"
+    representative_distance_m: float = 1500.0
+    minimum_heat_coverage: float = 0.70
+
+
+@dataclass(frozen=True)
 class OverpassSettings:
     """Bounded hotel-discovery provider and district configuration."""
 
@@ -63,6 +84,7 @@ class AppSettings:
     polling: FortyGuardPollingSettings = FortyGuardPollingSettings()
     area: FortyGuardAreaSettings = FortyGuardAreaSettings()
     overpass: OverpassSettings = OverpassSettings()
+    osrm: OsrmSettings = OsrmSettings()
     call_budget: int | None = None
     ledger_path: Path | None = DEFAULT_LEDGER_PATH
 
@@ -194,8 +216,39 @@ def load_settings(
         polling=polling or _polling_from_env(merged),
         area=area or _area_from_env(merged),
         overpass=_overpass_from_env(merged),
+        osrm=_osrm_from_env(merged),
         call_budget=_call_budget_from_env(merged),
         ledger_path=_ledger_path_from_env(process_env, file_values),
+    )
+
+
+def _osrm_from_env(merged: Mapping[str, str]) -> OsrmSettings:
+    def positive_float(name: str, default: float) -> float:
+        raw = merged.get(name, "").strip()
+        if not raw:
+            return default
+        try:
+            value = float(raw)
+        except ValueError:
+            raise SettingsError(f"{name} must be a number") from None
+        if not math.isfinite(value) or value <= 0:
+            raise SettingsError(f"{name} must be positive")
+        return value
+
+    coverage = positive_float("ROUTE_MINIMUM_HEAT_COVERAGE", 0.70)
+    if coverage > 1:
+        raise SettingsError("ROUTE_MINIMUM_HEAT_COVERAGE must be at most 1")
+    return OsrmSettings(
+        base_url=merged.get("OSRM_BASE_URL", "").strip() or DEFAULT_OSRM_BASE_URL,
+        profile=merged.get("OSRM_PROFILE", "").strip() or "foot",
+        user_agent=merged.get("OSRM_USER_AGENT", "").strip() or DEFAULT_OSRM_USER_AGENT,
+        timeout_seconds=positive_float("OSRM_TIMEOUT_SECONDS", 15.0),
+        provider_instance=merged.get("OSRM_PROVIDER_INSTANCE", "").strip()
+        or "fossgis-routed-foot",
+        representative_distance_m=positive_float(
+            "ROUTE_REPRESENTATIVE_DISTANCE_M", 1500.0
+        ),
+        minimum_heat_coverage=coverage,
     )
 
 
