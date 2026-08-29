@@ -3,6 +3,10 @@ import { mockHotelRanking } from "../mocks/mockHotelRanking";
 import { mockTripAnalyze } from "../mocks/mockTripAnalyze";
 import type {
   ExecutionMode,
+  HotelRankRequest,
+  HotelRankResponse,
+  LocationSelection,
+  RequestOptions,
   TripAnalysisRequest,
   TripAnalysisResponse,
 } from "../types";
@@ -13,6 +17,23 @@ function isObject(value: unknown): value is Record<string, unknown> {
 
 function isResultSection(value: unknown) {
   return value === null || isObject(value);
+}
+
+function isHotelRankResponse(value: unknown): value is HotelRankResponse {
+  return (
+    isObject(value) &&
+    (value.state === "available" || value.state === "unavailable") &&
+    typeof value.district_name === "string" &&
+    (value.execution_mode === "fixture" || value.execution_mode === "live") &&
+    typeof value.discovered_count === "number" &&
+    typeof value.usable_count === "number" &&
+    isObject(value.components) &&
+    (value.ranking === null ||
+      (isObject(value.ranking) &&
+        isObject(value.ranking.weights) &&
+        typeof value.ranking.weight_label === "string" &&
+        Array.isArray(value.ranking.hotels)))
+  );
 }
 
 function validUnavailable(value: unknown) {
@@ -230,7 +251,33 @@ export const dataClient = {
     }
     return value;
   },
-  rankHotels: mockHotelRanking,
+  async rankHotels(
+    location: LocationSelection,
+    options: RequestOptions = {}
+  ): Promise<HotelRankResponse> {
+    // Explicit mock scenarios remain available for deterministic previews and tests.
+    if (options.mode !== undefined || options.scenario !== undefined) {
+      return mockHotelRanking(location, options);
+    }
+    const executionMode = await this.getHealth(options.signal);
+    const request: HotelRankRequest = {
+      // The current hotel flow is scoped to the canonical district AOI.
+      district_name: "Downtown San Antonio",
+      execution_mode: executionMode,
+    };
+    const value = await readJson(
+      await fetch("/api/hotels/rank", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(request),
+        signal: options.signal,
+      })
+    );
+    if (!isHotelRankResponse(value)) {
+      throw new Error("Invalid hotel ranking response");
+    }
+    return value;
+  },
   searchLocations(query: string) {
     const normalized = query.trim().toLowerCase();
     return scenarioLocations.filter(

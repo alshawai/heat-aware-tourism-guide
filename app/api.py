@@ -25,9 +25,16 @@ from app.domain.contracts import (
     TripMode,
 )
 from app.domain.ledger import BudgetExceededError
+from app.domain.hotel_heat_score import COMPONENTS, NeighbourhoodHeatScorer
+from app.domain.hotels import BoundingBox
 from app.integrations.fortyguard.contracts import AnalyticType, EnvParamsRequest, HeatmapRequest
 from app.integrations.fortyguard.errors import ProviderError
 from app.services.execution import EnvParamsExecution, HeatmapExecution, UnavailableError
+from app.services.hotel_heat_score import (
+    HotelHeatAnalysisOutcome,
+    HotelHeatAnalysisService,
+    build_fixture_hotel_heat_analysis_service,
+)
 
 
 def _result_json(result: Any) -> dict[str, object]:
@@ -154,6 +161,8 @@ def create_app(
     allow_live: bool = False,
     frontend_dist: Path | None = None,
     trip_adapter: TripAnalysisAdapter | None = None,
+    hotel_heat_analysis_service: HotelHeatAnalysisService | None = None,
+    district_aoi: BoundingBox = BoundingBox(29.421, -98.490, 29.429, -98.482),
 ) -> FastAPI:
     """Create the server-owned product API used by local runs and deployment."""
     configured_execution: HeatmapExecution = execution or HeatmapExecution(
@@ -161,6 +170,14 @@ def create_app(
     )
     configured_env_params: EnvParamsExecution = env_params_execution or EnvParamsExecution(
         fixture_path=fixture_path.parent / "env-params.json"
+    )
+    configured_hotel_analysis = (
+        hotel_heat_analysis_service
+        if hotel_heat_analysis_service is not None
+        else build_fixture_hotel_heat_analysis_service(
+            fixture_path.parent / "hotel-heat-analysis.json",
+            district_aoi=district_aoi,
+        )
     )
     app = FastAPI(title="Heat-Aware Tourism Guide")
 
@@ -235,6 +252,34 @@ def create_app(
                 trip_adapter=trip_adapter,
             )
         except (KeyError, TypeError, ValueError) as error:
+            raise _http_error(error) from error
+
+    @app.post("/api/hotels/rank")
+    def rank_hotels(body: dict[str, object]) -> dict[str, object]:
+        try:
+            allowed_fields = {"district_name", "execution_mode", "weights"}
+            unexpected = set(body) - allowed_fields
+            if unexpected:
+                raise ValueError(
+                    "unsupported hotel ranking fields: " + ", ".join(sorted(unexpected))
+                )
+            district_name = body.get("district_name")
+            if not isinstance(district_name, str) or not district_name.strip():
+                raise ValueError("district_name must be a non-empty string")
+            execution_mode = _execution_mode(body, allow_live=allow_live)
+            weights = _hotel_weights(body.get("weights"))
+            return _hotel_heat_result(
+                configured_hotel_analysis.analyze(district_name, execution_mode, weights=weights)
+            )
+        except (
+            BudgetExceededError,
+            KeyError,
+            TypeError,
+            ValueError,
+            OSError,
+            RuntimeError,
+            ProviderError,
+        ) as error:
             raise _http_error(error) from error
 
     if frontend_dist is not None and frontend_dist.is_dir():
@@ -391,3 +436,57 @@ def _finite_number(value: object, field: str) -> float:
     if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
         raise ValueError(f"{field} must be finite numeric")
     return float(value)
+
+
+def _hotel_weights(value: object) -> dict[str, float] | None:
+    if value is None:
+        return None
+    if not isinstance(value, dict) or any(not isinstance(key, str) for key in value):
+        raise ValueError("weights must be a JSON object")
+    weights = {key: _finite_number(item, f"weights.{key}") for key, item in value.items()}
+    # Use the domain validator so the API and local reranking have identical rules.
+    NeighbourhoodHeatScorer().score((), weights=weights)
+    return weights
+
+
+def _hotel_heat_result(outcome: HotelHeatAnalysisOutcome) -> dict[str, object]:
+    score = outcome.score
+    return {
+        "state": outcome.state.value,
+        "district_name": outcome.district_name,
+        "execution_mode": outcome.execution_mode.value,
+        "reason": outcome.reason,
+        "discovered_count": outcome.discovered_count,
+        "usable_count": outcome.usable_count,
+        "components": {
+            name: asdict(outcome.components[name])
+            for name in COMPONENTS
+            if name in outcome.components
+        },
+        "ranking": None
+        if score is None
+        else {
+            "weights": dict(score.weights),
+            "weight_label": score.weight_label,
+            "complete_candidate_count": score.complete_candidate_count,
+            "ranked_output": score.ranked_output,
+            "hotels": [
+                {
+                    "identity": asdict(hotel.identity),
+                    "name": hotel.name,
+                    "complete": hotel.complete,
+                    "relative_aggregate": hotel.relative_aggregate,
+                    "rank": hotel.rank,
+                    "relative_percentile": hotel.relative_percentile,
+                    "components": {
+                        component: {
+                            **asdict(hotel.components[component].assignment),
+                            "percentile": hotel.components[component].percentile,
+                        }
+                        for component in COMPONENTS
+                    },
+                }
+                for hotel in score.hotels
+            ],
+        },
+    }

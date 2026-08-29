@@ -3,18 +3,27 @@ import {
   Hotel as HotelIcon,
   SlidersHorizontal,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, Navigate, useNavigate, useParams } from "react-router-dom";
 import { useAppState } from "../../app/AppState";
 import {
   DegradedNotice,
   LocationPicker,
-  ProvenanceFooter,
   ResultProblem,
   ResultSkeleton,
 } from "../../components/Shared";
 import { dataClient } from "../../services/dataClient";
-import type { Hotel, ResultState } from "../../types";
+import type {
+  HotelComponentAssignment,
+  HotelComponentName,
+  HotelRankingHotel,
+  ResultState,
+} from "../../types";
+import {
+  HOTEL_COMPONENT_LABELS,
+  HOTEL_COMPONENTS,
+  rerankHotels,
+} from "./rerankHotels";
 
 export function HotelLocationScreen() {
   const navigate = useNavigate();
@@ -33,27 +42,52 @@ export function HotelLocationScreen() {
 
 function useHotelRequest() {
   const { hotelLocation, mode, ranking, setRanking } = useAppState();
+  const requestedLocation = useRef<string | null>(null);
+  const requestVersion = useRef(0);
   const [status, setStatus] = useState<ResultState>(
-    ranking ? (mode === "degraded" ? "degraded" : "success") : "loading"
+    ranking
+      ? ranking.state === "available"
+        ? "success"
+        : "degraded"
+      : "loading"
   );
   const load = useCallback(() => {
-    if (!hotelLocation) return;
+    const previewMode = new URLSearchParams(window.location.search).has(
+      "state"
+    );
+    const requestKey = hotelLocation
+      ? `${hotelLocation.id}:${previewMode ? mode : "api"}`
+      : null;
+    if (!hotelLocation || requestedLocation.current === requestKey) {
+      return;
+    }
+    const version = ++requestVersion.current;
+    requestedLocation.current = requestKey;
     setStatus("loading");
     dataClient
-      .rankHotels(hotelLocation, { mode })
+      .rankHotels(hotelLocation, previewMode ? { mode } : {})
       .then((value) => {
-        setRanking(value);
-        setStatus(
-          mode === "degraded"
-            ? "degraded"
-            : value.usableCount < 5
-              ? "degraded"
-              : "success"
-        );
+        if (requestVersion.current !== version) return;
+        const withPercentiles = value.ranking
+          ? rerankHotels(
+              value,
+              value.ranking.weights,
+              value.ranking.weight_label
+            )
+          : value;
+        setRanking(withPercentiles);
+        setStatus(value.state === "available" ? "success" : "degraded");
       })
-      .catch((error: Error & { code?: string }) =>
-        setStatus(error.code === "EMPTY" ? "empty" : "error")
-      );
+      .catch((error: Error & { code?: string }) => {
+        if (requestVersion.current !== version) return;
+        requestedLocation.current = null;
+        setStatus(error.code === "EMPTY" ? "empty" : "error");
+      })
+      .finally(() => {
+        if (requestVersion.current === version) {
+          requestedLocation.current = null;
+        }
+      });
   }, [hotelLocation, mode, setRanking]);
   useEffect(() => {
     if (!ranking) load();
@@ -61,31 +95,197 @@ function useHotelRequest() {
   return { status, ranking, load };
 }
 
-function HotelComponents({ hotel }: { hotel: Hotel }) {
+function formatValue(component: HotelComponentAssignment) {
+  return component.value === null
+    ? "Unavailable"
+    : `${component.value.toFixed(1)} ${component.unit === "C" ? "°C" : component.unit}`;
+}
+
+function HotelComponents({ hotel }: { hotel: HotelRankingHotel }) {
   return (
     <div className="component-list">
-      {hotel.components.map((component) => (
-        <div key={component.label}>
-          <span>{component.label}</span>
-          <strong>{component.value.toFixed(1)}</strong>
-        </div>
-      ))}
+      {HOTEL_COMPONENTS.map((name) => {
+        const component = hotel.components[name];
+        return (
+          <div key={name}>
+            <span>{HOTEL_COMPONENT_LABELS[name]}</span>
+            <strong>{formatValue(component)}</strong>
+            <small>
+              {component.percentile === null
+                ? "Not ranked"
+                : `${Math.round(component.percentile)}th component percentile`}
+            </small>
+          </div>
+        );
+      })}
     </div>
   );
 }
 
+function WeightEditor({
+  initialWeights,
+  onApply,
+}: {
+  initialWeights: Record<HotelComponentName, number>;
+  onApply: (weights: Record<HotelComponentName, number>) => void;
+}) {
+  const defaults = Object.fromEntries(
+    HOTEL_COMPONENTS.map((name) => [name, initialWeights[name] * 100])
+  ) as Record<HotelComponentName, number>;
+  const [weights, setWeights] = useState(defaults);
+  const total = HOTEL_COMPONENTS.reduce((sum, name) => sum + weights[name], 0);
+
+  function apply() {
+    if (total !== 100) return;
+    onApply(
+      Object.fromEntries(
+        HOTEL_COMPONENTS.map((name) => [name, weights[name] / 100])
+      ) as Record<HotelComponentName, number>
+    );
+  }
+
+  return (
+    <div className="weight-editor">
+      <div className="section-title">
+        <div>
+          <span>Local preferences</span>
+          <h2>Rerank the candidate set</h2>
+        </div>
+        <strong className={total === 100 ? "valid-total" : "invalid-total"}>
+          {total}% total
+        </strong>
+      </div>
+      {HOTEL_COMPONENTS.map((name) => (
+        <label key={name}>
+          <span>
+            <strong>{HOTEL_COMPONENT_LABELS[name]}</strong>
+            <small>Candidate-relative component percentile</small>
+          </span>
+          <input
+            aria-label={`${HOTEL_COMPONENT_LABELS[name]} weight`}
+            type="number"
+            min="0"
+            max="100"
+            value={weights[name]}
+            onChange={(event) =>
+              setWeights((current) => ({
+                ...current,
+                [name]: Math.max(0, Number(event.target.value)),
+              }))
+            }
+          />
+          <span>%</span>
+        </label>
+      ))}
+      <div className="weight-actions">
+        <button type="button" disabled={total !== 100} onClick={apply}>
+          Apply local weights
+        </button>
+        <button
+          className="secondary-button"
+          type="button"
+          onClick={() => {
+            setWeights(defaults);
+            onApply(initialWeights);
+          }}
+        >
+          Reset product defaults
+        </button>
+      </div>
+      {total !== 100 && (
+        <p className="validation-message" role="alert">
+          Weights must total 100% before reranking.
+        </p>
+      )}
+      <small>
+        Reranking uses cached component percentiles for every candidate and does
+        not request another provider analysis.
+      </small>
+    </div>
+  );
+}
+
+function EvidenceSummary({
+  ranking,
+}: {
+  ranking: NonNullable<ReturnType<typeof useHotelRequest>["ranking"]>;
+}) {
+  return (
+    <section className="evidence-summary" aria-labelledby="evidence-heading">
+      <div className="section-title">
+        <div>
+          <span>Shared district analyses</span>
+          <h2 id="evidence-heading">Component evidence</h2>
+        </div>
+      </div>
+      <div className="evidence-grid">
+        {HOTEL_COMPONENTS.map((name) => {
+          const component = ranking.components[name];
+          if (!component) return null;
+          return (
+            <article key={name}>
+              <h3>{HOTEL_COMPONENT_LABELS[name]}</h3>
+              <dl>
+                <div>
+                  <dt>Unit</dt>
+                  <dd>{component.unit === "C" ? "°C" : component.unit}</dd>
+                </div>
+                {component.threshold_celsius !== null && (
+                  <div>
+                    <dt>Threshold</dt>
+                    <dd>{component.threshold_celsius} °C</dd>
+                  </div>
+                )}
+                <div>
+                  <dt>Coverage</dt>
+                  <dd>
+                    {component.coverage === null
+                      ? "Not reported"
+                      : `${Math.round(component.coverage * 100)}%`}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Confidence</dt>
+                  <dd>{component.confidence ?? "Not reported"}</dd>
+                </div>
+                <div>
+                  <dt>Provenance</dt>
+                  <dd>{component.provenance ?? "Unavailable"}</dd>
+                </div>
+              </dl>
+              {component.provenance_details && (
+                <p>
+                  Data date:{" "}
+                  {String(component.provenance_details.data_date ?? "unknown")};
+                  source:{" "}
+                  {String(component.provenance_details.source ?? "unknown")}
+                </p>
+              )}
+              {component.caveats.map((caveat) => (
+                <p key={caveat}>{caveat}</p>
+              ))}
+              {component.missing_reason && <p>{component.missing_reason}</p>}
+            </article>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
 export function HotelRankingScreen() {
-  const { hotelLocation } = useAppState();
+  const { hotelLocation, setRanking } = useAppState();
   const { status, ranking, load } = useHotelRequest();
   if (!hotelLocation) return <Navigate to="/hotels/location" replace />;
+  const result = ranking?.ranking;
   return (
     <section className="screen result-screen">
       <div className="screen-heading compact">
         <span className="step-label">Hotel ranking</span>
-        <h1>{hotelLocation.name}</h1>
+        <h1>{ranking?.district_name ?? hotelLocation.name}</h1>
         <p>
-          Lower component values rank ahead under the displayed product
-          weighting.
+          Lower candidate-relative exposure ranks ahead. This is not an absolute
+          objective score.
         </p>
       </div>
       {status === "loading" && <ResultSkeleton rows={5} />}
@@ -96,47 +296,87 @@ export function HotelRankingScreen() {
         <>
           {status === "degraded" && (
             <DegradedNotice>
-              Fewer than five hotels or incomplete coverage makes this ranking
-              less representative.
+              {ranking.reason ??
+                "Coverage is insufficient for a representative ranking."}
             </DegradedNotice>
           )}
-          <article className="weights-summary">
-            <SlidersHorizontal size={20} />
-            <div>
-              <strong>Current weighting configuration</strong>
-              <p>
-                {Object.entries(ranking.weights)
-                  .map(([name, weight]) => `${name} ${weight}%`)
-                  .join(" · ")}
-              </p>
-            </div>
-          </article>
-          <div className="hotel-list">
-            {ranking.hotels.map((hotel, index) => (
-              <article className="hotel-card" key={hotel.id}>
-                <span className="rank-number">{index + 1}</span>
-                <div className="hotel-main">
-                  <div>
-                    <h2>{hotel.name}</h2>
-                    <p>
-                      {hotel.percentile}th percentile for lower modeled exposure
-                    </p>
-                    {hotel.tieLabel && (
-                      <span className="tie-chip">{hotel.tieLabel}</span>
-                    )}
-                  </div>
-                  <HotelComponents hotel={hotel} />
+          {result && (
+            <>
+              <article className="weights-summary">
+                <SlidersHorizontal size={20} />
+                <div>
+                  <strong>Current weighting: {result.weight_label}</strong>
+                  <p>
+                    {HOTEL_COMPONENTS.map(
+                      (name) =>
+                        `${HOTEL_COMPONENT_LABELS[name]} ${Math.round(result.weights[name] * 100)}%`
+                    ).join(" · ")}
+                  </p>
                 </div>
-                <Link
-                  aria-label={`View details for ${hotel.name}`}
-                  to={`/hotels/${hotel.id}`}
-                >
-                  <ArrowRight size={20} />
-                </Link>
               </article>
-            ))}
-          </div>
-          <ProvenanceFooter value={ranking.provenance} />
+              <WeightEditor
+                initialWeights={{
+                  night: 0.35,
+                  hot_hours: 0.25,
+                  persistence: 0.2,
+                  day: 0.2,
+                }}
+                onApply={(weights) =>
+                  setRanking(
+                    rerankHotels(
+                      ranking,
+                      weights,
+                      weights.night === 0.35 &&
+                        weights.hot_hours === 0.25 &&
+                        weights.persistence === 0.2 &&
+                        weights.day === 0.2
+                        ? "product defaults"
+                        : "custom"
+                    )
+                  )
+                }
+              />
+              <div className="hotel-list">
+                {result.hotels.map((hotel) => {
+                  const id = `${hotel.identity.object_type}-${hotel.identity.object_id}`;
+                  const tied =
+                    result.hotels.filter(
+                      (candidate) =>
+                        candidate.rank !== null && candidate.rank === hotel.rank
+                    ).length > 1;
+                  return (
+                    <article className="hotel-card" key={id}>
+                      <span className="rank-number">{hotel.rank ?? "–"}</span>
+                      <div className="hotel-main">
+                        <div>
+                          <h2>{hotel.name}</h2>
+                          <p>
+                            {hotel.relative_percentile === null ||
+                            hotel.relative_percentile === undefined
+                              ? "Unranked: incomplete component evidence"
+                              : `${Math.round(hotel.relative_percentile)}th percentile for lower modeled exposure`}
+                          </p>
+                          {tied && (
+                            <span className="tie-chip">
+                              Tied at this position
+                            </span>
+                          )}
+                        </div>
+                        <HotelComponents hotel={hotel} />
+                      </div>
+                      <Link
+                        aria-label={`View details for ${hotel.name}`}
+                        to={`/hotels/${id}`}
+                      >
+                        <ArrowRight size={20} />
+                      </Link>
+                    </article>
+                  );
+                })}
+              </div>
+            </>
+          )}
+          <EvidenceSummary ranking={ranking} />
         </>
       )}
     </section>
@@ -146,85 +386,85 @@ export function HotelRankingScreen() {
 export function HotelDetailScreen() {
   const { ranking } = useAppState();
   const { hotelId } = useParams();
-  const hotel = ranking?.hotels.find((candidate) => candidate.id === hotelId);
-  const defaults = ranking?.weights ?? {};
-  const [weights, setWeights] = useState(defaults);
-  if (!ranking) return <Navigate to="/hotels/results" replace />;
-  if (!hotel) return <Navigate to="/hotels/results" replace />;
-  const total = Object.values(weights).reduce((sum, value) => sum + value, 0);
-  const weightedValue = useMemo(
-    () =>
-      hotel.components.reduce(
-        (sum, component) =>
-          sum + component.value * ((weights[component.label] ?? 0) / 100),
-        0
-      ),
-    [hotel, weights]
+  const hotel = ranking?.ranking?.hotels.find(
+    (candidate) =>
+      `${candidate.identity.object_type}-${candidate.identity.object_id}` ===
+      hotelId
   );
+  if (!ranking || !hotel) return <Navigate to="/hotels/results" replace />;
   return (
     <section className="screen narrow-screen">
       <div className="screen-heading">
-        <span className="step-label">Hotel detail</span>
+        <span className="step-label">Hotel evidence</span>
         <h1>{hotel.name}</h1>
         <p>
-          {hotel.percentile}th percentile under the default product preferences.{" "}
-          {hotel.tieLabel}
+          {hotel.rank === null
+            ? "Unranked because component evidence is incomplete."
+            : `Rank ${hotel.rank} within this candidate set under ${ranking.ranking?.weight_label}.`}
         </p>
       </div>
       <article className="local-score">
         <HotelIcon size={25} />
         <div>
-          <span>Locally weighted comparison value</span>
-          <strong>{weightedValue.toFixed(1)}</strong>
+          <span>Relative aggregate</span>
+          <strong>
+            {hotel.relative_aggregate?.toFixed(3) ?? "Unavailable"}
+          </strong>
           <small>
-            Lower is better within this returned hotel set; this is not an
-            objective score.
+            Dimensionless percentile aggregate; no mixed-unit raw values are
+            summed.
           </small>
         </div>
       </article>
-      <div className="weight-editor">
-        <div className="section-title">
-          <div>
-            <span>Local preferences</span>
-            <h2>Adjust component weights</h2>
-          </div>
-          <strong className={total === 100 ? "valid-total" : "invalid-total"}>
-            {total}% total
-          </strong>
-        </div>
-        {hotel.components.map((component) => (
-          <label key={component.label}>
-            <span>
-              <strong>{component.label}</strong>
-              <small>Raw component value: {component.value.toFixed(1)}</small>
-            </span>
-            <input
-              type="number"
-              min="0"
-              max="100"
-              value={weights[component.label] ?? 0}
-              onChange={(event) =>
-                setWeights((current) => ({
-                  ...current,
-                  [component.label]: Number(event.target.value),
-                }))
-              }
-            />
-            <span>%</span>
-          </label>
-        ))}
-        <button
-          className="secondary-button"
-          type="button"
-          onClick={() => setWeights(defaults)}
-        >
-          Reset defaults
-        </button>
-        {total !== 100 && (
-          <p className="validation-message">
-            Weights must total 100% for a comparable result.
-          </p>
-        )}
+      <div className="assignment-evidence">
+        {HOTEL_COMPONENTS.map((name) => {
+          const component = hotel.components[name];
+          return (
+            <article key={name}>
+              <h2>{HOTEL_COMPONENT_LABELS[name]}</h2>
+              <strong>{formatValue(component)}</strong>
+              <dl>
+                <div>
+                  <dt>Assignment quality</dt>
+                  <dd>{component.quality.replaceAll("_", " ")}</dd>
+                </div>
+                <div>
+                  <dt>Tile resolution</dt>
+                  <dd>{component.tile_resolution_m} m</dd>
+                </div>
+                <div>
+                  <dt>Distance</dt>
+                  <dd>
+                    {component.distance_m === null
+                      ? "Not reported"
+                      : `${component.distance_m} m`}
+                  </dd>
+                </div>
+                {component.threshold_celsius !== null && (
+                  <div>
+                    <dt>Threshold</dt>
+                    <dd>{component.threshold_celsius} °C</dd>
+                  </div>
+                )}
+                <div>
+                  <dt>Coverage</dt>
+                  <dd>
+                    {component.coverage === null
+                      ? "Not reported"
+                      : `${Math.round(component.coverage * 100)}%`}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Provenance</dt>
+                  <dd>{component.provenance}</dd>
+                </div>
+              </dl>
+              {component.caveats?.map((caveat) => (
+                <p key={caveat}>{caveat}</p>
+              ))}
+            </article>
+          );
+        })}
       </div>
       <Link className="text-link" to="/hotels/results">
         Return to hotel ranking

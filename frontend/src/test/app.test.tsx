@@ -27,8 +27,11 @@ describe("mock data boundary", () => {
     const request = mockHotelRanking(scenarioLocations[1]);
     await vi.advanceTimersByTimeAsync(1400);
     const result = await request;
-    expect(result.usableCount).toBeLessThan(5);
-    expect(result.hotels.some((hotel) => hotel.tieLabel)).toBe(true);
+    expect(result.usable_count).toBeLessThan(5);
+    expect(result.ranking?.ranked_output).toBe(false);
+    expect(result.ranking?.hotels[0].components.night.tile_id).toBe(
+      result.ranking?.hotels[1].components.night.tile_id
+    );
     vi.useRealTimers();
   });
 });

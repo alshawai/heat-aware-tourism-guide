@@ -8,20 +8,29 @@ ledger, and execution from application settings.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 import json
 import logging
 from pathlib import Path
 from typing import Mapping, Sequence
 
 from fastapi import FastAPI
+from shapely.geometry.base import BaseGeometry
 
 from app.api import create_app
-from app.domain.contracts import TripAnalysisAdapter
+from app.domain.contracts import ExecutionMode, TripAnalysisAdapter
+from app.domain.hotel_heat_score import ComponentEvidence
+from app.domain.hotels import BoundingBox
 from app.domain.ledger import CreditLedger
 from app.domain.security import sanitize_payload
 from app.integrations.fortyguard.client import FortyGuardClient
+from app.integrations.fortyguard.contracts import (
+    AnalyticType,
+    HeatmapRequest,
+    normalize_heatmap_response,
+)
 from app.integrations.fortyguard.live import (
+    LiveAreaHeatmapAdapter,
     LiveEnvParamsAdapter,
     LiveFortyGuardTransport,
     LiveHeatmapAdapter,
@@ -30,6 +39,8 @@ from app.integrations.overpass.client import OverpassClient
 from app.integrations.overpass.transport import HttpOverpassTransport
 from app.services.cache import CacheService
 from app.services.hotel_discovery import HotelDiscoveryService
+from app.services.hotel_heat_score import HotelHeatAnalysisService
+from app.services.hotel_heat_score import build_fixture_hotel_heat_analysis_service
 from app.services.execution import EnvParamsExecution, HeatmapExecution
 from app.services.ledger_store import JsonlLedgerStore
 from app.services.trip_adapters import (
@@ -102,6 +113,121 @@ def build_hotel_discovery_service(
     )
 
 
+def build_live_hotel_heat_analysis_service(
+    settings: AppSettings,
+    *,
+    client: FortyGuardClient,
+    cache: CacheService | None = None,
+) -> HotelHeatAnalysisService:
+    """Compose four shared district analyses behind the hotel ranking boundary."""
+    discovery = build_hotel_discovery_service(settings, cache=cache)
+    district = settings.overpass.district_aoi
+    area = settings.area
+    adapter = LiveAreaHeatmapAdapter(
+        client,
+        polling=settings.polling,
+        buffer_m=area.buffer_m,
+        max_vertices=area.max_vertices,
+        use_bounding_box=area.use_bounding_box,
+    )
+    route = _bbox_route(district)
+
+    def load(component: str) -> ComponentEvidence:
+        analytic = (
+            AnalyticType.TCM
+            if component in {"night", "day"}
+            else (AnalyticType.EXCEEDANCE if component == "hot_hours" else AnalyticType.PERSISTENCE)
+        )
+        payload = adapter.load(
+            route,
+            analytic_type=analytic,
+            start_date=date.today(),
+            forecast=True,
+            threshold_celsius=35.0 if analytic is not AnalyticType.TCM else None,
+            direction="above" if analytic is not AnalyticType.TCM else None,
+            granularity=area.granularity,
+        )
+        result = normalize_heatmap_response(
+            payload.payload,
+            request=HeatmapRequest(
+                analytic,
+                sum(point[0] for point in route) / len(route),
+                sum(point[1] for point in route) / len(route),
+                date.today(),
+                True,
+                35.0 if analytic is not AnalyticType.TCM else None,
+                "above" if analytic is not AnalyticType.TCM else None,
+                area.granularity,
+            ),
+            retrieved_at=datetime.now(timezone.utc),
+            activity_id=payload.activity_id,
+            source="provider",
+            data_date=date.today().isoformat(),
+            transformations=payload.transformations,
+        )
+        units = "C" if analytic is AnalyticType.TCM else "hours"
+        caveats = (
+            (
+                "date-level TCM value; night window 00:00-05:00 is not a verified interval maximum; "
+                "night and day use the same date-level basis",
+            )
+            if component == "night"
+            else (
+                "date-level TCM value; day window 10:00-17:00 is not a verified interval maximum; "
+                "night and day use the same date-level basis",
+            )
+            if component == "day"
+            else ()
+        )
+        coverage = result.polygon_lookup(_bbox_geometry(district)).coverage
+        return ComponentEvidence(
+            component,
+            tuple(result._spatial_tiles()),
+            units,
+            35.0 if analytic is not AnalyticType.TCM else None,
+            "provider:fortyguard",
+            float(area.granularity),
+            coverage=coverage,
+            caveats=caveats,
+            provenance_details={
+                "source": result.provenance.source,
+                "retrieved_at": result.provenance.retrieved_at.isoformat(),
+                "data_date": result.provenance.data_date,
+                "stale": result.provenance.stale,
+                "forecast": result.provenance.forecast,
+                "activity_id": result.provenance.activity_id,
+                "transformations": [
+                    {"name": item.name, "version": item.version}
+                    for item in result.provenance.transformations
+                ],
+            },
+        )
+
+    return HotelHeatAnalysisService(
+        discovery.discover,
+        load,
+        aoi=_bbox_geometry(district),
+        supported_modes=frozenset({ExecutionMode.LIVE}),
+        district_name="Downtown San Antonio",
+    )
+
+
+def _bbox_route(bbox: BoundingBox) -> tuple[tuple[float, float], ...]:
+    return (
+        (bbox.south, bbox.west),
+        (bbox.south, bbox.east),
+        (bbox.north, bbox.east),
+        (bbox.north, bbox.west),
+        (bbox.south, bbox.west),
+    )
+
+
+def _bbox_geometry(bbox: BoundingBox) -> BaseGeometry:
+    from shapely.geometry import box
+
+    return box(bbox.west, bbox.south, bbox.east, bbox.north)
+
+
 def build_live_heatmap_execution(
     settings: AppSettings,
     *,
@@ -161,6 +287,7 @@ def create_production_app(
     env_params_fixture_path: Path | None = None,
     frontend_dist: Path | None = None,
     trip_adapter: TripAnalysisAdapter | None = None,
+    hotel_heat_analysis_service: HotelHeatAnalysisService | None = None,
 ) -> FastAPI:
     """Create the production app; misconfigured live mode fails fast at startup."""
     from app.settings import load_settings
@@ -203,6 +330,16 @@ def create_production_app(
                 lambda request: {"unavailable": "live trip adapter is not configured"}
             ),
         )
+    if hotel_heat_analysis_service is None:
+        if resolved.allow_live:
+            hotel_heat_analysis_service = build_live_hotel_heat_analysis_service(
+                resolved, client=client, cache=cache
+            )
+        else:
+            hotel_heat_analysis_service = build_fixture_hotel_heat_analysis_service(
+                heatmap_fixture.parent / "hotel-heat-analysis.json",
+                district_aoi=resolved.overpass.district_aoi,
+            )
     return create_app(
         heatmap_fixture,
         execution=execution,
@@ -210,4 +347,6 @@ def create_production_app(
         allow_live=resolved.allow_live,
         frontend_dist=dist,
         trip_adapter=trip_adapter,
+        hotel_heat_analysis_service=hotel_heat_analysis_service,
+        district_aoi=resolved.overpass.district_aoi,
     )

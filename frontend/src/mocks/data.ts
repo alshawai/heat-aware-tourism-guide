@@ -1,5 +1,7 @@
 import type {
-  HotelResponse,
+  HotelComponentName,
+  HotelRankResponse,
+  HotelRankingHotel,
   LocationSelection,
   MockMode,
   RequestOptions,
@@ -152,7 +154,7 @@ const makeTrip = (
 const makeHotels = (
   location: LocationSelection,
   few = false
-): HotelResponse => {
+): HotelRankResponse => {
   const names = [
     "Canopy House",
     "Civic Lantern",
@@ -161,51 +163,92 @@ const makeHotels = (
     "The Meridian",
     "Market House",
   ];
-  const values = few ? [31, 31, 44] : [24, 29, 35, 41, 48, 53];
+  const componentValues: Record<HotelComponentName, number[]> = {
+    night: few ? [27, 27, 31] : [25, 27, 29, 31, 33, 35],
+    hot_hours: few ? [5, 5, 8] : [9, 8, 7, 6, 5, 4],
+    persistence: few ? [3, 3, 5] : [6, 5, 4, 3, 2, 1],
+    day: few ? [38, 38, 41] : [34, 35, 36, 37, 38, 39],
+  };
+  const count = few ? 3 : 6;
+  const components = Object.fromEntries(
+    (["night", "hot_hours", "persistence", "day"] as const).map((component) => [
+      component,
+      {
+        component,
+        available: true,
+        unit: component === "night" || component === "day" ? "C" : "hours",
+        threshold_celsius:
+          component === "hot_hours" || component === "persistence" ? 35 : null,
+        provenance: "district fixture analysis",
+        coverage: few ? 0.72 : 0.94,
+        confidence: few ? "limited" : "limited",
+        caveats: ["Candidate-relative evidence; not an absolute heat score."],
+        missing_reason: null,
+      },
+    ])
+  ) as HotelRankResponse["components"];
   return {
-    location,
-    usableCount: values.length,
-    weights: {
-      "Night heat": 35,
-      "Hot hours": 25,
-      Persistence: 20,
-      "Day heat": 20,
+    state: few ? "unavailable" : "available",
+    district_name: location.name,
+    execution_mode: "fixture",
+    reason: few ? "insufficient_complete_hotels" : null,
+    discovered_count: count,
+    usable_count: count,
+    components,
+    ranking: {
+      weights: { night: 0.35, hot_hours: 0.25, persistence: 0.2, day: 0.2 },
+      weight_label: "product defaults",
+      complete_candidate_count: count,
+      ranked_output: !few,
+      hotels: Array.from({ length: count }, (_, index) => ({
+        identity: { object_type: "node" as const, object_id: index + 1 },
+        name: names[index],
+        complete: true,
+        relative_aggregate: few ? null : index / (count - 1),
+        rank: few ? null : index + 1,
+        components: Object.fromEntries(
+          (["night", "hot_hours", "persistence", "day"] as const).map(
+            (component) => {
+              const values = componentValues[component];
+              const value = values[index];
+              const unique = [...new Set(values)].sort((a, b) => a - b);
+              const percentile =
+                unique.length === 1
+                  ? 100
+                  : 100 * (1 - unique.indexOf(value) / (unique.length - 1));
+              return [
+                component,
+                {
+                  component,
+                  value,
+                  unit:
+                    component === "night" || component === "day"
+                      ? "C"
+                      : "hours",
+                  threshold_celsius:
+                    component === "hot_hours" || component === "persistence"
+                      ? 35
+                      : null,
+                  provenance: "district fixture analysis",
+                  tile_id:
+                    few && index < 2
+                      ? `${component}-tie`
+                      : `${component}-${index}`,
+                  tile_resolution_m: 80,
+                  quality: "containing_tile",
+                  distance_m: 0,
+                  coverage: few ? 0.72 : 0.94,
+                  caveats: [
+                    "Candidate-relative evidence; not an absolute heat score.",
+                  ],
+                  percentile,
+                },
+              ];
+            }
+          )
+        ) as HotelRankingHotel["components"],
+      })),
     },
-    provenance: {
-      source: "mock",
-      dataDate: "2026-08-23",
-      confidence: few ? "Moderate" : "High",
-      coverage: few
-        ? "3 usable hotels; below the preferred 5"
-        : "6 usable hotels",
-      note: "Weights are configurable product preferences, not scientific truth.",
-    },
-    hotels: values.map((value, index) => ({
-      id: `hotel-${index + 1}`,
-      name: names[index],
-      percentile: Math.round(100 - value * 1.2),
-      tieLabel: few && index < 2 ? "Tied at this position" : undefined,
-      latitude: location.latitude + index * 0.001,
-      longitude: location.longitude + index * 0.001,
-      components: [
-        { label: "Night heat", value, contribution: value * 0.35 },
-        {
-          label: "Hot hours",
-          value: value + 3,
-          contribution: (value + 3) * 0.25,
-        },
-        {
-          label: "Persistence",
-          value: value - 2,
-          contribution: (value - 2) * 0.2,
-        },
-        {
-          label: "Day heat",
-          value: value + 5,
-          contribution: (value + 5) * 0.2,
-        },
-      ],
-    })),
   };
 };
 
@@ -235,7 +278,7 @@ export function mockTripAnalyze(
 export function mockHotelRanking(
   location: LocationSelection,
   options: RequestOptions = {}
-): Promise<HotelResponse> {
+): Promise<HotelRankResponse> {
   return delayed(
     resolveMode(options),
     () => makeHotels(location, location.id === "civic"),

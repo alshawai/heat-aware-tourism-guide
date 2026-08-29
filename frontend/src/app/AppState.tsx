@@ -7,7 +7,7 @@ import {
 } from "react";
 import type {
   CuratedTripSetup,
-  HotelResponse,
+  HotelRankResponse,
   LocationSelection,
   MockMode,
   TripResponse,
@@ -19,7 +19,7 @@ type AppState = {
   walkDate: string;
   trip: TripResponse | null;
   hotelLocation: LocationSelection | null;
-  ranking: HotelResponse | null;
+  ranking: HotelRankResponse | null;
   mode: MockMode;
   tripAnalysis: TripAnalysisResponse | null;
   curatedTripSetup: CuratedTripSetup;
@@ -29,7 +29,7 @@ type AppContextValue = AppState & {
   setWalkDate: (value: string) => void;
   setTrip: (value: TripResponse | null) => void;
   setHotelLocation: (value: LocationSelection) => void;
-  setRanking: (value: HotelResponse | null) => void;
+  setRanking: (value: HotelRankResponse | null) => void;
   setMode: (value: MockMode) => void;
   setTripAnalysis: (value: TripAnalysisResponse | null) => void;
   setCuratedTripSetup: (value: CuratedTripSetup) => void;

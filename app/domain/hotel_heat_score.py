@@ -37,6 +37,9 @@ class ComponentEvidence:
     threshold_celsius: float | None
     provenance: str
     tile_resolution_m: float
+    coverage: float | None = None
+    caveats: tuple[str, ...] = ()
+    provenance_details: Mapping[str, object] | None = None
 
     def __post_init__(self) -> None:
         if self.component not in COMPONENTS:
@@ -53,6 +56,12 @@ class ComponentEvidence:
             raise ValueError("component evidence provenance is required")
         if not _finite_number(self.tile_resolution_m) or self.tile_resolution_m <= 0:
             raise ValueError("tile resolution must be finite and positive")
+        if self.coverage is not None and (
+            not _finite_number(self.coverage) or not 0 <= self.coverage <= 1
+        ):
+            raise ValueError("component evidence coverage must be between 0 and 1")
+        if any(not caveat.strip() for caveat in self.caveats):
+            raise ValueError("component evidence caveats must be non-empty")
 
 
 @dataclass(frozen=True)
@@ -68,6 +77,8 @@ class ComponentAssignment:
     tile_resolution_m: float
     quality: str
     distance_m: float | None
+    coverage: float | None = None
+    caveats: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -101,6 +112,7 @@ class ScoredHotel:
     complete: bool
     relative_aggregate: float | None
     rank: int | None
+    relative_percentile: float | None
 
 
 @dataclass(frozen=True)
@@ -149,6 +161,8 @@ class NeighbourhoodHeatScorer:
                     tile_resolution_m=item.tile_resolution_m,
                     quality=match.quality,
                     distance_m=match.distance_m,
+                    coverage=item.coverage,
+                    caveats=item.caveats,
                 )
             assignments.append(
                 HotelHeatAssignment(
@@ -210,8 +224,19 @@ class NeighbourhoodHeatScorer:
                     for index, candidate in enumerate(ordered_complete, start=1)
                     if aggregates[candidate.identity] == score
                 )
+            distinct_aggregates = sorted(set(aggregates.values()))
+            percentiles_by_identity = {
+                assignment.identity: 100.0
+                * (
+                    1.0
+                    - distinct_aggregates.index(aggregates[assignment.identity])
+                    / max(1, len(distinct_aggregates) - 1)
+                )
+                for assignment in ordered_complete
+            }
             ordered = ordered_complete + [item for item in assignments if not item.complete]
         else:
+            percentiles_by_identity = {}
             ordered = list(assignments)
 
         hotels = tuple(
@@ -230,6 +255,7 @@ class NeighbourhoodHeatScorer:
                 complete=assignment.complete,
                 relative_aggregate=aggregates.get(assignment.identity),
                 rank=ranks.get(assignment.identity),
+                relative_percentile=percentiles_by_identity.get(assignment.identity),
             )
             for assignment in ordered
         )
