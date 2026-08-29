@@ -202,9 +202,44 @@ function validRoutes(value: unknown) {
 }
 
 function validBestTime(value: unknown) {
-  return (
-    value === null ||
-    (isObject(value) && validHeatInterpretation(value.heat_interpretation))
+  if (value === null) return true;
+  if (
+    !isObject(value) ||
+    !validHeatInterpretation(value.heat_interpretation) ||
+    !Array.isArray(value.hourly) ||
+    typeof value.hourly_coverage !== "number" ||
+    typeof value.recommendation_hour !== "number" ||
+    typeof value.recommendation_reason !== "string" ||
+    !(
+      value.recommended_hour_tcm_celsius === null ||
+      typeof value.recommended_hour_tcm_celsius === "number"
+    ) ||
+    !isObject(value.provenance) ||
+    !(
+      value.environmental_concerns === null ||
+      Array.isArray(value.environmental_concerns)
+    )
+  ) {
+    return false;
+  }
+  return (value.environmental_concerns ?? []).every(
+    (profile) =>
+      isObject(profile) &&
+      typeof profile.hour === "number" &&
+      typeof profile.primary_thermal_value === "number" &&
+      ["tcm", "heat_index_celsius"].includes(
+        String(profile.primary_thermal_metric)
+      ) &&
+      Array.isArray(profile.concerns) &&
+      profile.concerns.every(
+        (concern) =>
+          isObject(concern) &&
+          typeof concern.parameter === "string" &&
+          typeof concern.available === "boolean" &&
+          ["none", "elevated", "high", "not_reported"].includes(
+            String(concern.concern_level)
+          )
+      )
   );
 }
 

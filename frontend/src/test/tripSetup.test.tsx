@@ -17,6 +17,30 @@ const successResponse = {
   environment: null,
   best_time: {
     hourly: [],
+    hourly_coverage: 1,
+    recommendation_hour: 9,
+    recommendation_reason: "coolest period with no environmental concerns",
+    metric_label: "provider_tcm",
+    recommended_hour_tcm_celsius: 29,
+    exceedance_hours: 4,
+    persistence_hours: 2,
+    framing_threshold_celsius: 35,
+    framing_direction: "above",
+    environmental_concerns: [],
+    provenance: {
+      source: "fixture",
+      data_date: "2026-08-23",
+      confidence: "sufficient",
+      retrieved_at: "2026-08-24T00:00:00Z",
+      transformation_version: "best-time-decision-v1",
+      provider: "fortyguard",
+      response_status: "completed",
+      request_configuration: { forecast: false },
+      fresh: true,
+      coverage: 1,
+      note: null,
+      activity_id: null,
+    },
     heat_interpretation: {
       metric: "tcm",
       value_celsius: 29,
@@ -102,6 +126,14 @@ describe("curated Trip Setup", () => {
       screen.getByText(/29.0 °C provider temperature metric/)
     ).toBeInTheDocument();
     expect(screen.getByText(/NOAA Heat Index unavailable/)).toBeInTheDocument();
+    expect(screen.getByText("Recommended visit: 09:00")).toBeInTheDocument();
+    expect(
+      screen.getByText("coolest period with no environmental concerns")
+    ).toBeInTheDocument();
+    expect(screen.getByText(/4.0 hours above 35.0 °C/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Fixture replay.*historical.*fresh/i)
+    ).toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(fetchMock).toHaveBeenNthCalledWith(1, "/health", expect.any(Object));
     expect(fetchMock).toHaveBeenNthCalledWith(

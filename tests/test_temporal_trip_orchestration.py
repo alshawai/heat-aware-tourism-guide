@@ -73,6 +73,23 @@ def _heatmap_payload() -> dict[str, object]:
     }
 
 
+def _framing_payload(value: float) -> dict[str, object]:
+    return {
+        "mode": "historical",
+        "features": [
+            {
+                "geometry": {"type": "Point", "coordinates": [-98.485833, 29.425833]},
+                "properties": {
+                    "id": "framing",
+                    "value": value,
+                    "unit": "hours",
+                    "valid_time": "2026-08-23T08:00:00-05:00",
+                },
+            }
+        ],
+    }
+
+
 def _env_payload() -> dict[str, object]:
     return {
         "metadata": {
@@ -101,6 +118,10 @@ def test_temporal_adapter_chains_one_heatmap_call_into_one_env_params_call(
 
     def load_heatmap(request: HeatmapRequest) -> Mapping[str, object]:
         heatmap_requests.append(request)
+        if request.analytic_type.value == "exceedance":
+            return _framing_payload(4.0)
+        if request.analytic_type.value == "persistence":
+            return _framing_payload(2.0)
         return _heatmap_payload()
 
     def load_environment(request: EnvParamsRequest) -> Mapping[str, object]:
@@ -114,7 +135,7 @@ def test_temporal_adapter_chains_one_heatmap_call_into_one_env_params_call(
 
     response = adapter.analyze(_request(), ExecutionMode.LIVE)
 
-    assert len(heatmap_requests) == 1
+    assert len(heatmap_requests) == 3
     assert len(env_requests) == 1
     heatmap_request = heatmap_requests[0]
     env_request = env_requests[0]
@@ -132,17 +153,26 @@ def test_temporal_adapter_chains_one_heatmap_call_into_one_env_params_call(
         env_request.end_hour,
     )
     assert env_request.temperature_anchor_celsius == 39.4
-    assert response.state is ResultState.SERIES_READY
-    assert response.environment is not None
-    assert response.environment.temperature_anchor_celsius == 39.4
-    assert response.environment.entries[0].heat_index_celsius is None
-    assert response.environment.entries[1].humidity_percent is None
-    assert response.best_time is None
+    assert response.state is ResultState.DEGRADED
+    assert response.environment is None
+    assert response.best_time is not None
+    assert response.best_time.recommendation_hour == 15
+    assert response.best_time.recommended_hour_tcm_celsius == 39.4
+    assert response.best_time.exceedance_hours == 4.0
+    assert response.best_time.persistence_hours == 2.0
+    assert response.best_time.framing_threshold_celsius == 35.0
+    assert response.best_time.framing_direction == "above"
+    assert response.best_time.environmental_concerns is not None
+    assert response.best_time.environmental_concerns[0].not_reported_count == 16
     assert response.hotels is None
     assert response.routes is None
-    assert response.environment.provenance.request_configuration["anchor_policy"] == (
+    assert response.best_time.provenance.request_configuration["anchor_policy"] == (
         "maximum_in_window_temperature_celsius"
     )
+    assert response.best_time.provenance.request_configuration["forecast"] is False
+    assert response.best_time.metric_label.value == "provider_tcm"
+    assert response.best_time.hourly[0].metric.label.value == "noaa_heat_index"
+    assert response.best_time.hourly[1].metric.label.value == "provider_tcm"
 
 
 def test_heatmap_unavailable_stops_before_env_params_call(tmp_path: Path) -> None:
@@ -192,11 +222,39 @@ def test_env_params_unavailable_returns_explicit_unavailable_after_one_call(
 
     response = adapter.analyze(_request(), ExecutionMode.LIVE)
 
-    assert heatmap_calls == 1
+    assert heatmap_calls == 3
     assert env_calls == 1
-    assert response.state is ResultState.UNAVAILABLE
-    assert response.unavailable is not None
-    assert "environmental-parameters" in response.unavailable.reason
+    assert response.state is ResultState.DEGRADED
+    assert response.best_time is not None
+    assert response.best_time.recommendation_hour == 9
+    assert "TCM-only fallback" in response.best_time.recommendation_reason
+    assert response.best_time.environmental_concerns is not None
+    assert all(
+        profile.not_reported_count == 17 for profile in response.best_time.environmental_concerns
+    )
+
+
+def test_framing_metrics_are_optional_when_their_calls_fail(tmp_path: Path) -> None:
+    def load_heatmap(request: HeatmapRequest) -> Mapping[str, object]:
+        if request.analytic_type.value != "tcm":
+            raise ConnectionError("framing unavailable")
+        return _heatmap_payload()
+
+    adapter = TemporalTripAnalysisAdapter(
+        HeatmapExecution(fixture_path=tmp_path / "heatmap.json", live_loader=load_heatmap),
+        EnvParamsExecution(
+            fixture_path=tmp_path / "env.json",
+            live_loader=lambda request: _env_payload(),
+        ),
+    )
+
+    response = adapter.analyze(_request(), ExecutionMode.LIVE)
+
+    assert response.state is ResultState.DEGRADED
+    assert response.best_time is not None
+    assert response.best_time.exceedance_hours is None
+    assert response.best_time.persistence_hours is None
+    assert response.best_time.recommendation_hour == 15
 
 
 def test_production_wiring_uses_temporal_adapter_for_live_trip_requests(
@@ -253,9 +311,10 @@ def test_production_wiring_uses_temporal_adapter_for_live_trip_requests(
 
     assert response.status_code == 200
     body: dict[str, Any] = response.json()
-    assert body["state"] == "series_ready"
-    assert body["environment"]["temperature_anchor_celsius"] == 39.4
-    assert body["best_time"] is None
+    assert body["state"] == "degraded"
+    assert body["environment"] is None
+    assert body["best_time"]["recommendation_hour"] == 15
+    assert body["best_time"]["recommended_hour_tcm_celsius"] == 39.4
 
 
 def test_trip_endpoint_maps_orchestration_budget_failure_to_503(tmp_path: Path) -> None:

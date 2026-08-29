@@ -2,8 +2,12 @@ import { AlertTriangle, CheckCircle2, Database, Radio } from "lucide-react";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useAppState } from "../app/AppState";
 import { dataClient } from "../services/dataClient";
-import type { ExecutionMode, TripAnalysisRequest } from "../types";
-import type { HeatInterpretation } from "../types";
+import type {
+  BestTimeResult,
+  ExecutionMode,
+  HeatInterpretation,
+  TripAnalysisRequest,
+} from "../types";
 
 const HOURS = Array.from({ length: 24 }, (_, hour) => hour);
 
@@ -44,6 +48,103 @@ function parameterUnit(name: string) {
   if (name.includes("elevation")) return "m";
   if (name.includes("index") || name.includes("temperature")) return "C";
   return "";
+}
+
+function BestTimeSummary({ result }: { result: BestTimeResult }) {
+  const configuration = result.provenance.request_configuration;
+  const dataMode = configuration.forecast === true ? "forecast" : "historical";
+  const source =
+    result.provenance.source === "fixture"
+      ? "Fixture replay"
+      : result.provenance.source === "cache"
+        ? "Cached data"
+        : "Provider data";
+  const freshness = result.provenance.fresh ? "fresh" : "stale";
+  const selected = result.environmental_concerns?.find(
+    (profile) => profile.hour === result.recommendation_hour
+  );
+
+  return (
+    <section aria-label="Best visit time">
+      <h3>
+        Recommended visit: {String(result.recommendation_hour).padStart(2, "0")}
+        :00
+      </h3>
+      <p>{result.recommendation_reason}</p>
+      <p>
+        {source}, {dataMode}, {freshness}. Data date:{" "}
+        {result.provenance.data_date}.
+      </p>
+      {result.exceedance_hours !== null &&
+        result.framing_threshold_celsius !== null && (
+          <p>
+            {result.exceedance_hours.toFixed(1)} hours{" "}
+            {result.framing_direction}{" "}
+            {result.framing_threshold_celsius.toFixed(1)} °C.
+          </p>
+        )}
+      {result.persistence_hours !== null &&
+        result.framing_threshold_celsius !== null && (
+          <p>
+            Longest stretch {result.framing_direction}{" "}
+            {result.framing_threshold_celsius.toFixed(1)} °C:{" "}
+            {result.persistence_hours.toFixed(1)} hours.
+          </p>
+        )}
+      {selected && (
+        <p>
+          Environmental profile: {selected.high_count} high,{" "}
+          {selected.elevated_count} elevated, {selected.not_reported_count} not
+          reported.
+        </p>
+      )}
+      {result.environmental_concerns && (
+        <div className="series-table-wrap">
+          <table className="series-table">
+            <caption>Hourly best-time evidence</caption>
+            <thead>
+              <tr>
+                <th scope="col">Time</th>
+                <th scope="col">Thermal metric</th>
+                <th scope="col">Environmental concerns</th>
+              </tr>
+            </thead>
+            <tbody>
+              {result.environmental_concerns.map((profile) => (
+                <tr key={profile.hour}>
+                  <th scope="row">
+                    {String(profile.hour).padStart(2, "0")}:00
+                  </th>
+                  <td>
+                    {profile.primary_thermal_value.toFixed(1)} °C{" "}
+                    {profile.primary_thermal_metric === "tcm"
+                      ? "provider TCM"
+                      : "NOAA Heat Index"}
+                  </td>
+                  <td>
+                    {profile.concerns
+                      .filter((concern) => concern.concern_level !== "none")
+                      .map(
+                        (concern) =>
+                          `${formatParameterName(concern.parameter)}: ${
+                            concern.available
+                              ? `${concern.concern_level} (${formatMetric(
+                                  concern.value,
+                                  concern.unit
+                                )})`
+                              : "not reported by provider"
+                          }`
+                      )
+                      .join("; ") || "None"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  );
 }
 
 export function TripSetupScreen() {
@@ -459,12 +560,12 @@ export function TripSetupScreen() {
             {(tripAnalysis.state === "success" ||
               tripAnalysis.state === "degraded") &&
               tripAnalysis.best_time && (
-                <HeatPolicySummary
-                  value={
-                    tripAnalysis.best_time.heat_interpretation as
-                      HeatInterpretation | undefined
-                  }
-                />
+                <>
+                  <BestTimeSummary result={tripAnalysis.best_time} />
+                  <HeatPolicySummary
+                    value={tripAnalysis.best_time.heat_interpretation}
+                  />
+                </>
               )}
             <button
               type="button"

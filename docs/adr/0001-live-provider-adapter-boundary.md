@@ -88,6 +88,10 @@ properties.
    behavior. Hotel, route, best-time, and comfort decisions remain outside
    this preparation stage.
 
+   **Superseded in part by ADR 0005:** issue #14 extends this adapter into the
+   best-time decision and adds optional exceedance/persistence calls. The
+   window, anchor, cache, and submit-once rules above remain current.
+
 ## Consequences
 
 - Issue #7's "resolve the transport/payload mismatch explicitly" lock is

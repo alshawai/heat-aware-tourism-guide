@@ -21,12 +21,18 @@ from app.domain.analysis import (
     join_polygon_to_tiles,
 )
 from app.domain.environment import TimeWindow
+from app.domain.environmental_parameters import (
+    ENVIRONMENT_PARAMETERS as DOMAIN_ENVIRONMENT_PARAMETERS,
+)
 from app.domain.provenance import Provenance, Transformation
 from app.domain.security import sanitize_payload
 from app.integrations.fortyguard.client import ActivityMetadata
 
 PROVIDER_CONFIG_VERSION = "fortyguard-config-v1"
 """Provider/request-construction semantics a response was produced under (ADR 0004)."""
+
+# Public integration alias retained for request construction and existing callers.
+ENVIRONMENT_PARAMETERS = DOMAIN_ENVIRONMENT_PARAMETERS
 
 
 class AnalyticType(str, Enum):
@@ -212,27 +218,6 @@ class AreaHeatmapRequest:
             "unit": self.unit,
             "unit_source": self.unit_source,
         }
-
-
-ENVIRONMENT_PARAMETERS = (
-    "heat_index_celsius",
-    "apparent_temperature_celsius",
-    "wet_bulb_temperature_celsius",
-    "relative_humidity_percent",
-    "precipitation_mm",
-    "cloud_cover_octas",
-    "elevation",
-    "air_quality:idx",
-    "air_quality_pm2p5:idx",
-    "air_quality_pm10:idx",
-    "air_quality_no2:idx",
-    "aqi_us_co",
-    "air_quality_o3:idx",
-    "air_quality_so2:idx",
-    "methane_ppb",
-    "co2_ppm",
-    "solar_irradiance",
-)
 
 
 @dataclass(frozen=True)
