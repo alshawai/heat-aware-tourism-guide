@@ -13,6 +13,7 @@ from app.domain.contracts import (
     TripAnalysisRequest,
     TripMode,
 )
+from app.domain.heat_policy import HeatBand, GuidancePolicy
 from app.services.trip_adapters import (
     FixtureTripAnalysisAdapter,
     LiveTripAnalysisAdapter,
@@ -199,6 +200,26 @@ def test_route_corridor_heat_unit_is_explicit_and_validated() -> None:
 
     with pytest.raises(ValueError, match="heat_unit"):
         normalize_trip_analysis(payload, _request(), ExecutionMode.FIXTURE)
+
+
+def test_cautious_request_records_one_band_earlier_policy_for_each_heat_section() -> None:
+    payload = _payload()
+    response = normalize_trip_analysis(
+        payload,
+        replace(_request(), cautious=True),
+        ExecutionMode.FIXTURE,
+    )
+
+    assert response.best_time is not None
+    assert response.routes is not None
+    best_policy = response.best_time.heat_interpretation
+    route_policy = response.routes.heat_interpretation
+    assert best_policy is not None
+    assert route_policy is not None
+    assert best_policy["guidance_policy"] is GuidancePolicy.CAUTIOUS
+    assert best_policy["policy_applied"] == "cautious_guidance_one_band_earlier"
+    assert best_policy["band"] is HeatBand.PROVIDER_MODERATE
+    assert route_policy["band"] is HeatBand.PROVIDER_HIGHER
 
 
 def test_duplicate_hourly_evidence_is_rejected() -> None:

@@ -3,6 +3,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useAppState } from "../app/AppState";
 import { dataClient } from "../services/dataClient";
 import type { ExecutionMode, TripAnalysisRequest } from "../types";
+import type { HeatInterpretation } from "../types";
 
 const HOURS = Array.from({ length: 24 }, (_, hour) => hour);
 
@@ -299,6 +300,14 @@ export function TripSetupScreen() {
                 <p>{tripAnalysis.unavailable?.reason}</p>
               </>
             )}
+            {tripAnalysis.state === "success" && tripAnalysis.best_time && (
+              <HeatPolicySummary
+                value={
+                  tripAnalysis.best_time.heat_interpretation as
+                    HeatInterpretation | undefined
+                }
+              />
+            )}
             <button
               type="button"
               className="secondary-button"
@@ -326,5 +335,25 @@ export function TripSetupScreen() {
         </section>
       )}
     </section>
+  );
+}
+
+function HeatPolicySummary({ value }: { value?: HeatInterpretation }) {
+  if (!value) return null;
+  return (
+    <div className="heat-policy-summary">
+      <strong>{value.band_label}</strong>
+      <p>
+        {value.value_celsius === null
+          ? "The selected Celsius metric is shown separately because NOAA Heat Index is unavailable."
+          : `${value.value_celsius.toFixed(1)} °C · ${value.is_actual_heat_index ? "NOAA Heat Index" : "provider temperature metric"}.`}
+      </p>
+      {value.guidance_policy === "cautious" && (
+        <small>
+          More cautious guidance selected; the action threshold is shifted one
+          band earlier.
+        </small>
+      )}
+    </div>
   );
 }

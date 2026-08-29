@@ -295,6 +295,7 @@ class BestTimeResult:
     metric_label: MetricLabel
     provenance: Provenance
     hourly_coverage: float = 1.0
+    heat_interpretation: dict[str, object] | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.metric_label, MetricLabel):
@@ -442,6 +443,7 @@ class RouteOption:
     recommended: bool
     recommendation_reason: str | None
     shade_model_label: str | None
+    heat_interpretation: dict[str, object] | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.heat_metric, HeatMetricName):
@@ -498,6 +500,7 @@ class RouteComparisonResult:
     comparison_scope: str
     provenance: Provenance
     fallback_reason: str | None = None
+    heat_interpretation: dict[str, object] | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.heat_metric, HeatMetricName):

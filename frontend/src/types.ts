@@ -91,11 +91,24 @@ export type TripAnalysisResponse = {
   mode: "curated";
   execution_mode: ExecutionMode;
   state: "success" | "degraded" | "unavailable" | "error";
-  best_time: Record<string, unknown> | null;
+  best_time:
+    | ({ heat_interpretation?: HeatInterpretation } & Record<string, unknown>)
+    | null;
   hotels: Record<string, unknown> | null;
   routes: Record<string, unknown> | null;
   unavailable: { reason: string; recoverable: boolean } | null;
   degraded_reasons: Record<string, string> | null;
+};
+
+export type HeatInterpretation = {
+  metric: "tcm" | "heat_index_celsius";
+  value_celsius: number | null;
+  band: string | null;
+  band_label: string;
+  action_band: string | null;
+  guidance_policy: "standard" | "cautious";
+  is_actual_heat_index: boolean;
+  policy_applied: string;
 };
 
 export type CuratedTripSetup = {

@@ -28,6 +28,7 @@ from app.domain.contracts import (
     TripAnalysisResponse,
     UnavailableResult,
 )
+from app.domain.heat_policy import HeatClassification, classify_heat
 from app.services.sidecars import load_acquisition_record
 
 
@@ -145,7 +146,9 @@ def normalize_trip_analysis(
     _require_section_reason("routes", route_value, degraded_reasons)
 
     best_time = (
-        _best_time(_mapping(best_value, "best_time"), execution_mode, request.date)
+        _best_time(
+            _mapping(best_value, "best_time"), execution_mode, request.date, request.cautious
+        )
         if best_value is not None
         else None
     )
@@ -155,7 +158,7 @@ def normalize_trip_analysis(
         else None
     )
     routes = (
-        _routes(_mapping(route_value, "routes"), execution_mode, request.date)
+        _routes(_mapping(route_value, "routes"), execution_mode, request.date, request.cautious)
         if route_value is not None
         else None
     )
@@ -186,7 +189,10 @@ def normalize_trip_analysis(
 
 
 def _best_time(
-    best_payload: Mapping[str, object], execution_mode: ExecutionMode, request_date: str
+    best_payload: Mapping[str, object],
+    execution_mode: ExecutionMode,
+    request_date: str,
+    cautious: bool,
 ) -> BestTimeResult:
     best_provenance = _provenance(best_payload, execution_mode)
     if best_provenance.data_date != request_date:
@@ -213,16 +219,27 @@ def _best_time(
         )
         for entry in hourly_payload
     )
+    recommendation_hour = _integer(best_payload["recommendation_hour"], "recommendation_hour")
+    recommendation_value = next(
+        (entry.metric.value for entry in hourly if entry.hour == recommendation_hour), None
+    )
 
     return BestTimeResult(
         hourly=hourly,
-        recommendation_hour=_integer(best_payload["recommendation_hour"], "recommendation_hour"),
+        recommendation_hour=recommendation_hour,
         recommendation_reason=_string(
             best_payload["recommendation_reason"], "recommendation_reason"
         ),
         metric_label=metric_label,
         provenance=best_provenance,
         hourly_coverage=_number(best_payload["hourly_coverage"], "hourly_coverage"),
+        heat_interpretation=_interpretation(
+            classify_heat(
+                recommendation_value,
+                metric=metric_name,
+                cautious=cautious,
+            )
+        ),
     )
 
 
@@ -266,7 +283,10 @@ def _hotels(
 
 
 def _routes(
-    route_payload: Mapping[str, object], execution_mode: ExecutionMode, request_date: str
+    route_payload: Mapping[str, object],
+    execution_mode: ExecutionMode,
+    request_date: str,
+    cautious: bool,
 ) -> RouteComparisonResult:
     route_provenance = _provenance(route_payload, execution_mode)
     if route_provenance.data_date != request_date:
@@ -280,7 +300,9 @@ def _routes(
     route_metric = HeatMetricName(_string(route_payload["heat_metric"], "heat_metric"))
     route_unit = _string(route_payload["heat_unit"], "heat_unit")
     alternatives = tuple(
-        _route_option(item, recommended_id, route_metric, route_unit, heat_status, confidence)
+        _route_option(
+            item, recommended_id, route_metric, route_unit, heat_status, confidence, cautious
+        )
         for item in alternatives_payload
     )
     fallback_reason = route_payload.get("fallback_reason")
@@ -299,6 +321,13 @@ def _routes(
         fallback_reason=_string(fallback_reason, "fallback_reason")
         if fallback_reason is not None
         else None,
+        heat_interpretation=_interpretation(
+            classify_heat(
+                _number(route_payload["corridor_heat_value"], "corridor_heat_value"),
+                metric=route_metric,
+                cautious=cautious,
+            )
+        ),
     )
 
 
@@ -309,6 +338,7 @@ def _route_option(
     unit: str,
     status: HeatStatus,
     confidence: Confidence,
+    cautious: bool,
 ) -> RouteOption:
     item = _mapping(value, "route alternative")
     identity = _string(item["identity"], "route identity")
@@ -333,7 +363,20 @@ def _route_option(
         shade_model_label="modeled shade estimate based on OSM building data"
         if shade is not None
         else None,
+        heat_interpretation=_interpretation(
+            classify_heat(
+                _number(item["heat_value"], "heat_value"),
+                metric=metric,
+                cautious=cautious,
+            )
+        ),
     )
+
+
+def _interpretation(value: HeatClassification) -> dict[str, object]:
+    from dataclasses import asdict
+
+    return dict(asdict(value))
 
 
 def _provenance(section: Mapping[str, object], execution_mode: ExecutionMode) -> Provenance:
