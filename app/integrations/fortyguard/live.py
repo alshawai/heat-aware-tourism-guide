@@ -14,11 +14,12 @@ from time import sleep as default_sleep
 from typing import Callable, Mapping, Sequence
 
 from pyproj import CRS, Transformer
-from shapely.geometry import LineString, Polygon, mapping as shapely_mapping
+from shapely.geometry import LineString, Polygon, mapping as shapely_mapping, shape
 from shapely.geometry.base import BaseGeometry
 from shapely.ops import transform as shapely_ops_transform
 
 from app.domain.environment import TimeWindow
+from app.domain.route_heat import SharedRouteHeatRequest
 from app.domain.provenance import Transformation
 from app.integrations.fortyguard.client import ActivityMetadata, FortyGuardClient
 from app.integrations.fortyguard.contracts import (
@@ -503,6 +504,45 @@ def build_documented_area_heatmap_payload(
     return payload
 
 
+def build_documented_shared_route_heat_payload(
+    request: SharedRouteHeatRequest, *, today: date | None = None
+) -> dict[str, object]:
+    """Build one selected-hour TCM payload for a shared returned-route AOI."""
+    current = date.today() if today is None else today
+    _validate_documented_window(
+        start_date=request.start_date, forecast=request.forecast, today=current
+    )
+    return {
+        "polygon_aoi": {
+            "type": "FeatureCollection",
+            "features": [
+                {
+                    "type": "Feature",
+                    "properties": {},
+                    "geometry": dict(request.geometry),
+                }
+            ],
+        },
+        "date_time": {
+            "start_date": request.start_date.isoformat(),
+            "filter_type": 1,
+            "start_time": f"{request.hour:02d}:00",
+        },
+        "granularity": request.granularity,
+        "analytic_type": AnalyticType.TCM.value,
+    }
+
+
+def shared_route_request_transformations() -> tuple[Transformation, ...]:
+    """Inference stamps for one selected-hour, multi-route bounding AOI."""
+    return (
+        Transformation("live_envelope_unwrapped", 1),
+        Transformation("multi_route_bounding_aoi", 1),
+        Transformation("valid_time_from_request", 2),
+        Transformation("tcm_unit_celsius", 1),
+    )
+
+
 def area_request_transformations(analytic_type: AnalyticType) -> tuple[Transformation, ...]:
     """The inference stamps every live area heatmap result carries (ADR 0002).
 
@@ -518,6 +558,54 @@ def area_request_transformations(analytic_type: AnalyticType) -> tuple[Transform
     if analytic_type is AnalyticType.TCM:
         stamps.append(Transformation("tcm_unit_celsius", 1))
     return tuple(stamps)
+
+
+class LiveSharedRouteHeatAdapter:
+    """Submits exactly one selected-hour heat activity for a shared route AOI."""
+
+    def __init__(
+        self,
+        client: FortyGuardClient,
+        *,
+        today: Callable[[], date] = date.today,
+        polling: FortyGuardPollingSettings | None = None,
+        sleep: Callable[[float], None] | None = None,
+    ) -> None:
+        self._client = client
+        self._today = today
+        self._polling = polling or FortyGuardPollingSettings()
+        self._sleep = sleep
+
+    def load(self, request: SharedRouteHeatRequest) -> LiveHeatmapPayload:
+        payload = build_documented_shared_route_heat_payload(
+            request, today=self._today()
+        )
+        result, metadata = self._client.submit_and_poll(
+            "/v1/heatmap",
+            payload,
+            sleep=self._sleep or default_sleep,
+            max_polls=self._polling.max_polls,
+            interval_seconds=self._polling.interval_seconds,
+            status_404_grace_checks=self._polling.status_404_grace_checks,
+        )
+        centroid = shape(dict(request.geometry)).centroid
+        translation_request = HeatmapRequest(
+            analytic_type=AnalyticType.TCM,
+            latitude=centroid.y,
+            longitude=centroid.x,
+            start_date=request.start_date,
+            forecast=request.forecast,
+            granularity=request.granularity,
+            start_hour=request.hour,
+            end_hour=request.hour + 1,
+        )
+        translated = translate_heatmap_response(result, request=translation_request)
+        return LiveHeatmapPayload(
+            translated,
+            metadata.activity_id,
+            shared_route_request_transformations(),
+            metadata,
+        )
 
 
 class LiveAreaHeatmapAdapter:
