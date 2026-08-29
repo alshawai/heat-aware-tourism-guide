@@ -14,6 +14,7 @@ from app.integrations.fortyguard.live import LiveEnvParamsPayload
 from app.services.execution import EnvParamsExecution, HeatmapExecution
 from app.settings import AppSettings, FortyGuardPollingSettings, SettingsError
 from app.wiring import (
+    build_hotel_discovery_service,
     build_live_env_params_execution,
     build_live_heatmap_execution,
     create_production_app,
@@ -182,6 +183,16 @@ def test_build_live_stack_requires_api_key() -> None:
         build_live_heatmap_execution(settings, fixture_path=FIXTURES / "heatmap-historical.json")
     with pytest.raises(SettingsError, match="FORTYGUARD_API_KEY"):
         build_live_env_params_execution(settings, fixture_path=FIXTURES / "env-params.json")
+
+
+def test_build_hotel_discovery_service_uses_configured_overpass_policy() -> None:
+    settings = AppSettings(
+        allow_live=False,
+        fortyguard_api_key=None,
+        fortyguard_base_url="https://api.example.test",
+    )
+    service = build_hotel_discovery_service(settings)
+    assert service.district_aoi == settings.overpass.district_aoi
 
 
 def test_json_event_sink_emits_sanitized_json_log_records(caplog: pytest.LogCaptureFixture) -> None:
