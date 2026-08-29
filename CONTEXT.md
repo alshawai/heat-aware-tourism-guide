@@ -66,9 +66,15 @@ directly.
   never a real 24-hour forecast; results carry the standing warning.
 - **Env-params series** — Environmental parameters normalized as per-hour
   entries (`valid_time`, nullable metric values) aligned with the provider's
-  `metadata.timestamps`. Missing values stay `None`, never zero. Temporal trip
-  preparation returns this raw series as `series_ready`; it does not classify
-  heat or recommend a visit time.
+  `metadata.timestamps`. Missing values stay `None`, never zero. The best-time
+  decision reuses this series without another provider request.
+- **Environmental concern profile** — The per-hour assessment of all requested
+  provider parameters against declared NOAA, EPA, physiological, and product
+  thresholds. Missing parameters are reported as `not_reported`, never assumed
+  safe, and do not count against an hour during best-time selection.
+- **Framing threshold** — The product-declared 35°C threshold used for
+  exceedance and persistence heatmap calls. It is visible in provenance with
+  its `above` direction and is not presented as a NOAA boundary.
 - **Submit-once** — The billable-submission rule: one POST per
   `submit_and_poll`; transient failures are retried as status GETs only
   (ADR 0003). Transport retries never resubmit billable work.

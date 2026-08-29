@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import math
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 from typing import Callable, Mapping
 
@@ -34,6 +34,7 @@ from app.domain.contracts import (
     UnavailableResult,
 )
 from app.domain.environment import select_anchor_celsius
+from app.domain.best_time import HourlyConcernProfile, assess_hour, select_best_time
 from app.domain.heat_policy import classify_heat
 from app.integrations.fortyguard.contracts import (
     AnalyticType,
@@ -48,6 +49,10 @@ from app.services.execution import (
     UnavailableError,
 )
 from app.services.sidecars import load_acquisition_record
+
+
+FRAMING_THRESHOLD_CELSIUS = 35.0
+FRAMING_DIRECTION = "above"
 
 
 class FixtureTripAnalysisAdapter:
@@ -112,7 +117,7 @@ class LiveTripAnalysisAdapter:
 
 
 class TemporalTripAnalysisAdapter:
-    """Chain one ranged point heatmap into one ranged environment request."""
+    """Build the best-time decision from one reusable landmark series."""
 
     def __init__(
         self,
@@ -148,6 +153,12 @@ class TemporalTripAnalysisAdapter:
         try:
             heatmap = self.heatmap_execution.run(heatmap_request, live=True)
             anchor = select_anchor_celsius(heatmap.tiles, request.window)
+        except (UnavailableError, ValueError) as error:
+            return _unavailable_response(request, execution_mode, str(error))
+
+        environment: EnvironmentSeriesResult | None = None
+        environment_failure: str | None = None
+        try:
             env_request = EnvParamsRequest(
                 latitude=heatmap_request.latitude,
                 longitude=heatmap_request.longitude,
@@ -159,14 +170,221 @@ class TemporalTripAnalysisAdapter:
             outcome = self.env_params_execution.run(env_request, live=True)
             environment = _environment_result(request, anchor, heatmap, outcome)
         except (UnavailableError, ValueError) as error:
+            environment_failure = str(error)
+
+        exceedance_hours = self._framing_value(heatmap_request, AnalyticType.EXCEEDANCE)
+        persistence_hours = self._framing_value(heatmap_request, AnalyticType.PERSISTENCE)
+        try:
+            best_time = _best_time_result(
+                request,
+                heatmap,
+                environment,
+                environment_failure=environment_failure,
+                exceedance_hours=exceedance_hours,
+                persistence_hours=persistence_hours,
+            )
+        except ValueError as error:
             return _unavailable_response(request, execution_mode, str(error))
         return TripAnalysisResponse(
             request_identity=_request_identity(request),
             mode=request.mode,
             execution_mode=execution_mode,
-            state=ResultState.SERIES_READY,
-            environment=environment,
+            state=ResultState.DEGRADED,
+            best_time=best_time,
+            degraded_reasons={
+                "hotels": "hotel ranking is not implemented on the temporal live path",
+                "routes": "route comparison is not implemented on the temporal live path",
+            },
         )
+
+    def _framing_value(
+        self, tcm_request: HeatmapRequest, analytic_type: AnalyticType
+    ) -> float | None:
+        request = HeatmapRequest(
+            analytic_type=analytic_type,
+            latitude=tcm_request.latitude,
+            longitude=tcm_request.longitude,
+            start_date=tcm_request.start_date,
+            forecast=tcm_request.forecast,
+            threshold_celsius=FRAMING_THRESHOLD_CELSIUS,
+            direction=FRAMING_DIRECTION,
+            start_hour=tcm_request.start_hour,
+            end_hour=tcm_request.end_hour,
+        )
+        try:
+            result = self.heatmap_execution.run(request, live=True)
+        except (UnavailableError, ValueError):
+            return None
+        return max((tile.metric_value for tile in result.tiles), default=None)
+
+
+def _best_time_result(
+    request: TripAnalysisRequest,
+    heatmap: HeatmapResult,
+    environment: EnvironmentSeriesResult | None,
+    *,
+    environment_failure: str | None,
+    exceedance_hours: float | None,
+    persistence_hours: float | None,
+) -> BestTimeResult:
+    tcm_by_hour = {
+        hour: max(
+            tile.value_celsius
+            for tile in heatmap.tiles
+            if tile.valid_time.hour == hour and tile.value_celsius is not None
+        )
+        for hour in request.window.hours
+        if any(
+            tile.valid_time.hour == hour and tile.value_celsius is not None
+            for tile in heatmap.tiles
+        )
+    }
+    if not tcm_by_hour:
+        raise ValueError("no TCM values are available in the traveler window")
+    parameters_by_hour = (
+        {entry.valid_time.hour: entry.parameters for entry in environment.entries}
+        if environment is not None
+        else {}
+    )
+    profiles = tuple(
+        assess_hour(
+            hour,
+            tcm_celsius=tcm,
+            parameters=parameters_by_hour.get(hour, {}),
+        )
+        for hour, tcm in sorted(tcm_by_hour.items())
+    )
+    decision = select_best_time(profiles, cautious=request.cautious)
+    hourly = tuple(
+        HourlyEntry(
+            hour=profile.hour,
+            metric=Metric(
+                value=profile.primary_thermal_value,
+                unit="C",
+                label=(
+                    MetricLabel.NOAA_HEAT_INDEX
+                    if profile.primary_thermal_metric is HeatMetricName.HEAT_INDEX_CELSIUS
+                    else MetricLabel.PROVIDER_TCM
+                ),
+                is_actual_heat_index=(
+                    profile.primary_thermal_metric is HeatMetricName.HEAT_INDEX_CELSIUS
+                ),
+            ),
+        )
+        for profile in profiles
+    )
+    provenance = (
+        environment.provenance
+        if environment is not None
+        else _heatmap_product_provenance(request, heatmap)
+    )
+    provenance = _best_time_provenance(
+        provenance,
+        profiles,
+        heatmap=heatmap,
+        exceedance_hours=exceedance_hours,
+        persistence_hours=persistence_hours,
+    )
+    reason = decision.reason
+    if environment_failure is not None:
+        reason = f"TCM-only fallback because environmental parameters are unavailable; {reason}"
+    selected_label = next(entry.metric.label for entry in hourly if entry.hour == decision.hour)
+    return BestTimeResult(
+        hourly=hourly,
+        recommendation_hour=decision.hour,
+        recommendation_reason=reason,
+        metric_label=selected_label,
+        provenance=provenance,
+        hourly_coverage=len(hourly) / 24,
+        heat_interpretation=classify_heat(
+            decision.profile.primary_thermal_value,
+            metric=decision.profile.primary_thermal_metric,
+            cautious=request.cautious,
+        ),
+        environmental_concerns=profiles,
+        recommended_hour_tcm_celsius=tcm_by_hour[decision.hour],
+        exceedance_hours=exceedance_hours,
+        persistence_hours=persistence_hours,
+        framing_threshold_celsius=FRAMING_THRESHOLD_CELSIUS,
+        framing_direction=FRAMING_DIRECTION,
+    )
+
+
+def _best_time_provenance(
+    provenance: Provenance,
+    profiles: tuple[HourlyConcernProfile, ...],
+    *,
+    heatmap: HeatmapResult,
+    exceedance_hours: float | None,
+    persistence_hours: float | None,
+) -> Provenance:
+    configuration = dict(provenance.request_configuration)
+    configuration.update(
+        {
+            "framing_threshold_celsius": FRAMING_THRESHOLD_CELSIUS,
+            "framing_direction": FRAMING_DIRECTION,
+            "exceedance_available": exceedance_hours is not None,
+            "persistence_available": persistence_hours is not None,
+            "environment_parameter_count": len(profiles[0].concerns),
+            "reported_parameter_observations": sum(
+                len(profile.concerns) - profile.not_reported_count for profile in profiles
+            ),
+            "not_reported_parameter_observations": sum(
+                profile.not_reported_count for profile in profiles
+            ),
+            "tcm_source": heatmap.provenance.source,
+            "environment_source": provenance.source,
+        }
+    )
+    return Provenance(
+        source=(
+            heatmap.provenance.source
+            if heatmap.provenance.source != "provider"
+            else provenance.source
+        ),
+        data_date=provenance.data_date,
+        confidence=provenance.confidence,
+        retrieved_at=provenance.retrieved_at,
+        transformation_version="best-time-decision-v1",
+        provider=provenance.provider,
+        response_status=provenance.response_status,
+        request_configuration=configuration,
+        fresh=provenance.fresh and not heatmap.provenance.stale,
+        coverage=provenance.coverage,
+        note=provenance.note,
+        activity_id=provenance.activity_id,
+    )
+
+
+def _heatmap_product_provenance(request: TripAnalysisRequest, heatmap: HeatmapResult) -> Provenance:
+    provider_provenance = heatmap.provenance
+    retrieved_at = provider_provenance.retrieved_at
+    if not isinstance(retrieved_at, datetime):
+        raise ValueError("heatmap provenance retrieval time is incomplete")
+    return Provenance(
+        source=provider_provenance.source,
+        data_date=provider_provenance.data_date,
+        confidence=Confidence.SUFFICIENT,
+        retrieved_at=retrieved_at.isoformat(),
+        transformation_version="best-time-decision-v1",
+        provider="fortyguard",
+        response_status="completed",
+        request_configuration={
+            "latitude": request.destination.latitude,
+            "longitude": request.destination.longitude,
+            "start_date": request.date,
+            "start_hour": request.start_hour,
+            "end_hour": request.end_hour,
+            "anchor_policy": "maximum_in_window_temperature_celsius",
+            "forecast": provider_provenance.forecast,
+            "heatmap_transformations": [
+                {"name": transformation.name, "version": transformation.version}
+                for transformation in provider_provenance.transformations
+            ],
+        },
+        fresh=not provider_provenance.stale,
+        activity_id=provider_provenance.activity_id,
+    )
 
 
 def _environment_result(
@@ -205,6 +423,15 @@ def _environment_result(
             "anchor_policy": "maximum_in_window_temperature_celsius",
             "heatmap_source": heatmap.provenance.source,
             "heatmap_activity_id": heatmap.provenance.activity_id,
+            "forecast": heatmap.provenance.forecast,
+            "heatmap_transformations": [
+                {"name": transformation.name, "version": transformation.version}
+                for transformation in heatmap.provenance.transformations
+            ],
+            "environment_transformations": [
+                {"name": transformation.name, "version": transformation.version}
+                for transformation in outcome.transformations
+            ],
         },
         fresh=not heatmap.provenance.stale and not outcome.stale,
         activity_id=outcome.activity_id,

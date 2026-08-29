@@ -146,6 +146,50 @@ export type EnvironmentSeriesResult = {
   provenance: ApiProvenance;
 };
 
+export type ParameterConcern = {
+  parameter: string;
+  value: number | null;
+  unit: string;
+  available: boolean;
+  concern_level: "none" | "elevated" | "high" | "not_reported";
+  threshold: number | null;
+  threshold_source: string | null;
+};
+
+export type HourlyConcernProfile = {
+  hour: number;
+  concerns: ParameterConcern[];
+  elevated_count: number;
+  high_count: number;
+  not_reported_count: number;
+  primary_thermal_value: number;
+  primary_thermal_metric: "tcm" | "heat_index_celsius";
+};
+
+export type BestTimeResult = {
+  hourly: Array<{
+    hour: number;
+    metric: {
+      value: number;
+      unit: string;
+      label: "provider_tcm" | "noaa_heat_index";
+      is_actual_heat_index: boolean;
+    };
+  }>;
+  hourly_coverage: number;
+  recommendation_hour: number;
+  recommendation_reason: string;
+  metric_label: "provider_tcm" | "noaa_heat_index";
+  provenance: ApiProvenance;
+  heat_interpretation?: HeatInterpretation;
+  environmental_concerns: HourlyConcernProfile[] | null;
+  recommended_hour_tcm_celsius: number | null;
+  exceedance_hours: number | null;
+  persistence_hours: number | null;
+  framing_threshold_celsius: number | null;
+  framing_direction: "above" | "below" | null;
+};
+
 export type TripAnalysisRequest = {
   mode: "curated";
   origin_latitude: number;
@@ -167,9 +211,7 @@ export type TripAnalysisResponse = {
   execution_mode: ExecutionMode;
   state: "series_ready" | "success" | "degraded" | "unavailable" | "error";
   environment: EnvironmentSeriesResult | null;
-  best_time:
-    | ({ heat_interpretation?: HeatInterpretation } & Record<string, unknown>)
-    | null;
+  best_time: BestTimeResult | null;
   hotels: Record<string, unknown> | null;
   routes: Record<string, unknown> | null;
   unavailable: { reason: string; recoverable: boolean } | null;

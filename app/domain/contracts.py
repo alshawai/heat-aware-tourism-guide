@@ -11,9 +11,12 @@ from dataclasses import dataclass, field
 from enum import Enum
 import math
 from datetime import date as calendar_date, datetime
-from typing import Mapping, Protocol
+from typing import TYPE_CHECKING, Mapping, Protocol
 
 from app.domain.environment import TimeWindow
+
+if TYPE_CHECKING:
+    from app.domain.best_time import HourlyConcernProfile
 
 
 # ---------------------------------------------------------------------------
@@ -532,6 +535,12 @@ class BestTimeResult:
     provenance: Provenance
     hourly_coverage: float = 1.0
     heat_interpretation: HeatInterpretation | None = None
+    environmental_concerns: tuple[HourlyConcernProfile, ...] | None = None
+    recommended_hour_tcm_celsius: float | None = None
+    exceedance_hours: float | None = None
+    persistence_hours: float | None = None
+    framing_threshold_celsius: float | None = None
+    framing_direction: str | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.metric_label, MetricLabel):
@@ -551,8 +560,40 @@ class BestTimeResult:
             raise ValueError("hourly_coverage must be between 0 and 1")
         if self.hourly_coverage != len(hours) / 24:
             raise ValueError("hourly_coverage must match available hourly evidence")
-        if any(entry.metric.label is not self.metric_label for entry in self.hourly):
+        recommended_entry = next(
+            entry for entry in self.hourly if entry.hour == self.recommendation_hour
+        )
+        if recommended_entry.metric.label is not self.metric_label:
+            raise ValueError("best-time metric label must match the recommended hour")
+        if self.environmental_concerns is None and any(
+            entry.metric.label is not self.metric_label for entry in self.hourly
+        ):
             raise ValueError("hourly metric labels must match best-time metric label")
+        if self.environmental_concerns is not None:
+            concern_hours = [profile.hour for profile in self.environmental_concerns]
+            if concern_hours != hours:
+                raise ValueError("environmental concerns must align with hourly evidence")
+        if self.recommended_hour_tcm_celsius is not None and not math.isfinite(
+            self.recommended_hour_tcm_celsius
+        ):
+            raise ValueError("recommended_hour_tcm_celsius must be finite")
+        for name, value in (
+            ("exceedance_hours", self.exceedance_hours),
+            ("persistence_hours", self.persistence_hours),
+        ):
+            if value is not None and (not math.isfinite(value) or value < 0):
+                raise ValueError(f"{name} must be finite and non-negative")
+        framing_present = self.exceedance_hours is not None or self.persistence_hours is not None
+        if framing_present and self.framing_threshold_celsius is None:
+            raise ValueError("available framing metrics require a threshold")
+        if self.framing_threshold_celsius is not None and not math.isfinite(
+            self.framing_threshold_celsius
+        ):
+            raise ValueError("framing_threshold_celsius must be finite")
+        if self.framing_direction not in (None, "above", "below"):
+            raise ValueError("framing_direction must be above or below")
+        if framing_present and self.framing_direction is None:
+            raise ValueError("available framing metrics require a direction")
         recommendation = next(
             entry.metric.value for entry in self.hourly if entry.hour == self.recommendation_hour
         )
@@ -560,8 +601,10 @@ class BestTimeResult:
             self.heat_interpretation is not None
             and self.heat_interpretation.guidance_policy is GuidancePolicy.CAUTIOUS
         )
-        if not policy_selected and recommendation != min(
-            entry.metric.value for entry in self.hourly
+        if (
+            not policy_selected
+            and self.environmental_concerns is None
+            and recommendation != min(entry.metric.value for entry in self.hourly)
         ):
             raise ValueError("recommendation_hour must be a coolest available hour")
 
