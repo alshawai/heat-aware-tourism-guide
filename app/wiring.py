@@ -26,7 +26,10 @@ from app.integrations.fortyguard.live import (
     LiveFortyGuardTransport,
     LiveHeatmapAdapter,
 )
+from app.integrations.overpass.client import OverpassClient
+from app.integrations.overpass.transport import HttpOverpassTransport
 from app.services.cache import CacheService
+from app.services.hotel_discovery import HotelDiscoveryService
 from app.services.execution import EnvParamsExecution, HeatmapExecution
 from app.services.ledger_store import JsonlLedgerStore
 from app.services.trip_adapters import (
@@ -72,6 +75,30 @@ def build_live_client(
         clock=lambda: datetime.now(timezone.utc),
         event_sink=json_event_sink,
         ledger=ledger,
+    )
+
+
+def build_hotel_discovery_service(
+    settings: AppSettings, *, cache: CacheService | None = None
+) -> HotelDiscoveryService:
+    """Compose bounded OSM hotel discovery for the configured district."""
+    overpass = settings.overpass
+    transport = HttpOverpassTransport(
+        overpass.endpoint,
+        user_agent=overpass.user_agent,
+        timeout_seconds=overpass.timeout_seconds,
+    )
+    client = OverpassClient(
+        transport,
+        max_attempts=overpass.max_attempts,
+        retry_delay_seconds=overpass.retry_delay_seconds,
+    )
+    return HotelDiscoveryService(
+        client,
+        cache if cache is not None else CacheService(),
+        provider_endpoint=overpass.endpoint,
+        district_aoi=overpass.district_aoi,
+        clock=lambda: datetime.now(timezone.utc),
     )
 
 

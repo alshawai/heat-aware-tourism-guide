@@ -6,6 +6,7 @@ from app.settings import (
     AppSettings,
     FortyGuardAreaSettings,
     FortyGuardPollingSettings,
+    OverpassSettings,
     SettingsError,
     load_settings,
 )
@@ -25,6 +26,7 @@ def test_load_settings_reads_core_configuration_from_environment() -> None:
         fortyguard_base_url="https://example.test",
         polling=FortyGuardPollingSettings(),
         area=FortyGuardAreaSettings(),
+        overpass=OverpassSettings(),
     )
 
 
@@ -146,6 +148,54 @@ def test_area_settings_overrides_are_read_from_environment() -> None:
         use_bounding_box=False,
         max_vertices=150,
     )
+
+
+def test_overpass_defaults_are_bounded_and_use_configured_district() -> None:
+    settings = load_settings(environ={}).overpass
+    assert settings.endpoint == "https://overpass-api.de/api/interpreter"
+    assert "contact" in settings.user_agent.lower()
+    assert settings.timeout_seconds == 30.0
+    assert settings.max_attempts == 2
+    assert settings.retry_delay_seconds == 30.0
+    assert settings.district_aoi.to_payload() == {
+        "south": 29.421,
+        "west": -98.49,
+        "north": 29.429,
+        "east": -98.482,
+    }
+
+
+def test_overpass_bounds_and_request_policy_are_configurable() -> None:
+    settings = load_settings(
+        environ={
+            "OVERPASS_ENDPOINT": "https://overpass.example.test/interpreter",
+            "OVERPASS_USER_AGENT": "Tour Guide/1.0 (contact: team@example.test)",
+            "OVERPASS_TIMEOUT_SECONDS": "10",
+            "OVERPASS_MAX_ATTEMPTS": "3",
+            "OVERPASS_RETRY_DELAY_SECONDS": "4",
+            "HOTEL_DISTRICT_BBOX": "29.4,-98.5,29.5,-98.4",
+        }
+    ).overpass
+    assert settings == OverpassSettings(
+        endpoint="https://overpass.example.test/interpreter",
+        user_agent="Tour Guide/1.0 (contact: team@example.test)",
+        timeout_seconds=10,
+        max_attempts=3,
+        retry_delay_seconds=4,
+        district_aoi=settings.district_aoi,
+    )
+    assert settings.district_aoi.to_payload()["south"] == 29.4
+
+
+def test_invalid_overpass_policy_or_district_bounds_are_rejected() -> None:
+    with pytest.raises(SettingsError, match="OVERPASS_MAX_ATTEMPTS"):
+        load_settings(environ={"OVERPASS_MAX_ATTEMPTS": "0"})
+    with pytest.raises(SettingsError, match="OVERPASS_RETRY_DELAY_SECONDS"):
+        load_settings(environ={"OVERPASS_RETRY_DELAY_SECONDS": "-1"})
+    with pytest.raises(SettingsError, match="OVERPASS_RETRY_DELAY_SECONDS"):
+        load_settings(environ={"OVERPASS_RETRY_DELAY_SECONDS": "inf"})
+    with pytest.raises(SettingsError, match="HOTEL_DISTRICT_BBOX"):
+        load_settings(environ={"HOTEL_DISTRICT_BBOX": "29.5,-98.5,29.4,-98.4"})
 
 
 def test_call_budget_defaults_to_record_only_and_is_overridable() -> None:
