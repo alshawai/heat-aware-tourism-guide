@@ -14,9 +14,39 @@ const successResponse = {
   mode: "curated",
   execution_mode: "fixture",
   state: "success",
-  best_time: { hourly: [] },
+  best_time: {
+    hourly: [],
+    heat_interpretation: {
+      metric: "tcm",
+      value_celsius: 29,
+      band: "provider_lower",
+      band_label: "Lower provider temperature",
+      action_threshold_band: "provider_higher",
+      guidance_policy: "standard",
+      is_actual_heat_index: false,
+      noaa_heat_index_available: false,
+      action_required: false,
+      policy_applied: "standard_heat_guidance",
+    },
+  },
   hotels: { ranked: [] },
-  routes: { alternatives: [] },
+  routes: {
+    alternatives: [],
+    heat_metric: "tcm",
+    corridor_heat_value: 38,
+    heat_interpretation: {
+      metric: "tcm",
+      value_celsius: 38,
+      band: "provider_higher",
+      band_label: "Higher provider temperature",
+      action_threshold_band: "provider_higher",
+      guidance_policy: "standard",
+      is_actual_heat_index: false,
+      noaa_heat_index_available: false,
+      action_required: true,
+      policy_applied: "standard_heat_guidance",
+    },
+  },
   unavailable: null,
   degraded_reasons: null,
 };
@@ -65,6 +95,11 @@ describe("curated Trip Setup", () => {
     await user.click(screen.getByRole("button", { name: "Analyze trip" }));
 
     expect(await screen.findByText("Trip analysis ready")).toBeInTheDocument();
+    expect(screen.getByText("Lower provider temperature")).toBeInTheDocument();
+    expect(
+      screen.getByText(/29.0 °C provider temperature metric/)
+    ).toBeInTheDocument();
+    expect(screen.getByText(/NOAA Heat Index unavailable/)).toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(fetchMock).toHaveBeenNthCalledWith(1, "/health", expect.any(Object));
     expect(fetchMock).toHaveBeenNthCalledWith(
@@ -179,6 +214,9 @@ describe("curated Trip Setup", () => {
     ).toBeInTheDocument();
     expect(
       within(outcome).getByText("Hotel ranking is temporarily unavailable.")
+    ).toBeInTheDocument();
+    expect(
+      within(outcome).getByText("Lower provider temperature")
     ).toBeInTheDocument();
 
     await user.selectOptions(screen.getByLabelText("Hour"), "9");

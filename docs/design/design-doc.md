@@ -157,7 +157,10 @@ The core uses:
 
 `tcm` must never be silently treated as NOAA Heat Index. If actual heat index
 is unavailable, the UI displays the Celsius metric and a separately named
-product band or no categorical band.
+product band. The initial product-only `tcm` bands are lower (below 30 C),
+moderate (30 to below 35 C), higher (35 to below 40 C), and very high (40 C
+and above). These labels and thresholds are product policy, not NOAA/NWS
+categories or clinical guidance.
 
 ### OSRM
 
@@ -211,7 +214,13 @@ phrasing is “no elevated heat concern detected by the selected metric” and
 The optional cautious setting shifts the product action threshold one band
 earlier. This is an explicit team safety policy supported by general public
 health guidance, not an official medical transformation. It does not collect a
-diagnosis, medication, or clinical profile.
+diagnosis, medication, or clinical profile. Standard guidance takes action from
+the third band; cautious guidance takes action from the second band. The
+measured value and displayed observation band do not change. Recommendations
+prefer returned hours or routes below the applicable action threshold, then the
+lowest selected-metric value. Route confidence remains the higher-priority
+guardrail: when route comparison confidence is insufficient, the existing
+shortest-route fallback applies instead of cautious optimization.
 
 ## Best-Time Decision
 

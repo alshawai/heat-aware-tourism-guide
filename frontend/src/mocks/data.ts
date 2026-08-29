@@ -38,7 +38,7 @@ const makeTrip = (
   location,
   date,
   metric: {
-    label: limited ? "Provider thermal comfort metric" : "NOAA Heat Index",
+    label: limited ? "Provider temperature metric" : "NOAA Heat Index",
     unit: "C",
     actualHeatIndex: !limited,
   },

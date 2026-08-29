@@ -300,14 +300,16 @@ export function TripSetupScreen() {
                 <p>{tripAnalysis.unavailable?.reason}</p>
               </>
             )}
-            {tripAnalysis.state === "success" && tripAnalysis.best_time && (
-              <HeatPolicySummary
-                value={
-                  tripAnalysis.best_time.heat_interpretation as
-                    HeatInterpretation | undefined
-                }
-              />
-            )}
+            {(tripAnalysis.state === "success" ||
+              tripAnalysis.state === "degraded") &&
+              tripAnalysis.best_time && (
+                <HeatPolicySummary
+                  value={
+                    tripAnalysis.best_time.heat_interpretation as
+                      HeatInterpretation | undefined
+                  }
+                />
+              )}
             <button
               type="button"
               className="secondary-button"
@@ -344,9 +346,9 @@ function HeatPolicySummary({ value }: { value?: HeatInterpretation }) {
     <div className="heat-policy-summary">
       <strong>{value.band_label}</strong>
       <p>
-        {value.value_celsius === null
-          ? "The selected Celsius metric is shown separately because NOAA Heat Index is unavailable."
-          : `${value.value_celsius.toFixed(1)} °C · ${value.is_actual_heat_index ? "NOAA Heat Index" : "provider temperature metric"}.`}
+        {!value.noaa_heat_index_available
+          ? `${value.value_celsius === null ? "Selected Celsius metric unavailable" : `${value.value_celsius.toFixed(1)} °C provider temperature metric`} · NOAA Heat Index unavailable.`
+          : `${value.value_celsius?.toFixed(1)} °C · NOAA Heat Index.`}
       </p>
       {value.guidance_policy === "cautious" && (
         <small>

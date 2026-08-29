@@ -28,6 +28,7 @@ include = ["app*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["."]
 markers = [
     "integration: fixture-backed tests that cross application boundaries",
 ]

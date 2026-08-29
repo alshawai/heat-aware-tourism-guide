@@ -2,61 +2,42 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from enum import Enum
 import math
 
-from app.domain.contracts import HeatMetricName
-
-
-class HeatBand(str, Enum):
-    BELOW_CAUTION = "below_caution"
-    CAUTION = "caution"
-    EXTREME_CAUTION = "extreme_caution"
-    DANGER = "danger"
-    EXTREME_DANGER = "extreme_danger"
-    PROVIDER_LOWER = "provider_lower"
-    PROVIDER_MODERATE = "provider_moderate"
-    PROVIDER_HIGHER = "provider_higher"
-    PROVIDER_DANGER = "provider_danger"
-
-
-class GuidancePolicy(str, Enum):
-    STANDARD = "standard"
-    CAUTIOUS = "cautious"
-
-
-@dataclass(frozen=True)
-class HeatClassification:
-    metric: HeatMetricName
-    value_celsius: float | None
-    band: HeatBand | None
-    band_label: str
-    action_band: HeatBand | None
-    guidance_policy: GuidancePolicy
-    is_actual_heat_index: bool
-    policy_applied: str
-
-
-_NOAA_BANDS = (
-    (26.7, HeatBand.CAUTION),
-    (32.2, HeatBand.EXTREME_CAUTION),
-    (40.6, HeatBand.DANGER),
-    (54.4, HeatBand.EXTREME_DANGER),
+from app.conversion import fahrenheit_to_celsius
+from app.domain.contracts import (
+    GuidancePolicy,
+    HEAT_BAND_LABELS,
+    HeatBand,
+    HeatInterpretation,
+    HeatMetricName,
 )
-_NOAA_LABELS = {
-    HeatBand.BELOW_CAUTION: "Below NOAA caution",
-    HeatBand.CAUTION: "Caution",
-    HeatBand.EXTREME_CAUTION: "Extreme caution",
-    HeatBand.DANGER: "Danger",
-    HeatBand.EXTREME_DANGER: "Extreme danger",
-}
-_PROVIDER_LABELS = {
-    HeatBand.PROVIDER_LOWER: "Lower provider temperature",
-    HeatBand.PROVIDER_MODERATE: "Moderate provider temperature",
-    HeatBand.PROVIDER_HIGHER: "Higher provider temperature",
-    HeatBand.PROVIDER_DANGER: "Very high provider temperature",
-}
+
+HeatBand = HeatBand
+GuidancePolicy = GuidancePolicy
+HeatInterpretation = HeatInterpretation
+
+
+NOAA_BOUNDARIES_FAHRENHEIT = (80.0, 90.0, 105.0, 130.0)
+NOAA_BOUNDARIES_CELSIUS = tuple(
+    fahrenheit_to_celsius(value) for value in NOAA_BOUNDARIES_FAHRENHEIT
+)
+# Product TCM bands are deliberately separate from NOAA Heat Index boundaries.
+PROVIDER_TCM_BOUNDARIES_CELSIUS = (30.0, 35.0, 40.0)
+
+_NOAA_ORDER = (
+    HeatBand.BELOW_CAUTION,
+    HeatBand.CAUTION,
+    HeatBand.EXTREME_CAUTION,
+    HeatBand.DANGER,
+    HeatBand.EXTREME_DANGER,
+)
+_PROVIDER_ORDER = (
+    HeatBand.PROVIDER_LOWER,
+    HeatBand.PROVIDER_MODERATE,
+    HeatBand.PROVIDER_HIGHER,
+    HeatBand.PROVIDER_VERY_HIGH,
+)
 
 
 def classify_heat(
@@ -64,7 +45,8 @@ def classify_heat(
     *,
     metric: HeatMetricName,
     cautious: bool = False,
-) -> HeatClassification:
+    noaa_heat_index_available: bool | None = None,
+) -> HeatInterpretation:
     """Classify a Celsius value without conflating provider data with NOAA data."""
     if not isinstance(metric, HeatMetricName):
         raise ValueError("metric must be a HeatMetricName value")
@@ -75,87 +57,82 @@ def classify_heat(
     ):
         raise ValueError("heat value must be finite or None")
     policy = GuidancePolicy.CAUTIOUS if cautious else GuidancePolicy.STANDARD
+    noaa_available = (
+        metric is HeatMetricName.HEAT_INDEX_CELSIUS and value_celsius is not None
+        if noaa_heat_index_available is None
+        else noaa_heat_index_available
+    )
+    if not isinstance(noaa_available, bool):
+        raise ValueError("NOAA Heat Index availability must be a boolean")
+    if metric is HeatMetricName.HEAT_INDEX_CELSIUS and noaa_available and value_celsius is None:
+        raise ValueError("available NOAA Heat Index requires a value")
+    actual_heat_index = (
+        metric is HeatMetricName.HEAT_INDEX_CELSIUS and value_celsius is not None and noaa_available
+    )
     if value_celsius is None:
-        return HeatClassification(
-            metric,
-            None,
-            None,
-            "NOAA Heat Index unavailable"
+        return HeatInterpretation(
+            metric=metric,
+            value_celsius=None,
+            band=None,
+            band_label="NOAA Heat Index unavailable"
             if metric is HeatMetricName.HEAT_INDEX_CELSIUS
             else "Provider temperature unavailable",
-            None,
-            policy,
-            metric is HeatMetricName.HEAT_INDEX_CELSIUS,
-            "no_heat_index_available"
+            action_threshold_band=None,
+            guidance_policy=policy,
+            is_actual_heat_index=False,
+            noaa_heat_index_available=noaa_available,
+            action_required=False,
+            policy_applied="no_heat_index_available"
             if metric is HeatMetricName.HEAT_INDEX_CELSIUS
             else "metric_unavailable",
         )
 
-    if metric is HeatMetricName.HEAT_INDEX_CELSIUS:
+    if actual_heat_index:
         band = _noaa_band(value_celsius)
-        action_band = _shift_band(band) if cautious else band
-        return HeatClassification(
-            metric,
-            float(value_celsius),
-            band,
-            _NOAA_LABELS[band],
-            action_band,
-            policy,
-            True,
-            "cautious_guidance_one_band_earlier" if cautious else "standard_noaa_guidance",
-        )
-
-    band = _provider_band(value_celsius)
-    return HeatClassification(
-        metric,
-        float(value_celsius),
-        band,
-        _PROVIDER_LABELS[band],
-        _shift_provider_band(band) if cautious else band,
-        policy,
-        False,
-        "cautious_guidance_one_band_earlier" if cautious else "standard_provider_guidance",
+        order: tuple[HeatBand, ...] = _NOAA_ORDER
+    else:
+        band = _provider_band(value_celsius)
+        order = _PROVIDER_ORDER
+    index = order.index(band)
+    default_threshold = 2
+    threshold_index = max(default_threshold - 1, 0) if cautious else default_threshold
+    action_threshold_band = order[threshold_index]
+    action_required = index >= threshold_index
+    return HeatInterpretation(
+        metric=metric,
+        value_celsius=float(value_celsius),
+        band=band,
+        band_label=HEAT_BAND_LABELS[band],
+        action_threshold_band=action_threshold_band,
+        guidance_policy=policy,
+        is_actual_heat_index=actual_heat_index,
+        noaa_heat_index_available=noaa_available,
+        action_required=action_required,
+        policy_applied=(
+            "cautious_guidance_one_band_earlier" if cautious else "standard_heat_guidance"
+        ),
     )
 
 
 def _noaa_band(value: float) -> HeatBand:
-    if value < _NOAA_BANDS[0][0]:
+    first, second, third, fourth = NOAA_BOUNDARIES_CELSIUS
+    if value < first:
         return HeatBand.BELOW_CAUTION
-    if value < 32.2:
+    if value < second:
         return HeatBand.CAUTION
-    if value < 40.6:
+    if value < third:
         return HeatBand.EXTREME_CAUTION
-    if value <= 54.4:
+    if value < fourth:
         return HeatBand.DANGER
     return HeatBand.EXTREME_DANGER
 
 
-def _shift_band(band: HeatBand) -> HeatBand:
-    order = (
-        HeatBand.BELOW_CAUTION,
-        HeatBand.CAUTION,
-        HeatBand.EXTREME_CAUTION,
-        HeatBand.DANGER,
-        HeatBand.EXTREME_DANGER,
-    )
-    return order[max(order.index(band) - 1, 0)]
-
-
 def _provider_band(value: float) -> HeatBand:
-    if value < 26.7:
+    first, second, third = PROVIDER_TCM_BOUNDARIES_CELSIUS
+    if value < first:
         return HeatBand.PROVIDER_LOWER
-    if value < 32.2:
+    if value < second:
         return HeatBand.PROVIDER_MODERATE
-    if value < 40.6:
+    if value < third:
         return HeatBand.PROVIDER_HIGHER
-    return HeatBand.PROVIDER_DANGER
-
-
-def _shift_provider_band(band: HeatBand) -> HeatBand:
-    order = (
-        HeatBand.PROVIDER_LOWER,
-        HeatBand.PROVIDER_MODERATE,
-        HeatBand.PROVIDER_HIGHER,
-        HeatBand.PROVIDER_DANGER,
-    )
-    return order[max(order.index(band) - 1, 0)]
+    return HeatBand.PROVIDER_VERY_HIGH

@@ -103,13 +103,26 @@ export type TripAnalysisResponse = {
 export type HeatInterpretation = {
   metric: "tcm" | "heat_index_celsius";
   value_celsius: number | null;
-  band: string | null;
+  band: HeatBand | null;
   band_label: string;
-  action_band: string | null;
+  action_threshold_band: HeatBand | null;
   guidance_policy: "standard" | "cautious";
   is_actual_heat_index: boolean;
+  noaa_heat_index_available: boolean;
+  action_required: boolean;
   policy_applied: string;
 };
+
+export type HeatBand =
+  | "below_caution"
+  | "caution"
+  | "extreme_caution"
+  | "danger"
+  | "extreme_danger"
+  | "provider_lower"
+  | "provider_moderate"
+  | "provider_higher"
+  | "provider_very_high";
 
 export type CuratedTripSetup = {
   date: string;
