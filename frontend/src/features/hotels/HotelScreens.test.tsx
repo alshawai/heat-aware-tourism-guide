@@ -102,9 +102,10 @@ describe("hotel ranking screens", () => {
       screen.getByRole("link", { name: "View details for Canopy House" })
     );
 
-    await waitFor(() =>
-      expect(screen.getAllByText("Assignment quality")).toHaveLength(4)
-    );
+    await waitFor(() => {
+      expect(screen.getAllByText("Assignment quality")).toHaveLength(4);
+      expect(screen.getAllByText("Confidence")).toHaveLength(4);
+    });
     expect(screen.getAllByText("containing tile")).toHaveLength(4);
     expect(screen.getAllByText("80 m")).toHaveLength(4);
     expect(

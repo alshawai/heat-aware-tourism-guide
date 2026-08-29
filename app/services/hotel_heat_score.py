@@ -94,6 +94,14 @@ class HotelHeatAnalysisService:
         self._supported_modes = supported_modes or frozenset(ExecutionMode)
         self._district_name = district_name
 
+    def discover(self) -> HotelDiscoveryResult:
+        """Expose the discovery seam for composition and deterministic replay."""
+        return self._hotel_discovery()
+
+    def load_component(self, component: str) -> ComponentEvidence | None:
+        """Load one component through the configured execution boundary."""
+        return self._component_loader(component)
+
     def analyze(
         self,
         district_name: str,
@@ -246,7 +254,7 @@ class HotelHeatAnalysisService:
                 component=component,
                 available=False,
                 unit=unit,
-                threshold_celsius=None,
+                threshold_celsius=35.0 if component in {"hot_hours", "persistence"} else None,
                 provenance=None,
                 coverage=None,
                 confidence=None,

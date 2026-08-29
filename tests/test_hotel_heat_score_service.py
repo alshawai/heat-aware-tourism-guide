@@ -113,6 +113,7 @@ def test_service_reports_missing_component_without_assigning_or_scoring() -> Non
     assert outcome.score is None
     assert outcome.components["persistence"].missing_reason == "component_not_available"
     assert outcome.components["persistence"].available is False
+    assert outcome.components["persistence"].threshold_celsius == 35.0
 
 
 def test_canonical_fixture_preserves_exactly_four_shared_component_analyses() -> None:

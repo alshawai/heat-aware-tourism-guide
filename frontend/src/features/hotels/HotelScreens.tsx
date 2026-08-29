@@ -455,6 +455,18 @@ export function HotelDetailScreen() {
                   </dd>
                 </div>
                 <div>
+                  <dt>Confidence</dt>
+                  <dd>
+                    {component.coverage === null
+                      ? "Not reported"
+                      : component.coverage >= 0.95
+                        ? "High"
+                        : component.coverage >= 0.7
+                          ? "Limited"
+                          : "Insufficient"}
+                  </dd>
+                </div>
+                <div>
                   <dt>Provenance</dt>
                   <dd>{component.provenance}</dd>
                 </div>

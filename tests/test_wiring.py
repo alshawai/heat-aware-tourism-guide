@@ -265,7 +265,7 @@ def test_default_fixture_production_app_ranks_hotels_with_four_component_evidenc
     assert payload["components"]["persistence"]["threshold_celsius"] == 35.0
 
 
-def test_production_hotel_live_mode_reports_missing_provider_components() -> None:
+def test_production_hotel_live_mode_replays_canonical_fixture_when_provider_unavailable() -> None:
     app = create_production_app(
         AppSettings(
             allow_live=True,
@@ -280,8 +280,12 @@ def test_production_hotel_live_mode_reports_missing_provider_components() -> Non
     )
 
     assert response.status_code == 200
-    assert response.json()["state"] == "unavailable"
-    assert response.json()["reason"] in {"provider_failure", "missing_component_evidence"}
+    payload = response.json()
+    assert payload["state"] == "available"
+    assert all(
+        component["provenance"] == "fixture:canonical-district-hotel-analysis"
+        for component in payload["components"].values()
+    )
 
 
 def test_heatmap_route_accepts_granularity_from_request_body() -> None:
