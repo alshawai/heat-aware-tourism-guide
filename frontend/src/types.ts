@@ -205,6 +205,58 @@ export type TripAnalysisRequest = {
   execution_mode: ExecutionMode;
 };
 
+export type RouteSetState =
+  "alternatives_returned" | "single_route" | "no_suitable_returned_route";
+
+export type RouteDecisionState =
+  | "mild_shortest_recommended"
+  | "shade_required"
+  | "heat_unavailable"
+  | "no_suitable_returned_route";
+
+export type RouteHeatSource = "landmark_reuse" | "shared_corridor";
+
+export type RouteOptionResult = {
+  identity: string;
+  distance_m: number;
+  duration_s: number;
+  geometry: [number, number][] | null;
+  heat_value: number | null;
+  heat_unit: "C";
+  heat_metric: "tcm" | "heat_index_celsius";
+  heat_status: "elevated" | "not_elevated" | null;
+  heat_coverage: number | null;
+  heat_source: RouteHeatSource | null;
+  heat_interpretation: HeatInterpretation | null;
+  modeled_shade_percent: number | null;
+  shade_confidence: "sufficient" | "insufficient" | null;
+  building_coverage: number;
+  recommended: boolean;
+  recommendation_reason: string | null;
+  shade_model_label: string | null;
+};
+
+export type RouteComparisonResult = {
+  alternatives: RouteOptionResult[];
+  recommended_id: string | null;
+  lowest_heat_route_id: string | null;
+  reason: string;
+  heat_status: "elevated" | "not_elevated" | null;
+  corridor_heat_value: number | null;
+  heat_metric: "tcm" | "heat_index_celsius";
+  heat_unit: "C";
+  coverage: number;
+  confidence: "sufficient" | "insufficient";
+  comparison_scope: "returned alternatives";
+  route_set_state: RouteSetState | null;
+  decision_state: RouteDecisionState | null;
+  provenance: ApiProvenance;
+  routing_provenance: ApiProvenance | null;
+  heat_provenance: ApiProvenance | null;
+  fallback_reason: string | null;
+  heat_interpretation: HeatInterpretation | null;
+};
+
 export type TripAnalysisResponse = {
   request_identity: string;
   mode: "curated";
@@ -213,7 +265,7 @@ export type TripAnalysisResponse = {
   environment: EnvironmentSeriesResult | null;
   best_time: BestTimeResult | null;
   hotels: Record<string, unknown> | null;
-  routes: Record<string, unknown> | null;
+  routes: RouteComparisonResult | null;
   unavailable: { reason: string; recoverable: boolean } | null;
   degraded_reasons: Record<string, string> | null;
 };

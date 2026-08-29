@@ -47,6 +47,24 @@ class HeatStatus(str, Enum):
     NOT_ELEVATED = "not_elevated"
 
 
+class RouteSetState(str, Enum):
+    ALTERNATIVES_RETURNED = "alternatives_returned"
+    SINGLE_ROUTE = "single_route"
+    NO_SUITABLE_RETURNED_ROUTE = "no_suitable_returned_route"
+
+
+class RouteDecisionState(str, Enum):
+    MILD_SHORTEST_RECOMMENDED = "mild_shortest_recommended"
+    SHADE_REQUIRED = "shade_required"
+    HEAT_UNAVAILABLE = "heat_unavailable"
+    NO_SUITABLE_RETURNED_ROUTE = "no_suitable_returned_route"
+
+
+class RouteHeatSource(str, Enum):
+    LANDMARK_REUSE = "landmark_reuse"
+    SHARED_CORRIDOR = "shared_corridor"
+
+
 class Confidence(str, Enum):
     SUFFICIENT = "sufficient"
     INSUFFICIENT = "insufficient"
@@ -718,10 +736,10 @@ class RouteOption:
     identity: str
     distance_m: float
     duration_s: float
-    heat_value: float
+    heat_value: float | None
     heat_unit: str
     heat_metric: HeatMetricName
-    heat_status: HeatStatus
+    heat_status: HeatStatus | None
     modeled_shade_percent: float | None
     shade_confidence: Confidence | None
     building_coverage: float
@@ -729,12 +747,15 @@ class RouteOption:
     recommendation_reason: str | None
     shade_model_label: str | None
     heat_interpretation: HeatInterpretation | None = None
+    geometry: tuple[tuple[float, float], ...] | None = None
+    heat_coverage: float | None = None
+    heat_source: RouteHeatSource | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.heat_metric, HeatMetricName):
             raise ValueError("heat_metric must be a HeatMetricName value")
-        if not isinstance(self.heat_status, HeatStatus):
-            raise ValueError("heat_status must be a HeatStatus value")
+        if self.heat_status is not None and not isinstance(self.heat_status, HeatStatus):
+            raise ValueError("heat_status must be a HeatStatus value or None")
         if self.shade_confidence is not None and not isinstance(self.shade_confidence, Confidence):
             raise ValueError("shade_confidence must be a Confidence value")
         if not isinstance(self.recommended, bool):
@@ -745,8 +766,8 @@ class RouteOption:
             raise ValueError("distance_m must be positive and finite")
         if not math.isfinite(self.duration_s) or self.duration_s <= 0:
             raise ValueError("duration_s must be positive and finite")
-        if not math.isfinite(self.heat_value):
-            raise ValueError("heat_value must be finite")
+        if self.heat_value is not None and not math.isfinite(self.heat_value):
+            raise ValueError("heat_value must be finite or None")
         if not self.heat_unit:
             raise ValueError("heat_unit is required")
         if (
@@ -756,6 +777,12 @@ class RouteOption:
             raise ValueError("temperature route metrics must use C")
         if not 0 <= self.building_coverage <= 1:
             raise ValueError("building_coverage must be between 0 and 1")
+        if self.heat_coverage is not None and not 0 <= self.heat_coverage <= 1:
+            raise ValueError("route heat coverage must be between 0 and 1")
+        if self.heat_source is not None and not isinstance(self.heat_source, RouteHeatSource):
+            raise ValueError("heat_source must be a RouteHeatSource value")
+        if self.geometry is not None:
+            _validate_route_geometry(self.geometry)
         if self.modeled_shade_percent is not None and (
             not math.isfinite(self.modeled_shade_percent)
             or not 0 <= self.modeled_shade_percent <= 100
@@ -776,13 +803,13 @@ class RouteOption:
 
 @dataclass(frozen=True)
 class RouteComparisonResult:
-    """Route comparison with recommendation and heat context."""
+    """Returned-route evidence and the current recommendation stage."""
 
     alternatives: tuple[RouteOption, ...]
-    recommended_id: str
+    recommended_id: str | None
     reason: str
-    heat_status: HeatStatus
-    corridor_heat_value: float
+    heat_status: HeatStatus | None
+    corridor_heat_value: float | None
     heat_metric: HeatMetricName
     heat_unit: str
     coverage: float
@@ -791,12 +818,17 @@ class RouteComparisonResult:
     provenance: Provenance
     fallback_reason: str | None = None
     heat_interpretation: HeatInterpretation | None = None
+    route_set_state: RouteSetState | None = None
+    decision_state: RouteDecisionState | None = None
+    lowest_heat_route_id: str | None = None
+    routing_provenance: Provenance | None = None
+    heat_provenance: Provenance | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.heat_metric, HeatMetricName):
             raise ValueError("heat_metric must be a HeatMetricName value")
-        if not isinstance(self.heat_status, HeatStatus):
-            raise ValueError("heat_status must be a HeatStatus value")
+        if self.heat_status is not None and not isinstance(self.heat_status, HeatStatus):
+            raise ValueError("heat_status must be a HeatStatus value or None")
         if not isinstance(self.confidence, Confidence):
             raise ValueError("confidence must be a Confidence value")
         if not self.heat_unit:
@@ -806,12 +838,10 @@ class RouteComparisonResult:
             and self.heat_unit != "C"
         ):
             raise ValueError("temperature comparison metrics must use C")
-        if not math.isfinite(self.corridor_heat_value):
-            raise ValueError("corridor_heat_value must be finite")
-        if not self.alternatives:
-            raise ValueError("at least one route alternative is required")
-        if not self.recommended_id:
-            raise ValueError("recommended_id is required")
+        if self.corridor_heat_value is not None and not math.isfinite(
+            self.corridor_heat_value
+        ):
+            raise ValueError("corridor_heat_value must be finite or None")
         if not self.reason:
             raise ValueError("reason is required")
         if not self.comparison_scope:
@@ -822,8 +852,21 @@ class RouteComparisonResult:
             raise ValueError("sufficient confidence must not include fallback_reason")
         if not 0 <= self.coverage <= 1:
             raise ValueError("coverage must be between 0 and 1")
+        if self.heat_interpretation is not None and (
+            self.heat_interpretation.metric is not self.heat_metric
+            or self.heat_interpretation.value_celsius != self.corridor_heat_value
+        ):
+            raise ValueError("route comparison heat interpretation must match its metric and value")
+        if self.route_set_state is None and self.decision_state is None:
+            self._validate_legacy_recommendation()
+            return
+        self._validate_explicit_route_state()
+
+    def _validate_legacy_recommendation(self) -> None:
+        if not self.alternatives:
+            raise ValueError("at least one route alternative is required")
         identities = {route.identity for route in self.alternatives}
-        if self.recommended_id not in identities:
+        if not self.recommended_id or self.recommended_id not in identities:
             raise ValueError("recommended_id must reference a listed alternative")
         recommended = [route for route in self.alternatives if route.recommended]
         if len(recommended) != 1 or recommended[0].identity != self.recommended_id:
@@ -834,11 +877,81 @@ class RouteComparisonResult:
             shortest = min(self.alternatives, key=lambda route: route.distance_m)
             if recommended[0].identity != shortest.identity:
                 raise ValueError("insufficient confidence must recommend the shortest route")
-        if self.heat_interpretation is not None and (
-            self.heat_interpretation.metric is not self.heat_metric
-            or self.heat_interpretation.value_celsius != self.corridor_heat_value
+
+    def _validate_explicit_route_state(self) -> None:
+        if not isinstance(self.route_set_state, RouteSetState):
+            raise ValueError("route_set_state must be a RouteSetState value")
+        if not isinstance(self.decision_state, RouteDecisionState):
+            raise ValueError("decision_state must be a RouteDecisionState value")
+        if self.routing_provenance is None:
+            raise ValueError("explicit route results require routing provenance")
+        if self.route_set_state is RouteSetState.NO_SUITABLE_RETURNED_ROUTE:
+            if self.alternatives or self.decision_state is not RouteDecisionState.NO_SUITABLE_RETURNED_ROUTE:
+                raise ValueError("no suitable returned route state cannot contain alternatives")
+            if self.recommended_id is not None:
+                raise ValueError("no suitable returned route cannot be recommended")
+            return
+        if not self.alternatives:
+            raise ValueError("at least one route alternative is required")
+        if any(route.geometry is None for route in self.alternatives):
+            raise ValueError("explicit route alternatives require full geometry")
+        identities = {route.identity for route in self.alternatives}
+        if len(identities) != len(self.alternatives):
+            raise ValueError("route alternative identities must be unique")
+        if self.route_set_state is RouteSetState.SINGLE_ROUTE and len(self.alternatives) != 1:
+            raise ValueError("single route state requires exactly one returned route")
+        if self.route_set_state is RouteSetState.ALTERNATIVES_RETURNED and len(self.alternatives) < 2:
+            raise ValueError("alternatives returned state requires at least two routes")
+        if self.lowest_heat_route_id is not None and self.lowest_heat_route_id not in identities:
+            raise ValueError("lowest_heat_route_id must reference a returned route")
+        recommended = [route for route in self.alternatives if route.recommended]
+        if self.decision_state is RouteDecisionState.MILD_SHORTEST_RECOMMENDED:
+            shortest = min(self.alternatives, key=lambda route: route.distance_m)
+            if self.recommended_id != shortest.identity:
+                raise ValueError("mild heat must recommend the shortest returned route")
+            if len(recommended) != 1 or recommended[0].identity != self.recommended_id:
+                raise ValueError("exactly one recommended route must match recommended_id")
+            if recommended[0].recommendation_reason is None:
+                raise ValueError("recommended route requires recommendation_reason")
+        else:
+            if self.recommended_id is not None or recommended:
+                raise ValueError("non-final route decisions cannot include a recommendation")
+        if self.decision_state is RouteDecisionState.HEAT_UNAVAILABLE:
+            if any(
+                route.heat_value is not None
+                or route.heat_status is not None
+                or route.heat_interpretation is not None
+                or route.heat_coverage is not None
+                or route.heat_source is not None
+                for route in self.alternatives
+            ):
+                raise ValueError("heat unavailable routes cannot carry heat evidence")
+            if self.corridor_heat_value is not None or self.heat_status is not None:
+                raise ValueError("heat unavailable result cannot carry aggregate heat")
+            if self.heat_provenance is not None:
+                raise ValueError("heat unavailable result cannot carry heat provenance")
+        elif self.heat_provenance is None:
+            raise ValueError("available route heat requires heat provenance")
+
+
+def _validate_route_geometry(coordinates: tuple[tuple[float, float], ...]) -> None:
+    if len(coordinates) < 2 or len(set(coordinates)) < 2:
+        raise ValueError("route geometry requires at least two distinct points")
+    for point in coordinates:
+        if len(point) != 2:
+            raise ValueError("route geometry points must contain longitude and latitude")
+        longitude, latitude = point
+        if (
+            isinstance(longitude, bool)
+            or isinstance(latitude, bool)
+            or not isinstance(longitude, (int, float))
+            or not isinstance(latitude, (int, float))
+            or not math.isfinite(longitude)
+            or not math.isfinite(latitude)
+            or not -180 <= longitude <= 180
+            or not -90 <= latitude <= 90
         ):
-            raise ValueError("route comparison heat interpretation must match its metric and value")
+            raise ValueError("route geometry points must be finite WGS84 coordinates")
 
 
 @dataclass(frozen=True)
@@ -947,7 +1060,17 @@ class TripAnalysisResponse:
             }
             allowed_present = {
                 "routes"
-                if self.routes is not None and self.routes.confidence is Confidence.INSUFFICIENT
+                if self.routes is not None
+                and (
+                    self.routes.confidence is Confidence.INSUFFICIENT
+                    or self.routes.decision_state
+                    in {
+                        RouteDecisionState.SHADE_REQUIRED,
+                        RouteDecisionState.HEAT_UNAVAILABLE,
+                        RouteDecisionState.NO_SUITABLE_RETURNED_ROUTE,
+                    }
+                    or self.routes.route_set_state is RouteSetState.SINGLE_ROUTE
+                )
                 else ""
             }
             if set(self.degraded_reasons) != missing | (allowed_present - {""}):
