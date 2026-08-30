@@ -203,9 +203,12 @@ fixture to explicit unavailability. Identity includes:
 - route-shade model version where it affects requested data.
 
 Cache and fixture replay remain stale and retain the true OSM data date. Add a
-canonical provider-shape building fixture and acquisition sidecar. Synthesized
-geometry used for focused tests stays in test fixtures and is labelled
-synthesized.
+canonical provider-shape building fixture and acquisition sidecar. The committed
+canonical building fixture is synthesized to the provider's response shape, not
+captured from a live Overpass execution; its acquisition sidecar records
+`source: "synthesized"`, a null `retrieved_at`, and the exact request identity
+it stands in for. Synthesized geometry used for focused tests stays in test
+fixtures and is labelled synthesized.
 
 Shade provenance should report source, OSM timestamp, retrieval timestamp,
 staleness, AOI/search distance, metres-per-level policy, solar timestamp and
