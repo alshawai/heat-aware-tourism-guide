@@ -75,6 +75,8 @@ def _comparison(
     route_set_state: RouteSetState,
     decision_state: RouteDecisionState,
     recommended_id: str | None,
+    building_provenance: Provenance | None = None,
+    solar_provenance: Provenance | None = None,
 ) -> RouteComparisonResult:
     values = [route.heat_value for route in alternatives if route.heat_value is not None]
     return RouteComparisonResult(
@@ -99,6 +101,8 @@ def _comparison(
         else None,
         routing_provenance=_provenance("osrm"),
         heat_provenance=_provenance("fortyguard") if values else None,
+        building_provenance=building_provenance,
+        solar_provenance=solar_provenance,
     )
 
 
@@ -215,3 +219,27 @@ def test_heat_unavailable_routes_carry_no_heat_or_recommendation() -> None:
             decision_state=RouteDecisionState.HEAT_UNAVAILABLE,
             recommended_id=None,
         )
+
+
+def test_building_provenance_requires_the_solar_position_it_was_modeled_at() -> None:
+    with pytest.raises(ValueError, match="building provenance requires the solar position"):
+        _comparison(
+            (_option("route-1", 900.0, recommended=True),),
+            route_set_state=RouteSetState.SINGLE_ROUTE,
+            decision_state=RouteDecisionState.MILD_SHORTEST_RECOMMENDED,
+            recommended_id="route-1",
+            building_provenance=_provenance("overpass"),
+        )
+
+
+def test_solar_provenance_may_stand_alone_for_nighttime_decisions() -> None:
+    result = _comparison(
+        (_option("route-1", 900.0, recommended=True),),
+        route_set_state=RouteSetState.SINGLE_ROUTE,
+        decision_state=RouteDecisionState.NIGHTTIME_COOLEST_RECOMMENDED,
+        recommended_id="route-1",
+        solar_provenance=_provenance("astral"),
+    )
+
+    assert result.building_provenance is None
+    assert result.solar_provenance is not None and result.solar_provenance.provider == "astral"

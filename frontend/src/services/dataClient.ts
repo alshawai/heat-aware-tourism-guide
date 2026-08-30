@@ -212,6 +212,27 @@ function validRouteGeometry(value: unknown) {
   );
 }
 
+function validShadeProvenance(value: Record<string, unknown>) {
+  const building = value.building_provenance ?? null;
+  const solar = value.solar_provenance ?? null;
+  if (building !== null && !isObject(building)) return false;
+  if (solar !== null && !isObject(solar)) return false;
+  // Buildings are only ever acquired against a resolved solar position.
+  if (building !== null && solar === null) return false;
+  const modeledShadeStates = [
+    "shade_shadiest_recommended",
+    "shade_only_route_recommended",
+  ];
+  if (modeledShadeStates.includes(String(value.decision_state))) {
+    return building !== null;
+  }
+  // Night needs the sun's position to justify itself, and acquires no buildings.
+  if (value.decision_state === "nighttime_coolest_recommended") {
+    return solar !== null && building === null;
+  }
+  return true;
+}
+
 function validExplicitRoutes(value: Record<string, unknown>) {
   const routeSetStates = [
     "alternatives_returned",
@@ -232,7 +253,8 @@ function validExplicitRoutes(value: Record<string, unknown>) {
     !routeSetStates.includes(String(value.route_set_state)) ||
     !decisionStates.includes(String(value.decision_state)) ||
     !Array.isArray(value.alternatives) ||
-    !isObject(value.routing_provenance)
+    !isObject(value.routing_provenance) ||
+    !validShadeProvenance(value)
   ) {
     return false;
   }

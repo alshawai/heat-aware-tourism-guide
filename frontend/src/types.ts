@@ -270,6 +270,8 @@ export type RouteComparisonResult = {
   provenance: ApiProvenance;
   routing_provenance: ApiProvenance | null;
   heat_provenance: ApiProvenance | null;
+  building_provenance: ApiProvenance | null;
+  solar_provenance: ApiProvenance | null;
   fallback_reason: string | null;
   heat_interpretation: HeatInterpretation | null;
 };

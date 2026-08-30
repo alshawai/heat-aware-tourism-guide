@@ -41,6 +41,8 @@ def decide_route_comparison(
     provenance: Provenance,
     routing_provenance: Provenance,
     heat_provenance: Provenance | None,
+    building_provenance: Provenance | None = None,
+    solar_provenance: Provenance | None = None,
 ) -> RouteComparisonResult:
     """Apply the route heat gate without fabricating routes or recommendations."""
     routes = () if decision.route_set is None else decision.route_set.routes
@@ -50,6 +52,8 @@ def decide_route_comparison(
             provenance=provenance,
             routing_provenance=routing_provenance,
             heat_provenance=heat_provenance,
+            building_provenance=building_provenance,
+            solar_provenance=solar_provenance,
             reason="OSRM returned no suitable pedestrian route",
         )
 
@@ -67,6 +71,8 @@ def decide_route_comparison(
             provenance=provenance,
             routing_provenance=routing_provenance,
             heat_provenance=None,
+            building_provenance=building_provenance,
+            solar_provenance=solar_provenance,
             heat_status=None,
             corridor_heat_value=None,
             fallback_reason="shared corridor heat activity was unavailable",
@@ -103,6 +109,8 @@ def decide_route_comparison(
             provenance=provenance,
             routing_provenance=routing_provenance,
             heat_provenance=heat_provenance,
+            building_provenance=building_provenance,
+            solar_provenance=solar_provenance,
             heat_status=None,
             corridor_heat_value=None,
             fallback_reason="route heat coverage was insufficient",
@@ -163,6 +171,8 @@ def decide_route_comparison(
                 provenance=provenance,
                 routing_provenance=routing_provenance,
                 heat_provenance=heat_provenance,
+                building_provenance=building_provenance,
+                solar_provenance=solar_provenance,
                 heat_status=HeatStatus.ELEVATED,
                 corridor_heat_value=max(numeric_values),
                 lowest_heat_route_id=lowest,
@@ -213,6 +223,8 @@ def decide_route_comparison(
                     provenance=provenance,
                     routing_provenance=routing_provenance,
                     heat_provenance=heat_provenance,
+                    building_provenance=building_provenance,
+                    solar_provenance=solar_provenance,
                     heat_status=HeatStatus.ELEVATED,
                     corridor_heat_value=max(numeric_values),
                     lowest_heat_route_id=lowest,
@@ -236,6 +248,8 @@ def decide_route_comparison(
                 provenance=provenance,
                 routing_provenance=routing_provenance,
                 heat_provenance=heat_provenance,
+                building_provenance=building_provenance,
+                solar_provenance=solar_provenance,
                 heat_status=HeatStatus.ELEVATED,
                 corridor_heat_value=max(numeric_values),
                 fallback_reason="building-height coverage or solar evidence was insufficient",
@@ -258,6 +272,8 @@ def decide_route_comparison(
             provenance=provenance,
             routing_provenance=routing_provenance,
             heat_provenance=heat_provenance,
+            building_provenance=building_provenance,
+            solar_provenance=solar_provenance,
             heat_status=HeatStatus.ELEVATED,
             corridor_heat_value=max(numeric_values),
             lowest_heat_route_id=lowest,
@@ -282,6 +298,8 @@ def decide_route_comparison(
         provenance=provenance,
         routing_provenance=routing_provenance,
         heat_provenance=heat_provenance,
+        building_provenance=building_provenance,
+        solar_provenance=solar_provenance,
         heat_status=HeatStatus.NOT_ELEVATED,
         corridor_heat_value=max(numeric_values),
         lowest_heat_route_id=lowest,
@@ -368,6 +386,8 @@ def _result(
     provenance: Provenance,
     routing_provenance: Provenance,
     heat_provenance: Provenance | None,
+    building_provenance: Provenance | None = None,
+    solar_provenance: Provenance | None = None,
     heat_status: HeatStatus | None,
     corridor_heat_value: float | None,
     fallback_reason: str | None = None,
@@ -406,6 +426,8 @@ def _result(
         lowest_heat_route_id=lowest_heat_route_id,
         routing_provenance=routing_provenance,
         heat_provenance=heat_provenance,
+        building_provenance=building_provenance,
+        solar_provenance=solar_provenance,
     )
 
 
@@ -415,6 +437,8 @@ def _empty_result(
     provenance: Provenance,
     routing_provenance: Provenance,
     heat_provenance: Provenance | None,
+    building_provenance: Provenance | None,
+    solar_provenance: Provenance | None,
     reason: str,
 ) -> RouteComparisonResult:
     return _result(
@@ -426,6 +450,8 @@ def _empty_result(
         provenance=provenance,
         routing_provenance=routing_provenance,
         heat_provenance=heat_provenance,
+        building_provenance=building_provenance,
+        solar_provenance=solar_provenance,
         heat_status=None,
         corridor_heat_value=None,
         fallback_reason="OSRM returned no valid routes",

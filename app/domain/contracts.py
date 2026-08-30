@@ -881,6 +881,8 @@ class RouteComparisonResult:
     lowest_heat_route_id: str | None = None
     routing_provenance: Provenance | None = None
     heat_provenance: Provenance | None = None
+    building_provenance: Provenance | None = None
+    solar_provenance: Provenance | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.heat_metric, HeatMetricName):
@@ -913,6 +915,8 @@ class RouteComparisonResult:
             or self.heat_interpretation.value_celsius != self.corridor_heat_value
         ):
             raise ValueError("route comparison heat interpretation must match its metric and value")
+        if self.building_provenance is not None and self.solar_provenance is None:
+            raise ValueError("building provenance requires the solar position it was modeled at")
         if self.route_set_state is None and self.decision_state is None:
             self._validate_legacy_recommendation()
             return

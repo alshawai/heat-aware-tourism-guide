@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 import math
-from typing import Mapping, cast
+from typing import Any, Mapping, cast
 
 from pyproj import Transformer
 from shapely.geometry import GeometryCollection, LineString, MultiPolygon, Polygon
@@ -15,6 +15,7 @@ from shapely.ops import transform, unary_union
 from app.domain.hotels import BoundingBox
 from app.domain.route_heat import build_shared_route_aoi
 from app.domain.route_shade import (
+    SHADE_UNAVAILABLE_LIMITATION,
     BuildingFootprint,
     BuildingHeightQuality,
     RouteShadeEvidence,
@@ -26,7 +27,28 @@ from app.domain.route_shade import (
 )
 from app.domain.routing import RouteSet
 from app.integrations.overpass.errors import OverpassError
-from app.services.building_execution import BuildingExecution, BuildingsUnavailable
+from app.services.building_execution import (
+    BuildingExecution,
+    BuildingOutcome,
+    BuildingsUnavailable,
+)
+
+
+@dataclass(frozen=True)
+class RouteShadeOutcome:
+    """Per-route shade evidence and the building acquisition that produced it."""
+
+    evidence: Mapping[str, RouteShadeEvidence]
+    request_identity: Mapping[str, Any]
+    metres_per_level: float
+    minimum_building_coverage: float
+    dropped_geometry_count: int = 0
+    building: BuildingOutcome | None = None
+    unavailable_reason: str | None = None
+
+    def __post_init__(self) -> None:
+        if (self.building is None) != (self.unavailable_reason is not None):
+            raise ValueError("shade outcomes record either a building source or why none answered")
 
 
 class RouteShadeService:
@@ -56,25 +78,40 @@ class RouteShadeService:
         routes: RouteSet,
         solar: SolarPosition,
         instant: datetime,
-    ) -> Mapping[str, RouteShadeEvidence]:
+    ) -> RouteShadeOutcome:
         if instant.tzinfo is None or instant.utcoffset() is None:
             raise ValueError("shade instant must be timezone-aware")
+        aoi = _shared_bbox(routes, self._corridor_buffer_m)
+        identity = self._execution.identity(aoi)
         try:
-            outcome = self._execution.run(_shared_bbox(routes, self._corridor_buffer_m))
+            outcome = self._execution.run(aoi)
             buildings, dropped_geometry_count = _normalize_buildings(
                 outcome.payload, metres_per_level=self._metres_per_level
             )
-        except (BuildingsUnavailable, OverpassError):
-            return {route.identity: unavailable_shade_evidence() for route in routes.routes}
-        return {
-            route.identity: self._route_evidence(
-                LineString(route.geometry.coordinates),
-                buildings,
-                solar,
-                dropped_geometry_count,
+        except (BuildingsUnavailable, OverpassError) as error:
+            return RouteShadeOutcome(
+                evidence={route.identity: unavailable_shade_evidence() for route in routes.routes},
+                request_identity=identity,
+                metres_per_level=self._metres_per_level,
+                minimum_building_coverage=self._minimum_building_coverage,
+                unavailable_reason=str(error) or SHADE_UNAVAILABLE_LIMITATION,
             )
-            for route in routes.routes
-        }
+        return RouteShadeOutcome(
+            evidence={
+                route.identity: self._route_evidence(
+                    LineString(route.geometry.coordinates),
+                    buildings,
+                    solar,
+                    dropped_geometry_count,
+                )
+                for route in routes.routes
+            },
+            request_identity=identity,
+            metres_per_level=self._metres_per_level,
+            minimum_building_coverage=self._minimum_building_coverage,
+            dropped_geometry_count=dropped_geometry_count,
+            building=outcome,
+        )
 
     def _route_evidence(
         self,

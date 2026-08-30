@@ -242,7 +242,7 @@ def test_canonical_fixture_replay_yields_sufficient_daytime_shade_evidence() -> 
     instant = datetime(2026, 8, 29, 10, 30, tzinfo=ZoneInfo("America/Chicago"))
     solar = solar_position(instant, 29.4252122, -98.4861309)
 
-    evidence = service.load(routes, solar, instant)["route-1"]
+    evidence = service.load(routes, solar, instant).evidence["route-1"]
 
     assert evidence.confidence is ShadeConfidence.SUFFICIENT
     assert evidence.building_coverage >= 0.70
@@ -255,10 +255,12 @@ def test_shade_evidence_is_explicitly_unavailable_when_no_building_source_answer
     instant = datetime(2026, 8, 29, 10, 30, tzinfo=ZoneInfo("America/Chicago"))
     solar = solar_position(instant, 29.4252122, -98.4861309)
 
-    evidence = service.load(_canonical_routes(), solar, instant)
+    outcome = service.load(_canonical_routes(), solar, instant)
 
-    assert set(evidence) == {"route-1"}
-    unavailable = evidence["route-1"]
+    assert outcome.building is None
+    assert outcome.unavailable_reason is not None and "not configured" in outcome.unavailable_reason
+    assert set(outcome.evidence) == {"route-1"}
+    unavailable = outcome.evidence["route-1"]
     assert unavailable.confidence is ShadeConfidence.INSUFFICIENT
     assert unavailable.modeled_shade_percent == 0.0
     assert unavailable.building_coverage == 0.0
