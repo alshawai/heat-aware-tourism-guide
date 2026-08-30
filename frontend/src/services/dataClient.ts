@@ -9,6 +9,7 @@ import type {
   RequestOptions,
   TripAnalysisRequest,
   TripAnalysisResponse,
+  PlaceSearchResponse,
 } from "../types";
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -480,12 +481,16 @@ function isTripAnalysisResponse(
 }
 
 async function readJson(response: Response) {
-  if (!response.ok) throw new Error("Request failed");
+  if (!response.ok) {
+    const detail = await response.json().catch(() => null);
+    const message =
+      isObject(detail) && isObject(detail.detail) ? detail.detail.error : null;
+    throw new Error(typeof message === "string" ? message : "Request failed");
+  }
   return response.json() as Promise<unknown>;
 }
 
 export const dataClient = {
-  analyzeTrip: mockTripAnalyze,
   async getHealth(signal?: AbortSignal): Promise<ExecutionMode> {
     const value = await readJson(await fetch("/health", { signal }));
     if (
@@ -497,7 +502,8 @@ export const dataClient = {
     }
     return value.mode;
   },
-  async analyzeCuratedTrip(
+  analyzeTrip: mockTripAnalyze,
+  async analyzeTripAnalysis(
     request: TripAnalysisRequest
   ): Promise<TripAnalysisResponse> {
     const value = await readJson(
@@ -511,6 +517,19 @@ export const dataClient = {
       throw new Error("Invalid trip analysis response");
     }
     return value;
+  },
+  async searchPlaces(
+    query: string,
+    signal?: AbortSignal
+  ): Promise<PlaceSearchResponse> {
+    const value = await readJson(
+      await fetch(`/api/places/search?q=${encodeURIComponent(query)}`, {
+        signal,
+      })
+    );
+    if (!isObject(value) || !Array.isArray(value.places))
+      throw new Error("Invalid place search response");
+    return value as PlaceSearchResponse;
   },
   async rankHotels(
     location: LocationSelection,
