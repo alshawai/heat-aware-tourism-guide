@@ -7,13 +7,11 @@ import {
   HotelRankingScreen,
 } from "../features/hotels/HotelScreens";
 import {
-  BestTimeScreen,
-  RouteComparisonScreen,
-  SelectedRouteScreen,
-  WalkDateScreen,
-  WalkLocationScreen,
-} from "../features/walk/WalkScreens";
-import { TripSetupScreen } from "../screens/TripSetupScreen";
+  RouteDetailScreen,
+  TripResultsScreen,
+  TripSetupScreen,
+} from "../features/trip/TripScreens";
+import { WelcomeScreen } from "../screens/WelcomeScreen";
 
 export function App() {
   return (
@@ -21,14 +19,12 @@ export function App() {
       <AppProvider>
         <Routes>
           <Route element={<AppShell />}>
-            <Route index element={<TripSetupScreen />} />
-            <Route path="walk/location" element={<WalkLocationScreen />} />
-            <Route path="walk/date" element={<WalkDateScreen />} />
-            <Route path="walk/result" element={<BestTimeScreen />} />
-            <Route path="walk/routes" element={<RouteComparisonScreen />} />
+            <Route index element={<WelcomeScreen />} />
+            <Route path="trip/setup" element={<TripSetupScreen />} />
+            <Route path="trip/results" element={<TripResultsScreen />} />
             <Route
-              path="walk/routes/:routeId"
-              element={<SelectedRouteScreen />}
+              path="trip/routes/:routeId"
+              element={<RouteDetailScreen />}
             />
             <Route path="hotels/location" element={<HotelLocationScreen />} />
             <Route path="hotels/results" element={<HotelRankingScreen />} />

@@ -2,26 +2,9 @@ import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { ProvenanceFooter } from "../components/Shared";
 import { mockHotelRanking } from "../mocks/mockHotelRanking";
-import { mockTripAnalyze } from "../mocks/mockTripAnalyze";
 import { scenarioLocations } from "../mocks/data";
 
-describe("mock data boundary", () => {
-  it("delays trip analysis and preserves metric identity", async () => {
-    vi.useFakeTimers();
-    const request = mockTripAnalyze(scenarioLocations[2], "2026-09-02");
-    let settled = false;
-    request.then(() => {
-      settled = true;
-    });
-    await vi.advanceTimersByTimeAsync(1000);
-    expect(settled).toBe(false);
-    await vi.advanceTimersByTimeAsync(400);
-    await expect(request).resolves.toMatchObject({
-      metric: { actualHeatIndex: false },
-    });
-    vi.useRealTimers();
-  });
-
+describe("hotel mock data boundary", () => {
   it("returns a scenario with ties and fewer than five hotels", async () => {
     vi.useFakeTimers();
     const request = mockHotelRanking(scenarioLocations[0], {

@@ -1,6 +1,5 @@
 import { scenarioLocations } from "../mocks/data";
 import { mockHotelRanking } from "../mocks/mockHotelRanking";
-import { mockTripAnalyze } from "../mocks/mockTripAnalyze";
 import type {
   HealthResponse,
   HotelRankRequest,
@@ -515,7 +514,6 @@ function isEnrichmentResponse(value: unknown): value is EnrichmentResponse {
 }
 
 export const dataClient = {
-  analyzeTrip: mockTripAnalyze,
   async getHealth(signal?: AbortSignal): Promise<HealthResponse> {
     const value = await readJson(await fetch("/health", { signal }));
     if (

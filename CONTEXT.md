@@ -31,9 +31,22 @@ directly.
   point heatmap followed by one identically ranged env-params series; later
   issues consume that series for best-time, hotel, and route decisions. It is
   not a collection of traveler-visible provider requests.
+- **Custom hour override** — A second trip analysis request for one traveler-
+  chosen hour, sent with the window narrowed to exactly `(hour, hour + 1)` so
+  the server recomputes route heat and solar geometry for that hour instead of
+  the client reinterpreting the window's result. It never replaces the analyzed
+  window: the hourly comparison keeps showing the window the traveler asked
+  for. It is a second billable analysis on the live path, and fixture replay
+  only matches the committed window, so an override there is answered
+  `unavailable` rather than analyzed. Synonyms to avoid: "hour filter",
+  "re-run".
 - **Supported live-data geography** — The United States, the geographic area
   in which the product may request live provider data. This is distinct from
-  the canonical trip's San Antonio location and from fixture replay.
+  the canonical trip's San Antonio location and from fixture replay. The coarse
+  envelope in `_supported_live_geography` (`app/api.py`) is applied on the live
+  path only; the trip setup screen mirrors the same box so a traveler cannot
+  pin an out-of-country endpoint while replaying fixtures. The client check is
+  a usability guard, not a security boundary.
 - **Activity** — One asynchronous FortyGuard job. Submission returns an
   `activity_id`; the result is polled from `GET /v1/status/{activity_id}`.
   A heatmap activity is billable on completion. Synonyms to avoid: "task",
@@ -196,7 +209,9 @@ directly.
   recommendation staging.
 - ADR 0007 — exact-time modeled shade, nighttime route decisions, and weak
   shade-evidence behavior.
-- ADR 0008 — separated public fixture/protected live deployments, explicit
+- ADR 0008 — optional enrichment budgets, result-set tokens, and the boundary
+  that keeps enrichment out of core heat, ranking, shade, and route decisions.
+- ADR 0009 — separated public fixture/protected live deployments, explicit
   deployment profiles, authentication, and persistent budget enforcement.
 - `docs/design/fortyguard-extraction.md` — extraction contract from issue #6.
 - Layout: `app/domain/` (pure contracts), `app/services/` (cache, execution,

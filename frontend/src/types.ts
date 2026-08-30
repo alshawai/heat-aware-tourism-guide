@@ -18,31 +18,6 @@ export type Provenance = {
   note?: string;
 };
 
-export type HourPoint = {
-  hour: string;
-  value: number;
-  comfort: "lower" | "moderate" | "higher";
-};
-export type RouteAlternative = {
-  id: string;
-  name: string;
-  distanceMeters: number;
-  durationMinutes: number;
-  heatStatus: string;
-  shadePercent: number;
-  geometry: [number, number][];
-  steps: string[];
-};
-export type TripResponse = {
-  location: LocationSelection;
-  date: string;
-  metric: { label: string; unit: string; actualHeatIndex: boolean };
-  hourly: HourPoint[];
-  recommendation: { window: string; reason: string };
-  routes: RouteAlternative[];
-  provenance: { bestTime: Provenance; routes: Provenance };
-};
-
 export type HotelComponentName = "night" | "hot_hours" | "persistence" | "day";
 
 export type HotelComponentMetadata = {
@@ -352,11 +327,33 @@ export type HeatBand =
   | "provider_higher"
   | "provider_very_high";
 
-export type CuratedTripSetup = {
+/**
+ * The complete traveler-selected trip setup.
+ *
+ * One setup drives the single billable analysis; the request builder derives
+ * every wire field from it, so nothing about the trip lives outside this shape.
+ */
+export type TripSetup = {
+  tripMode: "curated" | "exploratory";
+  origin: LocationSelection;
+  destination: LocationSelection;
   date: string;
   startHour: number;
   endHour: number;
   cautious: boolean;
+};
+
+/**
+ * The analyses held for one trip setup.
+ *
+ * `baseline` is the window-wide analysis the traveler paid for on submit and is
+ * the only source for the hourly chart. `override` is an optional second
+ * analysis narrowed to exactly one hour, which the map, route cards, and route
+ * detail prefer so their heat and shade match the hour on screen.
+ */
+export type TripResults = {
+  baseline: TripAnalysisResponse;
+  override: { hour: number; response: TripAnalysisResponse } | null;
 };
 
 export type PlaceSearchResponse = { places: LocationSelection[] };

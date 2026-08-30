@@ -5,7 +5,6 @@ import type {
   LocationSelection,
   MockMode,
   RequestOptions,
-  TripResponse,
 } from "../types";
 
 const locations: LocationSelection[] = [
@@ -31,125 +30,6 @@ const locations: LocationSelection[] = [
     longitude: -90.0715,
   },
 ];
-
-const makeTrip = (
-  location: LocationSelection,
-  date: string,
-  limited = false
-): TripResponse => ({
-  location,
-  date,
-  metric: {
-    label: limited ? "Provider temperature metric" : "NOAA Heat Index",
-    unit: "C",
-    actualHeatIndex: !limited,
-  },
-  hourly: ["07:00", "09:00", "11:00", "13:00", "15:00", "17:00", "19:00"].map(
-    (hour, index) => ({
-      hour,
-      value: [27, 29, 33, 37, 39, 35, 31][index],
-      comfort:
-        index < 2 || index === 6 ? "lower" : index < 5 ? "moderate" : "higher",
-    })
-  ),
-  recommendation: {
-    window: "07:00–09:00",
-    reason:
-      "The selected metric is lowest in this window among the returned hourly observations.",
-  },
-  routes: limited
-    ? [
-        {
-          id: "route-1",
-          name: "Direct path",
-          distanceMeters: 980,
-          durationMinutes: 13,
-          heatStatus: "Moderate exposure",
-          shadePercent: 18,
-          geometry: [
-            [location.latitude, location.longitude],
-            [location.latitude + 0.004, location.longitude + 0.006],
-          ],
-          steps: [
-            "Head toward the selected destination",
-            "Continue along the main pedestrian corridor",
-            "Arrive at the selected location",
-          ],
-        },
-      ]
-    : [
-        {
-          id: "route-1",
-          name: "Shortest returned route",
-          distanceMeters: 980,
-          durationMinutes: 13,
-          heatStatus: "Higher exposure",
-          shadePercent: 22,
-          geometry: [
-            [location.latitude, location.longitude],
-            [location.latitude + 0.004, location.longitude + 0.006],
-          ],
-          steps: [
-            "Head toward the selected destination",
-            "Continue along the main pedestrian corridor",
-            "Arrive at the selected location",
-          ],
-        },
-        {
-          id: "route-2",
-          name: "More shaded returned route",
-          distanceMeters: 1180,
-          durationMinutes: 16,
-          heatStatus: "Lower exposure",
-          shadePercent: 51,
-          geometry: [
-            [location.latitude, location.longitude],
-            [location.latitude + 0.002, location.longitude + 0.004],
-            [location.latitude + 0.004, location.longitude + 0.006],
-          ],
-          steps: [
-            "Head toward the shaded corridor",
-            "Turn onto the tree-lined pedestrian way",
-            "Arrive at the selected location",
-          ],
-        },
-        {
-          id: "route-3",
-          name: "Market-side returned route",
-          distanceMeters: 1320,
-          durationMinutes: 18,
-          heatStatus: "Moderate exposure",
-          shadePercent: 38,
-          geometry: [
-            [location.latitude, location.longitude],
-            [location.latitude + 0.005, location.longitude + 0.002],
-            [location.latitude + 0.004, location.longitude + 0.006],
-          ],
-          steps: [
-            "Follow the market-side walkway",
-            "Cross the central plaza",
-            "Arrive at the selected location",
-          ],
-        },
-      ],
-  provenance: {
-    bestTime: {
-      source: "mock",
-      dataDate: date,
-      confidence: limited ? "Moderate" : "High",
-      note: "Hourly fixture observations",
-    },
-    routes: {
-      source: "mock",
-      dataDate: date,
-      confidence: limited ? "Low" : "High",
-      coverage: limited
-        ? "Building-height coverage: 42%"
-        : "Building-height coverage: 91%",
-      note: "Shade is a modeled estimate based on building data.",
-    },
-  },
-});
 
 const makeHotels = (
   location: LocationSelection,
@@ -271,17 +151,6 @@ export function resolveMode(options: RequestOptions): MockMode {
     options.mode ??
     (new URLSearchParams(window.location.search).get("state") as MockMode) ??
     "success"
-  );
-}
-export function mockTripAnalyze(
-  location: LocationSelection,
-  date: string,
-  options: RequestOptions = {}
-): Promise<TripResponse> {
-  return delayed(
-    resolveMode(options),
-    () => makeTrip(location, date, location.id === "garden"),
-    options.signal
   );
 }
 export function mockHotelRanking(
