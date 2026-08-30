@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from time import sleep as default_sleep
 from typing import Callable, Mapping
+from uuid import uuid4
 
 from app.domain.ledger import CreditLedger, UsageRecord
 from app.domain.security import sanitize_payload
@@ -66,20 +67,33 @@ class FortyGuardClient:
         max_polls: int = 24,
         interval_seconds: float = 5.0,
         status_404_grace_checks: int = 3,
+        scope: str = "core",
     ) -> tuple[Mapping[str, object], ActivityMetadata]:
         reservation: int | None = None
+        activity_id: str | None = None
+        submitted = False
+        submitted_at: datetime | None = None
+        attempted_at: datetime | None = None
+        submission_attempted = False
+        submission_rejected = False
+        recorded = False
         if self._ledger is not None:
-            reservation = self._ledger.authorize_call()
+            reservation = self._ledger.authorize(scope=scope, now=self._clock())
         try:
+            submission_attempted = True
+            attempted_at = self._clock()
             response = self._transport.post(endpoint, payload, self._api_key)
             status_code = response.get("status_code")
             if isinstance(status_code, int) and status_code >= 400:
+                submission_rejected = True
                 raise classify_provider_error(status_code, "activity submission failed")
-            activity_id = response.get("activity_id")
-            if not isinstance(activity_id, str) or not activity_id:
+            submitted = True
+            raw_activity_id = response.get("activity_id")
+            if not isinstance(raw_activity_id, str) or not raw_activity_id:
                 raise ProviderError(
                     ProviderErrorKind.MALFORMED_RESPONSE, detail="missing activity id"
                 )
+            activity_id = raw_activity_id
             submitted_at = self._clock()
             self._emit(
                 "fortyguard.submitted",
@@ -126,16 +140,49 @@ class FortyGuardClient:
                 # priced it. A silent provider means unknown cost, not zero cost
                 # (ADR 0004 §5); credits are reconciled from the account endpoint.
                 self._ledger.record(
-                    UsageRecord(activity_id, endpoint, credits_used, self._clock(), "completed"),
+                    UsageRecord(
+                        activity_id, endpoint, credits_used, self._clock(), "completed", scope
+                    ),
                     reservation=reservation,
                 )
+                recorded = True
             self._emit(
                 "fortyguard.completed", {"activity_id": activity_id, **_response_metadata(result)}
             )
             return result, metadata
+        except Exception as error:
+            if submitted and activity_id is not None and self._ledger is not None:
+                self._ledger.record(
+                    UsageRecord(activity_id, endpoint, None, self._clock(), "submitted", scope),
+                    reservation=reservation,
+                )
+                reservation = None
+            if isinstance(error, ProviderError) and activity_id is not None:
+                raise ProviderError(
+                    error.kind,
+                    error.status_code,
+                    error.detail,
+                    activity_id,
+                ) from error
+            raise
         finally:
             if reservation is not None and self._ledger is not None:
-                self._ledger.release_call(reservation)
+                if submission_attempted and not submission_rejected and not recorded:
+                    # A POST attempt may be billable even when its response or
+                    # later polling is ambiguous, so it consumes the hard bound.
+                    self._ledger.record(
+                        UsageRecord(
+                            activity_id or f"submission-unknown-{uuid4().hex}",
+                            endpoint,
+                            None,
+                            submitted_at or attempted_at or self._clock(),
+                            "submitted" if activity_id is not None else "submission_unknown",
+                            scope,
+                        ),
+                        reservation=reservation,
+                    )
+                else:
+                    self._ledger.release_call(reservation)
 
     def poll_existing_activity(
         self,

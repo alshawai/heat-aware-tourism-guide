@@ -1,0 +1,20 @@
+{
+  "source": "synthesized",
+  "provider": "heat-aware-tourism-guide",
+  "endpoint": "/v1/streetview",
+  "request_configuration": {
+    "kind": "street_view",
+    "schema_version": "enrichment-v1"
+  },
+  "retrieved_at": null,
+  "data_date": null,
+  "status": "synthesized",
+  "schema_version": "enrichment-v1",
+  "provider_config_version": "fortyguard-enrichment-v1",
+  "activity_id": null,
+  "derived_from": [],
+  "transformations": [],
+  "response_metadata": {
+    "fixture_kind": "street_view"
+  }
+}

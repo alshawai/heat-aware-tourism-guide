@@ -341,7 +341,7 @@ export function HotelRankingScreen() {
               />
               <div className="hotel-list">
                 {result.hotels.map((hotel) => {
-                  const id = `${hotel.identity.object_type}-${hotel.identity.object_id}`;
+                  const id = `${hotel.identity.object_type}:${hotel.identity.object_id}`;
                   const tied =
                     result.hotels.filter(
                       (candidate) =>
@@ -391,10 +391,47 @@ export function HotelDetailScreen() {
   const { hotelId } = useParams();
   const hotel = ranking?.ranking?.hotels.find(
     (candidate) =>
-      `${candidate.identity.object_type}-${candidate.identity.object_id}` ===
+      `${candidate.identity.object_type}:${candidate.identity.object_id}` ===
       hotelId
   );
   if (!ranking || !hotel) return <Navigate to="/hotels/results" replace />;
+  const selectedRanking = ranking;
+  const resultSetToken = selectedRanking.result_set_token;
+  const [anchor, setAnchor] = useState(32);
+  const [enrichment, setEnrichment] = useState<Awaited<
+    ReturnType<typeof dataClient.requestEnrichment>
+  > | null>(null);
+  const [loading, setLoading] = useState(false);
+  const targetId = `${hotel.identity.object_type}:${hotel.identity.object_id}`;
+  async function loadEnvironment() {
+    if (!resultSetToken) return;
+    setLoading(true);
+    try {
+      setEnrichment(
+        await dataClient.requestEnrichment(
+          "environment",
+          targetId,
+          resultSetToken,
+          anchor
+        )
+      );
+    } catch (error) {
+      setEnrichment({
+        status: "success",
+        kind: "environment",
+        target_id: targetId,
+        state: "unavailable",
+        reason: error instanceof Error ? error.message : "request_failed",
+        base_result: {},
+        usage: { requested_calls: 0, completed_calls: 0 },
+        provenance: null,
+        limitations: [],
+        payload: null,
+      });
+    } finally {
+      setLoading(false);
+    }
+  }
   return (
     <section className="screen narrow-screen">
       <div className="screen-heading">
@@ -481,6 +518,45 @@ export function HotelDetailScreen() {
           );
         })}
       </div>
+      <article className="local-score" aria-live="polite">
+        <div>
+          <span>Optional environmental context</span>
+          <label>
+            Temperature anchor °C
+            <input
+              type="number"
+              value={anchor}
+              onChange={(event) => setAnchor(Number(event.target.value))}
+            />
+          </label>
+          <button
+            type="button"
+            onClick={loadEnvironment}
+            disabled={loading || !resultSetToken}
+          >
+            {loading ? "Loading context..." : "Load environmental context"}
+          </button>
+          {enrichment && (
+            <p>
+              {enrichment.state === "available"
+                ? "Environmental context available."
+                : `Unavailable: ${enrichment.reason}`}
+            </p>
+          )}
+          {enrichment?.payload && (
+            <pre>{JSON.stringify(enrichment.payload, null, 2)}</pre>
+          )}
+          {enrichment?.provenance && (
+            <small>
+              Source: {String(enrichment.provenance.source)} · Calls:{" "}
+              {enrichment.usage.completed_calls}
+            </small>
+          )}
+          {enrichment?.limitations.map((item) => (
+            <small key={item}>{item}</small>
+          ))}
+        </div>
+      </article>
       <Link className="text-link" to="/hotels/results">
         Return to hotel ranking
       </Link>

@@ -2,13 +2,15 @@ import { scenarioLocations } from "../mocks/data";
 import { mockHotelRanking } from "../mocks/mockHotelRanking";
 import { mockTripAnalyze } from "../mocks/mockTripAnalyze";
 import type {
-  ExecutionMode,
+  HealthResponse,
   HotelRankRequest,
   HotelRankResponse,
   LocationSelection,
   RequestOptions,
   TripAnalysisRequest,
   TripAnalysisResponse,
+  EnrichmentKind,
+  EnrichmentResponse,
   PlaceSearchResponse,
 } from "../types";
 
@@ -572,20 +574,26 @@ function isTripAnalysisResponse(
   request: TripAnalysisRequest
 ): value is TripAnalysisResponse {
   const modern = isObject(value) && value.schema_version === "trip-contract-v2";
+  const modernEnvelopeKeys = [
+    "schema_version",
+    "state",
+    "best_time",
+    "hotels",
+    "routes",
+    "unavailable",
+    "degraded_reasons",
+    "request_identity",
+    "mode",
+    "execution_mode",
+  ];
   if (
     modern &&
-    !hasExactKeys(value, [
-      "schema_version",
-      "state",
-      "best_time",
-      "hotels",
-      "routes",
-      "unavailable",
-      "degraded_reasons",
-      "request_identity",
-      "mode",
-      "execution_mode",
-    ])
+    !hasExactKeys(
+      value,
+      value.result_set_token === undefined
+        ? modernEnvelopeKeys
+        : [...modernEnvelopeKeys, "result_set_token"]
+    )
   ) {
     return false;
   }
@@ -595,6 +603,10 @@ function isTripAnalysisResponse(
       `${request.mode}:${request.date}:${request.start_hour}-${request.end_hour}` ||
     value.mode !== request.mode ||
     value.execution_mode !== request.execution_mode ||
+    !(
+      value.result_set_token === undefined ||
+      typeof value.result_set_token === "string"
+    ) ||
     !(modern
       ? ["success", "degraded", "unavailable"].includes(String(value.state))
       : [
@@ -669,28 +681,55 @@ function isTripAnalysisResponse(
 }
 
 async function readJson(response: Response) {
+  const body = (await response.json()) as unknown;
   if (!response.ok) {
-    const detail = await response.json().catch(() => null);
-    const message =
-      isObject(detail) && isObject(detail.detail) ? detail.detail.error : null;
-    throw new Error(typeof message === "string" ? message : "Request failed");
+    const detail = isObject(body) && isObject(body.detail) ? body.detail : body;
+    const error = new Error(
+      isObject(detail) && typeof detail.error === "string"
+        ? detail.error
+        : "Request failed"
+    ) as Error & { code?: string };
+    if (isObject(detail) && typeof detail.error_kind === "string")
+      error.code = detail.error_kind;
+    throw error;
   }
-  return response.json() as Promise<unknown>;
+  return body;
+}
+
+function isEnrichmentResponse(value: unknown): value is EnrichmentResponse {
+  return (
+    isObject(value) &&
+    value.status === "success" &&
+    ["environment", "satellite_canopy", "street_view"].includes(
+      String(value.kind)
+    ) &&
+    typeof value.target_id === "string" &&
+    ["available", "unavailable", "not_requested"].includes(
+      String(value.state)
+    ) &&
+    isObject(value.usage) &&
+    Array.isArray(value.limitations)
+  );
 }
 
 export const dataClient = {
-  async getHealth(signal?: AbortSignal): Promise<ExecutionMode> {
+  analyzeTrip: mockTripAnalyze,
+  async getHealth(signal?: AbortSignal): Promise<HealthResponse> {
     const value = await readJson(await fetch("/health", { signal }));
     if (
       !isObject(value) ||
       value.status !== "ok" ||
-      (value.mode !== "fixture" && value.mode !== "live")
+      (value.mode !== "fixture" && value.mode !== "live") ||
+      (value.deployment_profile !== "local" &&
+        value.deployment_profile !== "public-fixture" &&
+        value.deployment_profile !== "protected-live") ||
+      (value.execution_capability !== "fixture-only" &&
+        value.execution_capability !== "fixture-and-live")
     ) {
       throw new Error("Invalid health response");
     }
-    return value.mode;
+    return value as HealthResponse;
   },
-  analyzeTrip: mockTripAnalyze,
   async analyzeTripAnalysis(
     request: TripAnalysisRequest
   ): Promise<TripAnalysisResponse> {
@@ -727,11 +766,11 @@ export const dataClient = {
     if (options.mode !== undefined || options.scenario !== undefined) {
       return mockHotelRanking(location, options);
     }
-    const executionMode = await this.getHealth(options.signal);
+    const health = await this.getHealth(options.signal);
     const request: HotelRankRequest = {
       // The current hotel flow is scoped to the canonical district AOI.
       district_name: "Downtown San Antonio",
-      execution_mode: executionMode,
+      execution_mode: health.mode,
     };
     const value = await readJson(
       await fetch("/api/hotels/rank", {
@@ -744,6 +783,34 @@ export const dataClient = {
     if (!isHotelRankResponse(value)) {
       throw new Error("Invalid hotel ranking response");
     }
+    return value;
+  },
+  async requestEnrichment(
+    kind: EnrichmentKind,
+    targetId: string,
+    resultSetToken: string,
+    temperatureAnchor?: number,
+    signal?: AbortSignal
+  ): Promise<EnrichmentResponse> {
+    const path =
+      kind === "environment"
+        ? `/api/hotels/${encodeURIComponent(targetId)}/environment`
+        : kind === "satellite_canopy"
+          ? `/api/routes/${encodeURIComponent(targetId)}/canopy`
+          : `/api/routes/${encodeURIComponent(targetId)}/street-view`;
+    const body: Record<string, unknown> = { result_set_token: resultSetToken };
+    if (temperatureAnchor !== undefined)
+      body.temperature_anchor_celsius = temperatureAnchor;
+    const value = await readJson(
+      await fetch(path, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+        signal,
+      })
+    );
+    if (!isEnrichmentResponse(value))
+      throw new Error("Invalid enrichment response");
     return value;
   },
   searchLocations(query: string, locations = scenarioLocations) {

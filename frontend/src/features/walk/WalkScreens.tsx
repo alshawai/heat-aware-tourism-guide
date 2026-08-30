@@ -336,6 +336,38 @@ export function SelectedRouteScreen() {
     (candidate) => candidate.identity === routeId
   );
   if (!route) return <Navigate to="/walk/routes" replace />;
+  const selectedRoute = route;
+  const [enrichment, setEnrichment] = useState<Awaited<
+    ReturnType<typeof dataClient.requestEnrichment>
+  > | null>(null);
+  const [loadingKind, setLoadingKind] = useState<
+    "satellite_canopy" | "street_view" | null
+  >(null);
+  async function load(kind: "satellite_canopy" | "street_view") {
+    const token = tripAnalysis?.result_set_token;
+    if (!token) return;
+    setLoadingKind(kind);
+    try {
+      setEnrichment(
+        await dataClient.requestEnrichment(kind, selectedRoute.identity, token)
+      );
+    } catch (error) {
+      setEnrichment({
+        status: "success",
+        kind,
+        target_id: selectedRoute.identity,
+        state: "unavailable",
+        reason: error instanceof Error ? error.message : "request_failed",
+        base_result: {},
+        usage: { requested_calls: 0, completed_calls: 0 },
+        provenance: null,
+        limitations: [],
+        payload: null,
+      });
+    } finally {
+      setLoadingKind(null);
+    }
+  }
   return (
     <section className="screen narrow-screen">
       <div className="screen-heading">
@@ -364,6 +396,52 @@ export function SelectedRouteScreen() {
         Turn-by-turn directions are not included in this analysis response. The
         full returned route geometry is shown on the comparison map.
       </p>
+      <article className="route-summary" aria-live="polite">
+        <div>
+          <strong>Optional route context</strong>
+          <p>
+            Premium context is informational only and cannot change this route
+            decision.
+          </p>
+          <button
+            type="button"
+            onClick={() => load("satellite_canopy")}
+            disabled={!tripAnalysis?.result_set_token || loadingKind !== null}
+          >
+            {loadingKind === "satellite_canopy"
+              ? "Loading canopy..."
+              : "Load canopy context"}
+          </button>{" "}
+          <button
+            type="button"
+            onClick={() => load("street_view")}
+            disabled={!tripAnalysis?.result_set_token || loadingKind !== null}
+          >
+            {loadingKind === "street_view"
+              ? "Loading street view..."
+              : "Load street view"}
+          </button>
+          {enrichment && (
+            <p>
+              {enrichment.state === "available"
+                ? "Optional context available."
+                : `Unavailable: ${enrichment.reason}`}
+            </p>
+          )}
+          {enrichment?.payload && (
+            <pre>{JSON.stringify(enrichment.payload, null, 2)}</pre>
+          )}
+          {enrichment?.provenance && (
+            <small>
+              Source: {String(enrichment.provenance.source)} · Calls:{" "}
+              {enrichment.usage.completed_calls}
+            </small>
+          )}
+          {enrichment?.limitations.map((item) => (
+            <small key={item}>{item}</small>
+          ))}
+        </div>
+      </article>
       <Link className="text-link" to="/walk/routes">
         Return to route comparison
       </Link>

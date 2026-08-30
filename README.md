@@ -4,7 +4,10 @@ Heat-aware trip planning for visitors to hot US cities. The application
 combines landmark timing, outdoor neighborhood heat, and walking-route
 comparison in one fixture-backed web experience.
 
-**Public URL:** to be added before recording.
+**Public demo:** <https://heat-aware-tourism-guide-demo.onrender.com/>
+
+The free Render service sleeps after 15 minutes without traffic, so allow about
+one minute for the first load during judging.
 
 ## Project Shape
 
@@ -24,6 +27,8 @@ Detailed contributor setup, live-mode acquisition, deployment, API reference,
 and demo instructions are organized under the Diataxis structure:
 
 - [Design explanation](docs/design/design-doc.md)
+- [Deployment guide](docs/deployment.md)
+- [Deployment decision](docs/adr/0009-separated-public-fixture-and-protected-live-deployments.md)
 - [Fixture demo script](docs/demo-script.md)
 - [Provider and coordinate research](docs/research/)
 

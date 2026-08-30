@@ -46,6 +46,30 @@ directly.
   provider-shape JSON, offline), `live` (authenticated provider call through
   the live adapter), or `cache` (replayed earlier result). One of the three is
   always explicit in `Provenance.source`; never empty-success.
+- **Optional enrichment** — An explicit, bounded drill-down on an already
+  narrowed hotel or route result. Environmental parameters, satellite canopy,
+  and street-view metadata add context but never alter core heat, ranking,
+  shade, or route decisions; failure preserves the base result with an
+  item-level unavailable state.
+- **Result-set token** — A short-lived, server-signed reference to trusted base
+  result IDs and geometry used to authorize optional enrichment without
+  recomputing the base result or trusting caller-supplied coordinates.
+- **Enrichment call budget** — A separate UTC calendar-day limit on submitted
+  live enrichment activities. One submission consumes one unit even if the
+  activity later fails; cache hits and fixture replay consume none. Configured
+  per-kind credit values are estimates, not actual attributed credit usage.
+- **Deployment profile** — The server-declared operating boundary for an
+  application instance: `local`, `public-fixture`, or `protected-live`. It is
+  distinct from execution mode because it governs startup guarantees and who
+  may access the instance, not where an individual result originates.
+- **Public fixture deployment** — The publicly accessible application instance,
+  restricted to the fixed canonical-trip demonstration and incapable of live
+  provider execution. Live credentials and live provider capability are absent,
+  not merely hidden from public controls. Synonym to avoid: "public fixture
+  mode" when referring to the deployed instance rather than execution source.
+- **Protected live deployment** — A separately deployed, access-controlled
+  maintainer instance capable of live provider execution. It is never the
+  public fixture deployment and is not available to anonymous travelers.
 - **Provenance** — The record attached to every result: `source`
   (`fixture`/`provider`/`cache`), `retrieved_at`, `data_date`, `stale`,
   `forecast`, optional `activity_id`, sanitized `raw_payload`, and
@@ -90,7 +114,7 @@ directly.
 - **Credit ledger** — Append-only log of billable provider activity;
   `plan_optional` is separate from actual spend. Persists as JSONL
   (`data/ledger.jsonl`), loaded at startup, holding two record kinds:
-  **call records** (one per completed provider call, keyed by activity ID,
+  **call records** (one per submitted provider call, keyed by activity ID,
   `credits_used` null when the provider did not price it) and
   **reconciliation records** (authoritative account credit totals for a date
   window). The optional `FORTYGUARD_CALL_BUDGET` enforces an all-time **call
@@ -204,8 +228,18 @@ directly.
   recommendation staging.
 - ADR 0007 — exact-time modeled shade, nighttime route decisions, and weak
   shade-evidence behavior.
-- ADR 0008 — `trip-contract-v2` product snapshots, normalized acquisition links,
-  strict shared codec, four-scenario offline matrix, and regeneration policy.
+- `docs/adr/0008-optional-enrichment-budgets-and-boundaries.md` — ADR 0008,
+  "Optional enrichment budgets and decision boundaries" (Issue #22): explicit
+  drill-down, signed result-set tokens, separate daily budgets, and base-result
+  preservation.
+- `docs/adr/0010-trip-v2-product-snapshots.md` — ADR 0010, "Trip v2 product
+  snapshots from normalized acquisitions" (Issue #23): `trip-contract-v2`,
+  normalized acquisition links, strict shared codec, four-scenario offline
+  matrix, and regeneration policy.
+- `docs/adr/0009-separated-public-fixture-and-protected-live-deployments.md` —
+  ADR 0009, "Separated public fixture and protected live deployments" (Issue
+  #25): explicit deployment profiles, authentication, and persistent budget
+  enforcement.
 - `docs/research/issue-23-fixture-schema.md` — Issue #23 snapshot and acquisition
   outcomes, hashes, and network-blocked coverage.
 - `docs/research/issue-23-alternate-scenarios.md` — Issue #23 place identities

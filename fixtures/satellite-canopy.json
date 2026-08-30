@@ -1,0 +1,9 @@
+{
+  "segmentation": {
+    "mode": "sat",
+    "segments": {},
+    "image_legend": {},
+    "image_dimensions": { "width": 350, "height": 350 }
+  },
+  "observation": "Fixture contains no canopy classification because provider class semantics are not defined."
+}

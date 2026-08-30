@@ -768,6 +768,13 @@ dd {
   font-size: 13px;
   font-weight: 700;
 }
+.fixture-facts {
+  margin: -10px 0 0;
+  padding: 14px 16px;
+  border-left: 3px solid var(--accent);
+  background: #f7f8f2;
+  font-size: 14px;
+}
 .cautious-option {
   align-items: flex-start;
   padding: 18px;

@@ -20,7 +20,15 @@ from fastapi import FastAPI
 from shapely.geometry.base import BaseGeometry
 
 from app.api import create_app
-from app.domain.contracts import ExecutionMode, TripAnalysisAdapter
+from app.domain.contracts import (
+    Coordinates,
+    ExecutionMode,
+    ResultState,
+    TripAnalysisAdapter,
+    TripAnalysisRequest,
+    TripMode,
+)
+from app.domain.enrichment import EnrichmentKind
 from app.domain.hotel_heat_score import ComponentEvidence
 from app.domain.hotels import BoundingBox, DiscoveryState, HotelDiscoveryResult
 from app.domain.ledger import CreditLedger
@@ -36,6 +44,7 @@ from app.integrations.fortyguard.errors import ProviderError
 from app.integrations.fortyguard.live import (
     LiveAreaHeatmapAdapter,
     LiveEnvParamsAdapter,
+    LiveEnvironmentEnrichment,
     LiveFortyGuardTransport,
     LiveHeatmapAdapter,
     LiveSharedRouteHeatAdapter,
@@ -51,17 +60,19 @@ from app.services.hotel_discovery import HotelDiscoveryService
 from app.services.hotel_heat_score import HotelHeatAnalysisService
 from app.services.hotel_heat_score import build_fixture_hotel_heat_analysis_service
 from app.services.execution import EnvParamsExecution, HeatmapExecution
+from app.services.enrichment import EnrichmentService, FixtureEnrichmentAdapter
 from app.services.ledger_store import JsonlLedgerStore
 from app.services.route_analysis import RouteAnalysisService
 from app.services.route_shade import RouteShadeService
 from app.services.routing import RouteExecution
+from app.services.sidecars import load_acquisition_record
 from app.services.trip_adapters import (
     FixtureTripAnalysisAdapter,
     LiveTripAnalysisAdapter,
     ModeDispatchTripAnalysisAdapter,
     TemporalTripAnalysisAdapter,
 )
-from app.settings import AppSettings, SettingsError
+from app.settings import AppSettings, SettingsError, validate_profile_settings
 
 _EVENT_LOGGER = logging.getLogger("app.fortyguard")
 
@@ -80,8 +91,11 @@ def build_ledger(settings: AppSettings) -> CreditLedger:
     count, and is checked before each provider call.
     """
     if settings.ledger_path is None:
-        return CreditLedger(settings.call_budget)
-    return JsonlLedgerStore(settings.ledger_path).load(budget=settings.call_budget)
+        return CreditLedger(settings.call_budget, settings.enrichment_call_budget)
+    return JsonlLedgerStore(settings.ledger_path).load(
+        budget=settings.call_budget,
+        enrichment_budget=settings.enrichment_call_budget,
+    )
 
 
 def build_live_client(
@@ -512,6 +526,7 @@ def create_production_app(
     from app.settings import load_settings
 
     resolved = settings if settings is not None else load_settings()
+    validate_profile_settings(resolved)
     root = Path(__file__).resolve().parents[1]
     heatmap_fixture = (
         fixture_path if fixture_path is not None else root / "fixtures" / "heatmap-historical.json"
@@ -522,6 +537,8 @@ def create_production_app(
         else heatmap_fixture.parent / "env-params.json"
     )
     dist = frontend_dist if frontend_dist is not None else root / "frontend" / "dist"
+    if resolved.app_profile == "public-fixture":
+        _validate_public_fixture_deployment(heatmap_fixture, env_fixture, dist)
     execution: HeatmapExecution | None = None
     env_params_execution: EnvParamsExecution | None = None
     route_analysis: RouteAnalysisService | None = None
@@ -551,6 +568,41 @@ def create_production_app(
             building_fixture_path=(
                 heatmap_fixture.parent / "acquired" / "overpass-buildings-canonical.json"
             ),
+        )
+
+        enrichment_service = EnrichmentService(
+            ledger=ledger,
+            adapters={
+                EnrichmentKind.ENVIRONMENT: LiveEnvironmentEnrichment(
+                    client, polling=resolved.polling
+                ),
+            },
+            estimates=resolved.enrichment_estimated_credits,
+            live=True,
+            adapter_manages_budget=True,
+            cache=cache,
+        )
+    else:
+        fixture_payload = {}
+        if env_fixture.is_file():
+            fixture_payload = json.loads(env_fixture.read_text(encoding="utf-8"))
+        cache = CacheService()
+        enrichment_service = EnrichmentService(
+            ledger=CreditLedger(enrichment_budget=0),
+            adapters={
+                EnrichmentKind.ENVIRONMENT: FixtureEnrichmentAdapter(fixture_payload),
+                EnrichmentKind.SATELLITE_CANOPY: FixtureEnrichmentAdapter(
+                    _load_enrichment_fixture(heatmap_fixture.parent / "satellite-canopy.json"),
+                    source="synthesized",
+                ),
+                EnrichmentKind.STREET_VIEW: FixtureEnrichmentAdapter(
+                    _load_enrichment_fixture(heatmap_fixture.parent / "street-view.json"),
+                    source="synthesized",
+                ),
+            },
+            estimates={"environment": 0, "satellite_canopy": 0, "street_view": 0},
+            live=False,
+            cache=cache,
         )
     if trip_adapter is None:
         fixture_trip_adapter = FixtureTripAnalysisAdapter(
@@ -599,4 +651,83 @@ def create_production_app(
         trip_adapter=trip_adapter,
         hotel_heat_analysis_service=hotel_heat_analysis_service,
         district_aoi=resolved.overpass.district_aoi,
+        result_token_secret=resolved.result_token_secret,
+        enrichment_service=enrichment_service,
+        deployment_profile=resolved.app_profile,
+        basic_auth_credentials=(
+            (resolved.live_auth_username or "", resolved.live_auth_password or "")
+            if resolved.app_profile == "protected-live"
+            else None
+        ),
     )
+
+
+def _load_enrichment_fixture(path: Path) -> dict[str, object]:
+    if not path.is_file():
+        return {"fixture_data_unavailable": True}
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError(f"enrichment fixture {path} must be an object")
+    return payload
+
+
+def _validate_public_fixture_deployment(
+    heatmap_fixture: Path, env_params_fixture: Path, frontend_dist: Path
+) -> None:
+    """Fail startup unless the public fixture application is complete and deployable."""
+    index = frontend_dist / "index.html"
+    assets = frontend_dist / "assets"
+    if not index.is_file():
+        raise SettingsError("public-fixture requires a built frontend index.html")
+    if not assets.is_dir() or not any(path.is_file() for path in assets.iterdir()):
+        raise SettingsError("public-fixture requires built frontend assets")
+
+    fixture_dir = heatmap_fixture.parent
+    canonical_trip_fixture = fixture_dir / "trips" / "menger-alamo.trip.json"
+    required = (
+        heatmap_fixture,
+        env_params_fixture,
+        canonical_trip_fixture,
+        fixture_dir / "hotel-heat-analysis.json",
+    )
+    for fixture in required:
+        sidecar = fixture.with_name(f"{fixture.stem}.acquisition.json")
+        for path in (fixture, sidecar):
+            if not path.is_file():
+                raise SettingsError(f"public-fixture requires canonical fixture {path}")
+            try:
+                payload = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError) as error:
+                raise SettingsError(f"public-fixture fixture is invalid: {path}") from error
+            if not isinstance(payload, dict):
+                raise SettingsError(f"public-fixture fixture must contain an object: {path}")
+            if not payload:
+                raise SettingsError(f"public-fixture fixture must not be empty: {path}")
+        try:
+            acquisition = load_acquisition_record(fixture)
+        except (KeyError, TypeError, ValueError) as error:
+            raise SettingsError(
+                f"public-fixture acquisition record is invalid: {sidecar}"
+            ) from error
+        if acquisition is None or acquisition.status not in {"ok", "complete"}:
+            raise SettingsError(f"public-fixture fixture is not usable: {fixture}")
+
+    canonical_request = TripAnalysisRequest(
+        mode=TripMode.CURATED,
+        origin=Coordinates(29.4245914, -98.4864288),
+        destination=Coordinates(29.425833, -98.485833),
+        landmark_name="The Alamo",
+        district_name="Downtown San Antonio",
+        date="2024-07-15",
+        start_hour=8,
+        end_hour=20,
+        cautious=False,
+    )
+    try:
+        canonical_result = FixtureTripAnalysisAdapter(canonical_trip_fixture).analyze(
+            canonical_request
+        )
+    except (KeyError, OSError, TypeError, ValueError) as error:
+        raise SettingsError("public-fixture canonical trip analysis is invalid") from error
+    if canonical_result.state in {ResultState.UNAVAILABLE, ResultState.ERROR}:
+        raise SettingsError("public-fixture canonical trip analysis is unavailable")

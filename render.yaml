@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: heat-aware-tourism-guide-demo
+    runtime: docker
+    region: ohio
+    plan: free
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /health
+    autoDeployTrigger: checksPass
+    envVars:
+      - key: APP_PROFILE
+        value: public-fixture
+      - key: ALLOW_LIVE
+        value: "false"

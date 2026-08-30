@@ -102,6 +102,28 @@ export type HotelRankResponse = {
   usable_count: number;
   components: Partial<Record<HotelComponentName, HotelComponentMetadata>>;
   ranking: HotelRanking | null;
+  result_set_token?: string;
+};
+
+export type EnrichmentKind = "environment" | "satellite_canopy" | "street_view";
+export type EnrichmentResponse = {
+  status: "success";
+  kind: EnrichmentKind;
+  target_id: string;
+  state: "available" | "unavailable" | "not_requested";
+  reason: string | null;
+  base_result: Record<string, unknown>;
+  usage: {
+    requested_calls: number;
+    completed_calls: number;
+    estimated_credits?: number | null;
+    actual_credits?: number | null;
+    budget_scope?: string;
+    budget_remaining?: number | null;
+  };
+  provenance: Record<string, unknown> | null;
+  limitations: string[];
+  payload: Record<string, unknown> | null;
 };
 
 export type HotelRankRequest = {
@@ -115,6 +137,17 @@ export type RequestOptions = {
 };
 
 export type ExecutionMode = "fixture" | "live";
+
+export type DeploymentProfile = "local" | "public-fixture" | "protected-live";
+
+export type ExecutionCapability = "fixture-only" | "fixture-and-live";
+
+export type HealthResponse = {
+  status: "ok";
+  deployment_profile: DeploymentProfile;
+  mode: ExecutionMode;
+  execution_capability: ExecutionCapability;
+};
 
 export type ApiProvenance = {
   source: string;
@@ -334,6 +367,7 @@ export type TripAnalysisResponse = {
     action?: string | null;
   } | null;
   degraded_reasons: Record<string, string> | null;
+  result_set_token?: string;
 };
 
 export type HeatInterpretation = {

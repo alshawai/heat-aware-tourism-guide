@@ -318,7 +318,12 @@ afterEach(() => {
 describe("curated Trip Setup", () => {
   it("renders the canonical temporal caveat and one-route limitation", async () => {
     mockFetch(
-      jsonResponse({ status: "ok", mode: "fixture" }),
+      jsonResponse({
+        status: "ok",
+        deployment_profile: "local",
+        mode: "fixture",
+        execution_capability: "fixture-only",
+      }),
       jsonResponse(modernFixtureResponse(mengerFixture))
     );
     const user = userEvent.setup();
@@ -340,7 +345,12 @@ describe("curated Trip Setup", () => {
 
   it("renders weak route evidence and optional enrichment warnings", async () => {
     mockFetch(
-      jsonResponse({ status: "ok", mode: "fixture" }),
+      jsonResponse({
+        status: "ok",
+        deployment_profile: "local",
+        mode: "fixture",
+        execution_capability: "fixture-only",
+      }),
       jsonResponse(
         modernFixtureResponse({
           ...cathedralFixture,
@@ -368,7 +378,12 @@ describe("curated Trip Setup", () => {
 
   it("renders provider-data recovery guidance from structured unavailability", async () => {
     mockFetch(
-      jsonResponse({ status: "ok", mode: "fixture" }),
+      jsonResponse({
+        status: "ok",
+        deployment_profile: "local",
+        mode: "fixture",
+        execution_capability: "fixture-only",
+      }),
       jsonResponse(modernFixtureResponse(briscoeFixture))
     );
     const user = userEvent.setup();
@@ -388,7 +403,12 @@ describe("curated Trip Setup", () => {
 
   it("loads fixture mode and submits the complete setup exactly once", async () => {
     const fetchMock = mockFetch(
-      jsonResponse({ status: "ok", mode: "fixture" }),
+      jsonResponse({
+        status: "ok",
+        deployment_profile: "local",
+        mode: "fixture",
+        execution_capability: "fixture-only",
+      }),
       jsonResponse(successResponse)
     );
     const user = userEvent.setup();
@@ -452,7 +472,12 @@ describe("curated Trip Setup", () => {
   it("preserves edits and retries when application mode is unavailable", async () => {
     const fetchMock = mockFetch(
       Promise.reject(new Error("offline")),
-      jsonResponse({ status: "ok", mode: "live" })
+      jsonResponse({
+        status: "ok",
+        deployment_profile: "protected-live",
+        mode: "live",
+        execution_capability: "fixture-and-live",
+      })
     );
     const user = userEvent.setup();
 
@@ -473,9 +498,52 @@ describe("curated Trip Setup", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
+  it("locks public fixture facts while keeping cautious guidance selectable", async () => {
+    const fetchMock = mockFetch(
+      jsonResponse({
+        status: "ok",
+        deployment_profile: "public-fixture",
+        mode: "fixture",
+        execution_capability: "fixture-only",
+      }),
+      jsonResponse(successResponse)
+    );
+    const user = userEvent.setup();
+
+    render(<App />);
+
+    expect(await screen.findByText("Fixture replay")).toBeInTheDocument();
+    expect(screen.getByText(/public-fixture/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/fixed to August 23, 2026, from 08:00 to 20:00/)
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText("Date")).toBeDisabled();
+    expect(screen.getByLabelText("Start time")).toBeDisabled();
+    expect(screen.getByLabelText("End time")).toBeDisabled();
+
+    await user.click(screen.getByLabelText(/Cautious guidance/));
+    await user.click(screen.getByRole("button", { name: "Analyze trip" }));
+
+    expect(await screen.findByText("Trip analysis ready")).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "/api/trip/analyze",
+      expect.objectContaining({
+        body: expect.stringContaining(
+          '"date":"2026-08-23","start_hour":8,"end_hour":20,"cautious":true,"execution_mode":"fixture"'
+        ),
+      })
+    );
+  });
+
   it("validates fields without submitting or auto-submitting edits", async () => {
     const fetchMock = mockFetch(
-      jsonResponse({ status: "ok", mode: "fixture" })
+      jsonResponse({
+        status: "ok",
+        deployment_profile: "local",
+        mode: "fixture",
+        execution_capability: "fixture-only",
+      })
     );
     const user = userEvent.setup();
 
@@ -494,7 +562,12 @@ describe("curated Trip Setup", () => {
 
   it("validates time order and the 12-hour maximum without submitting", async () => {
     const fetchMock = mockFetch(
-      jsonResponse({ status: "ok", mode: "fixture" })
+      jsonResponse({
+        status: "ok",
+        deployment_profile: "local",
+        mode: "fixture",
+        execution_capability: "fixture-only",
+      })
     );
     const user = userEvent.setup();
 
@@ -523,7 +596,12 @@ describe("curated Trip Setup", () => {
 
   it("accepts and displays the raw nullable environmental series", async () => {
     mockFetch(
-      jsonResponse({ status: "ok", mode: "fixture" }),
+      jsonResponse({
+        status: "ok",
+        deployment_profile: "local",
+        mode: "fixture",
+        execution_capability: "fixture-only",
+      }),
       jsonResponse({
         ...successResponse,
         state: "series_ready",
@@ -595,7 +673,12 @@ describe("curated Trip Setup", () => {
 
   it("presents recommended modeled route shade with quality evidence", async () => {
     mockFetch(
-      jsonResponse({ status: "ok", mode: "fixture" }),
+      jsonResponse({
+        status: "ok",
+        deployment_profile: "local",
+        mode: "fixture",
+        execution_capability: "fixture-only",
+      }),
       jsonResponse({ ...successResponse, routes: shadiestRoutes })
     );
     const user = userEvent.setup();
@@ -633,7 +716,12 @@ describe("curated Trip Setup", () => {
 
   it("presents incomplete shade comparisons without a recommendation", async () => {
     mockFetch(
-      jsonResponse({ status: "ok", mode: "fixture" }),
+      jsonResponse({
+        status: "ok",
+        deployment_profile: "local",
+        mode: "fixture",
+        execution_capability: "fixture-only",
+      }),
       jsonResponse({
         ...successResponse,
         state: "degraded",
@@ -682,7 +770,15 @@ describe("curated Trip Setup", () => {
     const pending = new Promise<Response>((resolve) => {
       resolveAnalysis = resolve;
     });
-    mockFetch(jsonResponse({ status: "ok", mode: "fixture" }), pending);
+    mockFetch(
+      jsonResponse({
+        status: "ok",
+        deployment_profile: "local",
+        mode: "fixture",
+        execution_capability: "fixture-only",
+      }),
+      pending
+    );
     const user = userEvent.setup();
 
     render(<App />);
@@ -700,7 +796,12 @@ describe("curated Trip Setup", () => {
 
   it("retains degraded detail and clears it when setup changes", async () => {
     mockFetch(
-      jsonResponse({ status: "ok", mode: "fixture" }),
+      jsonResponse({
+        status: "ok",
+        deployment_profile: "local",
+        mode: "fixture",
+        execution_capability: "fixture-only",
+      }),
       jsonResponse({
         ...successResponse,
         state: "degraded",
@@ -735,7 +836,12 @@ describe("curated Trip Setup", () => {
 
   it("shows domain unavailability and returns to editing", async () => {
     mockFetch(
-      jsonResponse({ status: "ok", mode: "fixture" }),
+      jsonResponse({
+        status: "ok",
+        deployment_profile: "local",
+        mode: "fixture",
+        execution_capability: "fixture-only",
+      }),
       jsonResponse({
         ...successResponse,
         state: "unavailable",
@@ -766,12 +872,22 @@ describe("curated Trip Setup", () => {
 
   it("keeps analyzed setup values aligned across route remounts", async () => {
     mockFetch(
-      jsonResponse({ status: "ok", mode: "fixture" }),
+      jsonResponse({
+        status: "ok",
+        deployment_profile: "local",
+        mode: "fixture",
+        execution_capability: "fixture-only",
+      }),
       jsonResponse({
         ...successResponse,
         request_identity: "curated:2026-08-23:9-20",
       }),
-      jsonResponse({ status: "ok", mode: "fixture" })
+      jsonResponse({
+        status: "ok",
+        deployment_profile: "local",
+        mode: "fixture",
+        execution_capability: "fixture-only",
+      })
     );
     const user = userEvent.setup();
 
@@ -794,9 +910,19 @@ describe("curated Trip Setup", () => {
 
   it("clears a retained result when application mode changes", async () => {
     mockFetch(
-      jsonResponse({ status: "ok", mode: "fixture" }),
+      jsonResponse({
+        status: "ok",
+        deployment_profile: "local",
+        mode: "fixture",
+        execution_capability: "fixture-only",
+      }),
       jsonResponse(successResponse),
-      jsonResponse({ status: "ok", mode: "live" })
+      jsonResponse({
+        status: "ok",
+        deployment_profile: "protected-live",
+        mode: "live",
+        execution_capability: "fixture-and-live",
+      })
     );
     const user = userEvent.setup();
 
@@ -851,7 +977,12 @@ describe("curated Trip Setup", () => {
     ],
   ])("offers a retry after %s", async (_name, failedResponse) => {
     const fetchMock = mockFetch(
-      jsonResponse({ status: "ok", mode: "fixture" }),
+      jsonResponse({
+        status: "ok",
+        deployment_profile: "local",
+        mode: "fixture",
+        execution_capability: "fixture-only",
+      }),
       failedResponse,
       jsonResponse(successResponse)
     );
@@ -888,7 +1019,12 @@ describe("exploratory Trip Setup", () => {
       longitude: -98.4994785,
     };
     const fetchMock = mockFetch(
-      jsonResponse({ status: "ok", mode: "fixture" }),
+      jsonResponse({
+        status: "ok",
+        deployment_profile: "local",
+        mode: "fixture",
+        execution_capability: "fixture-only",
+      }),
       jsonResponse({ places: [mainPlaza] }),
       jsonResponse({ places: [marketSquare] }),
       jsonResponse({

@@ -1,4 +1,4 @@
-# ADR 0008: Trip v2 product snapshots from normalized acquisitions
+# ADR 0010: Trip v2 product snapshots from normalized acquisitions
 
 Date: 2026-08-30
 Status: Accepted

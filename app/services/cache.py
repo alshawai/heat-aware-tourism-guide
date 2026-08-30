@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, Mapping
 
 from app.domain.provenance import CacheKey, Provenance
@@ -70,3 +70,13 @@ class CacheService:
             entry.activity,
             entry.inferred_unit,
         )
+
+    def get_if_fresh(self, key: CacheKey, *, now: datetime, ttl: timedelta) -> CacheEntry | None:
+        entry = self._entries.get(key.value)
+        if entry is None or now - entry.provenance.retrieved_at > ttl:
+            return None
+        return self.get(key)
+
+    def has_stale(self, key: CacheKey, *, now: datetime, ttl: timedelta) -> bool:
+        entry = self._entries.get(key.value)
+        return entry is not None and now - entry.provenance.retrieved_at > ttl

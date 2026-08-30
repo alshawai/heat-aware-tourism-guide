@@ -6,14 +6,17 @@ from dataclasses import asdict
 from datetime import date, datetime
 from enum import Enum
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import base64
+import binascii
 import json
 import math
+import secrets
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.domain.contracts import (
@@ -27,6 +30,8 @@ from app.domain.contracts import (
     UnavailableResult,
 )
 from app.domain.ledger import BudgetExceededError
+from app.domain.enrichment import EnrichmentKind
+from app.domain.result_tokens import ResultTokenError, issue_result_token, verify_result_token
 from app.domain.hotel_heat_score import COMPONENTS, NeighbourhoodHeatScorer
 from app.domain.hotels import BoundingBox
 from app.integrations.fortyguard.contracts import AnalyticType, EnvParamsRequest, HeatmapRequest
@@ -38,6 +43,7 @@ from app.services.hotel_heat_score import (
     HotelHeatAnalysisService,
     build_fixture_hotel_heat_analysis_service,
 )
+from app.services.enrichment import EnrichmentService
 from app.services.trip_contract_v2 import encode_trip_analysis_v2
 
 
@@ -135,6 +141,7 @@ def create_fixture_server(
                             body,
                             allow_live=allow_live,
                             trip_adapter=trip_adapter,
+                            result_token_secret=None,
                         ),
                         default=_json_default,
                     ).encode()
@@ -189,6 +196,10 @@ def create_app(
     trip_adapter: TripAnalysisAdapter | None = None,
     hotel_heat_analysis_service: HotelHeatAnalysisService | None = None,
     district_aoi: BoundingBox = BoundingBox(29.421, -98.490, 29.429, -98.482),
+    enrichment_service: EnrichmentService | None = None,
+    result_token_secret: str | None = None,
+    deployment_profile: str = "local",
+    basic_auth_credentials: tuple[str, str] | None = None,
 ) -> FastAPI:
     """Create the server-owned product API used by local runs and deployment."""
     configured_execution: HeatmapExecution = execution or HeatmapExecution(
@@ -206,10 +217,60 @@ def create_app(
         )
     )
     app = FastAPI(title="Heat-Aware Tourism Guide")
+    token_secret = result_token_secret or secrets.token_urlsafe(32)
+    if enrichment_service is None:
+        from app.domain.ledger import CreditLedger
+        from app.services.enrichment import FixtureEnrichmentAdapter
+
+        environment_fixture: dict[str, object] = {}
+        environment_path = fixture_path.parent / "env-params.json"
+        if environment_path.is_file():
+            loaded = json.loads(environment_path.read_text(encoding="utf-8"))
+            if isinstance(loaded, dict):
+                environment_fixture = loaded
+        enrichment_service = EnrichmentService(
+            ledger=CreditLedger(enrichment_budget=0),
+            adapters={
+                EnrichmentKind.ENVIRONMENT: FixtureEnrichmentAdapter(environment_fixture),
+                EnrichmentKind.SATELLITE_CANOPY: FixtureEnrichmentAdapter(
+                    {"fixture_data_unavailable": True}
+                ),
+                EnrichmentKind.STREET_VIEW: FixtureEnrichmentAdapter(
+                    {"fixture_data_unavailable": True}
+                ),
+            },
+            estimates={"environment": 0, "satellite_canopy": 0, "street_view": 0},
+            live=False,
+        )
+
+    if basic_auth_credentials is not None:
+        expected_username, expected_password = basic_auth_credentials
+
+        @app.middleware("http")
+        async def require_basic_auth(request: Request, call_next: Any) -> Any:
+            if request.url.path == "/health":
+                return await call_next(request)
+            supplied = _basic_auth_credentials(request.headers.get("Authorization"))
+            username, password = supplied if supplied is not None else (b"", b"")
+            username_matches = secrets.compare_digest(username, expected_username.encode())
+            password_matches = secrets.compare_digest(password, expected_password.encode())
+            if not (username_matches & password_matches):
+                return JSONResponse(
+                    {"detail": "authentication required"},
+                    status_code=401,
+                    headers={"WWW-Authenticate": 'Basic realm="heat-aware-tourism-guide"'},
+                )
+            return await call_next(request)
 
     @app.get("/health")
     def health() -> dict[str, str]:
-        return {"status": "ok", "mode": "live" if allow_live else "fixture"}
+        mode = "live" if allow_live else "fixture"
+        return {
+            "status": "ok",
+            "deployment_profile": deployment_profile,
+            "mode": mode,
+            "execution_capability": "fixture-and-live" if allow_live else "fixture-only",
+        }
 
     @app.get("/api/places/search")
     def places_search(q: str = "") -> dict[str, object]:
@@ -290,6 +351,7 @@ def create_app(
                 body,
                 allow_live=allow_live,
                 trip_adapter=trip_adapter,
+                result_token_secret=token_secret,
             )
         except (
             BudgetExceededError,
@@ -316,9 +378,32 @@ def create_app(
                 raise ValueError("district_name must be a non-empty string")
             execution_mode = _execution_mode(body, allow_live=allow_live)
             weights = _hotel_weights(body.get("weights"))
-            return _hotel_heat_result(
-                configured_hotel_analysis.analyze(district_name, execution_mode, weights=weights)
+            outcome = configured_hotel_analysis.analyze(
+                district_name, execution_mode, weights=weights
             )
+            result = _hotel_heat_result(outcome)
+            ranking = result.get("ranking")
+            if isinstance(ranking, dict) and isinstance(ranking.get("hotels"), list):
+                coordinates = {
+                    _hotel_target_id(asdict(assignment.identity)): {
+                        "latitude": assignment.latitude,
+                        "longitude": assignment.longitude,
+                    }
+                    for assignment in outcome.assignments
+                }
+                result["result_set_token"] = issue_result_token(
+                    {
+                        "request_identity": district_name,
+                        "hotel_ids": [
+                            _hotel_target_id(item["identity"])
+                            for item in ranking["hotels"]
+                            if isinstance(item, dict) and isinstance(item.get("identity"), dict)
+                        ],
+                        "hotel_coordinates": coordinates,
+                    },
+                    token_secret,
+                )
+            return result
         except (
             BudgetExceededError,
             KeyError,
@@ -330,6 +415,105 @@ def create_app(
         ) as error:
             raise _http_error(error) from error
 
+    def enrichment(
+        kind: EnrichmentKind, target_id: str, body: dict[str, object]
+    ) -> dict[str, object]:
+        token = body.get("result_set_token")
+        try:
+            if not isinstance(token, str):
+                raise ResultTokenError("invalid result_set_token")
+            claims = verify_result_token(token, token_secret)
+            allowed = (
+                claims.get("hotel_ids", [])
+                if kind is EnrichmentKind.ENVIRONMENT
+                else claims.get("route_ids", [])
+            )
+            if target_id not in allowed:
+                raise ValueError("result_not_in_result_set")
+            anchor = body.get("temperature_anchor_celsius")
+            request: dict[str, object] = {"refresh": body.get("refresh", False)}
+            if kind is EnrichmentKind.ENVIRONMENT:
+                request["temperature_anchor_celsius"] = _finite_number(
+                    anchor, "temperature_anchor_celsius"
+                )
+            if kind is EnrichmentKind.ENVIRONMENT and anchor is None:
+                raise ValueError("temperature_anchor_celsius is required")
+            if kind is EnrichmentKind.STREET_VIEW:
+                point = body.get("point")
+                if point is None:
+                    point = _route_midpoint(claims, target_id)
+                request["point"] = point
+                if not _point_near_claimed_route(point, target_id, claims):
+                    raise ValueError("street-view point must be within 50 meters of the route")
+            if enrichment_service is None:
+                return _enrichment_json(
+                    None,
+                    kind=kind,
+                    target_id=target_id,
+                    reason="configuration_missing",
+                    base_result={
+                        "request_identity": claims.get("request_identity"),
+                        "result_id": target_id,
+                    },
+                )
+            coordinates = None
+            coordinate_claim = (
+                claims.get("hotel_coordinates", {}).get(target_id)
+                if kind is EnrichmentKind.ENVIRONMENT
+                and isinstance(claims.get("hotel_coordinates"), dict)
+                else None
+            )
+            if isinstance(coordinate_claim, dict):
+                coordinates = Coordinates(
+                    _finite_number(coordinate_claim.get("latitude"), "hotel.latitude"),
+                    _finite_number(coordinate_claim.get("longitude"), "hotel.longitude"),
+                )
+            route_geometry = None
+            route_claim = (
+                claims.get("route_geometries", {}).get(target_id)
+                if isinstance(claims.get("route_geometries"), dict)
+                else None
+            )
+            if isinstance(route_claim, list):
+                route_geometry = tuple(
+                    tuple(point)
+                    for point in route_claim
+                    if isinstance(point, list) and len(point) == 2
+                )
+            return _enrichment_json(
+                enrichment_service,
+                kind=kind,
+                target_id=target_id,
+                request=request,
+                coordinates=coordinates,
+                route_geometry=route_geometry,
+                base_result={
+                    "request_identity": claims.get("request_identity"),
+                    "result_id": target_id,
+                },
+            )
+        except ResultTokenError as error:
+            status = 410 if str(error) == "result_set_expired" else 400
+            raise HTTPException(
+                status_code=status, detail={"status": "error", "error_kind": str(error)}
+            ) from error
+        except (KeyError, TypeError, ValueError) as error:
+            raise HTTPException(
+                status_code=400, detail={"status": "error", "error": str(error)}
+            ) from error
+
+    @app.post("/api/hotels/{hotel_id}/environment")
+    def hotel_environment(hotel_id: str, body: dict[str, object]) -> dict[str, object]:
+        return enrichment(EnrichmentKind.ENVIRONMENT, hotel_id, body)
+
+    @app.post("/api/routes/{route_id}/canopy")
+    def route_canopy(route_id: str, body: dict[str, object]) -> dict[str, object]:
+        return enrichment(EnrichmentKind.SATELLITE_CANOPY, route_id, body)
+
+    @app.post("/api/routes/{route_id}/street-view")
+    def route_street_view(route_id: str, body: dict[str, object]) -> dict[str, object]:
+        return enrichment(EnrichmentKind.STREET_VIEW, route_id, body)
+
     if frontend_dist is not None and frontend_dist.is_dir():
         app.mount("/assets", StaticFiles(directory=frontend_dist / "assets"), name="assets")
 
@@ -339,6 +523,20 @@ def create_app(
             return FileResponse(requested if requested.is_file() else frontend_dist / "index.html")
 
     return app
+
+
+def _basic_auth_credentials(header: str | None) -> tuple[bytes, bytes] | None:
+    if header is None:
+        return None
+    scheme, separator, token = header.partition(" ")
+    if separator != " " or scheme.lower() != "basic" or not token:
+        return None
+    try:
+        decoded = base64.b64decode(token, validate=True)
+    except (binascii.Error, ValueError):
+        return None
+    username, separator_bytes, password = decoded.partition(b":")
+    return (username, password) if separator_bytes else None
 
 
 def _required_bool(body: dict[str, object], field: str, *, default: bool) -> bool:
@@ -471,6 +669,7 @@ def _trip_result(
     *,
     allow_live: bool,
     trip_adapter: TripAnalysisAdapter | None,
+    result_token_secret: str | None,
 ) -> dict[str, object]:
     """Run the trip analysis and serialize the shared product contract."""
     execution_mode = _execution_mode(body, allow_live=allow_live)
@@ -499,7 +698,24 @@ def _trip_result(
         raise ValueError("trip adapter returned an invalid response")
     if response.execution_mode is not execution_mode:
         raise ValueError("trip adapter returned the wrong execution mode")
-    return encode_trip_analysis_v2(response, envelope="api")
+    result = encode_trip_analysis_v2(response, envelope="api")
+    if response.state.value in {"success", "degraded"} and result_token_secret:
+        routes = result.get("routes") or {}
+        alternatives = routes.get("alternatives", []) if isinstance(routes, dict) else []
+        route_ids = [item.get("identity") for item in alternatives if isinstance(item, dict)]
+        result["result_set_token"] = issue_result_token(
+            {
+                "request_identity": response.request_identity,
+                "route_ids": route_ids,
+                "route_geometries": {
+                    item.get("identity"): item.get("geometry")
+                    for item in alternatives
+                    if isinstance(item, dict) and item.get("identity") is not None
+                },
+            },
+            result_token_secret,
+        )
+    return result
 
 
 def _supported_live_geography(request: TripAnalysisRequest) -> bool:
@@ -597,3 +813,113 @@ def _hotel_heat_result(outcome: HotelHeatAnalysisOutcome) -> dict[str, object]:
             ],
         },
     }
+
+
+def _hotel_target_id(identity: dict[str, object]) -> str:
+    object_type = identity.get("object_type")
+    object_id = identity.get("object_id")
+    if not isinstance(object_type, str) or not isinstance(object_id, int):
+        raise ValueError("hotel identity is malformed")
+    return f"{object_type}:{object_id}"
+
+
+def _point_near_claimed_route(value: object, target_id: str, claims: dict[str, object]) -> bool:
+    if not isinstance(value, dict):
+        raise ValueError("point must be an object")
+    latitude = _finite_number(value.get("latitude"), "point.latitude")
+    longitude = _finite_number(value.get("longitude"), "point.longitude")
+    geometries = claims.get("route_geometries")
+    geometry = geometries.get(target_id) if isinstance(geometries, dict) else None
+    if not isinstance(geometry, list):
+        return False
+    points = [point for point in geometry if isinstance(point, (list, tuple)) and len(point) == 2]
+    if not points:
+        return False
+    scale_x = 111_000 * math.cos(math.radians(latitude))
+    scale_y = 111_000
+    projected = [(float(point[0]) * scale_x, float(point[1]) * scale_y) for point in points]
+    target = (longitude * scale_x, latitude * scale_y)
+    distances: list[float] = []
+    for start, end in zip(projected, projected[1:]):
+        dx, dy = end[0] - start[0], end[1] - start[1]
+        length_squared = dx * dx + dy * dy
+        fraction = (
+            max(
+                0.0,
+                min(
+                    1.0,
+                    ((target[0] - start[0]) * dx + (target[1] - start[1]) * dy) / length_squared,
+                ),
+            )
+            if length_squared
+            else 0.0
+        )
+        nearest = (start[0] + fraction * dx, start[1] + fraction * dy)
+        distances.append(math.dist(target, nearest))
+    if len(projected) == 1:
+        distances.append(math.dist(target, projected[0]))
+    return bool(distances) and min(distances) <= 50
+
+
+def _route_midpoint(claims: dict[str, object], target_id: str) -> dict[str, float]:
+    geometries = claims.get("route_geometries")
+    geometry = geometries.get(target_id) if isinstance(geometries, dict) else None
+    if not isinstance(geometry, list) or not geometry:
+        raise ValueError("route geometry is required")
+    points = [point for point in geometry if isinstance(point, (list, tuple)) and len(point) == 2]
+    if not points:
+        raise ValueError("route geometry is malformed")
+    if len(points) == 1:
+        point = points[0]
+    else:
+        lengths = [
+            math.dist((float(start[0]), float(start[1])), (float(end[0]), float(end[1])))
+            for start, end in zip(points, points[1:])
+        ]
+        halfway = sum(lengths) / 2
+        point = points[-1]
+        for start, end, length in zip(points, points[1:], lengths):
+            if halfway <= length:
+                fraction = halfway / length if length else 0.0
+                point = (
+                    float(start[0]) + fraction * (float(end[0]) - float(start[0])),
+                    float(start[1]) + fraction * (float(end[1]) - float(start[1])),
+                )
+                break
+            halfway -= length
+    return {"longitude": float(point[0]), "latitude": float(point[1])}
+
+
+def _enrichment_json(
+    service: EnrichmentService | None,
+    *,
+    kind: EnrichmentKind,
+    target_id: str,
+    request: dict[str, object] | None = None,
+    base_result: dict[str, object] | None = None,
+    coordinates: Coordinates | None = None,
+    route_geometry: tuple[tuple[float, float], ...] | None = None,
+    reason: str | None = None,
+) -> dict[str, object]:
+    if reason is not None or service is None:
+        return {
+            "status": "success",
+            "kind": kind.value,
+            "target_id": target_id,
+            "state": "unavailable",
+            "reason": reason or "configuration_missing",
+            "base_result": base_result or {},
+            "usage": {"requested_calls": 0, "completed_calls": 0},
+            "provenance": None,
+            "limitations": [],
+            "payload": None,
+        }
+    response = service.run(
+        kind=kind,
+        target_id=target_id,
+        request=request,
+        base_result=base_result,
+        coordinates=coordinates,
+        route_geometry=route_geometry,
+    )
+    return {"status": "success", **asdict(response)}

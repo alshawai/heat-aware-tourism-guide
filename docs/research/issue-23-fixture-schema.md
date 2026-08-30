@@ -762,7 +762,7 @@ canonical happy-path E2E
 ## Decision 11: ADR And Context Impact
 
 The implemented architectural decision is recorded in
-[`ADR 0008`](../adr/0008-trip-v2-product-snapshots.md): **product-level
+[`ADR 0010`](../adr/0010-trip-v2-product-snapshots.md): **product-level
 v2 snapshots linked to lower-level acquisitions, with a shared live/fixture
 decoder, instead of replay-time full orchestration**. It fixes the fixture
 boundary, parity definition, regeneration policy, and provenance graph. Amend
