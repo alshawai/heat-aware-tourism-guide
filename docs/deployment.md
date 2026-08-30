@@ -78,12 +78,74 @@ fixture trip, and verify that the result shows fixture provenance. Confirm
 that a request explicitly asking for live execution is rejected. Repeat the
 health check after the service wakes from idle sleep.
 
+## Keeping The Demo Awake
+
+The free tier sleeps after 15 minutes of inactivity (see
+[Free-Tier Boundaries](#free-tier-boundaries)). To keep a sleeping instance from
+greeting a reviewer with a cold start, keep inbound traffic flowing at least
+once inside every 15-minute window. Two free layers do this without a payment
+method; run both for the judging period so a gap in one is covered by the other.
+
+### In-repo GitHub Actions ping
+
+`.github/workflows/keep-warm.yml` requests `GET /health` every five minutes on a
+schedule and can also be run on demand from the Actions tab
+(`workflow_dispatch`). The repository is public, so scheduled Actions minutes are
+free. The workflow needs no secrets, never deploys, and never fails the run on a
+bad ping — it emits a warning instead, so a transient outage does not spam
+failure notifications. Override the target by setting a repository variable
+`KEEP_WARM_URL`; otherwise it pings the demo URL above.
+
+GitHub runs `schedule` triggers only on the default branch and may delay them
+when its runners are busy, so treat this layer as best-effort rather than exact.
+GitHub also disables scheduled workflows after 60 days without repository
+activity; re-enable it from the Actions tab if that lapses before a demo.
+
+### External uptime monitor
+
+A hosted monitor is independent of GitHub's scheduler and can ping more often.
+Point either of these at the `/health` URL, which returns without calling
+FortyGuard, Overpass, OSRM, or any other provider, so pinging it is cheap:
+
+- **UptimeRobot** (free): add an HTTP(s) monitor named e.g. `Heat demo health`,
+  URL `https://heat-aware-tourism-guide-demo.onrender.com/health`, interval
+  5 minutes (the free-plan minimum).
+- **cron-job.org** (free): create a cronjob with the same URL on a 1-minute
+  schedule for tighter coverage than the 15-minute sleep window.
+
+Neither needs credentials — `/health` is public and unauthenticated — so there
+is nothing to commit or store as a secret.
+
+### Instance-hours caveat
+
+Keeping the instance awake means it runs continuously and consumes instance
+hours as if always-on (about 730 of the 750 free hours per month). That fits
+only if `heat-aware-tourism-guide-demo` is the workspace's sole free web
+service. If the workspace runs other free web services, a continuously-awake
+instance can exhaust the shared 750-hour allowance and suspend every free web
+service until the next month. As with the other free-tier limits above this
+creates no bill, but it does risk availability, so when in doubt enable
+keep-warm only for the active review window and disable it afterward.
+
+### Disabling keep-warm
+
+- GitHub Actions: Actions tab, select **Keep demo warm**, then the `⋯` menu and
+  **Disable workflow** (or remove the `schedule` block to keep only manual runs).
+- External monitor: pause or delete the monitor in its dashboard.
+
+If every keep-warm layer lapses and the instance does sleep, the frontend is the
+final safety net: the hotel ranking flow shows a "Waking the demo server…" state
+and automatically retries the request with backoff on a timeout, transport
+failure, or `502/503/504`, so a reviewer who arrives during a cold start sees the
+result complete on its own instead of a terminal error.
+
 ## Warm-Up, Fallback, And Rollback
 
-Warm the service manually shortly before a recording by opening the public URL
-or running the health check. Allow roughly one minute for a sleeping instance
-to wake, then perform the smoke tests again. A warm-up is operational only; it
-does not disable the free-tier sleep policy.
+Beyond the automated [keep-warm layers](#keeping-the-demo-awake), warm the
+service manually shortly before a recording by opening the public URL or running
+the health check. Allow roughly one minute for a sleeping instance to wake, then
+perform the smoke tests again. A warm-up is operational only; it does not disable
+the free-tier sleep policy.
 
 If the hosted service is asleep, unavailable, or has a bad frontend build, run
 the local fixture flow from `docs/demo-script.md` with networking disabled. If
