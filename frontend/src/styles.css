@@ -271,11 +271,14 @@ small {
   height: 100%;
   min-height: 420px;
 }
+/* Overlays the bottom-left of whichever map it sits beside, so every wrapper
+   holding one must establish a positioning context. */
 .map-hint {
   position: absolute;
   z-index: 500;
   left: 12px;
   bottom: 12px;
+  max-width: calc(100% - 24px);
   padding: 7px 10px;
   background: rgba(255, 253, 248, 0.92);
   color: var(--muted);
@@ -487,6 +490,7 @@ dd {
   }
 }
 .route-map {
+  position: relative;
   min-height: 500px;
 }
 .route-list,
@@ -1117,6 +1121,7 @@ dd {
   color: #fffdf8;
 }
 .exploratory-endpoints {
+  position: relative;
   display: grid;
   gap: 12px;
 }
@@ -1159,10 +1164,6 @@ dd {
 }
 .place-results small {
   color: var(--muted);
-}
-.map-hint {
-  color: var(--muted);
-  font-size: 12px;
 }
 .action-guidance {
   font-weight: 700;

@@ -19,6 +19,10 @@ export default defineConfig({
       ALLOW_LIVE: "false",
     },
     url: "http://127.0.0.1:8000/health",
-    reuseExistingServer: !process.env.CI,
+    // Never adopt a server this config did not start. A local dev server on the
+    // same port reads .env, so it can be live: reusing it would run the fixture
+    // suite against billable provider calls. Failing to bind is the clearer
+    // answer, and it names the port to free.
+    reuseExistingServer: false,
   },
 });
