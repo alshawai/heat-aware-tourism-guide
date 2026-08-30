@@ -20,6 +20,7 @@ DEFAULT_OVERPASS_USER_AGENT = (
 DEFAULT_OSRM_BASE_URL = "https://routing.openstreetmap.de/routed-foot/route/v1"
 DEFAULT_OSRM_USER_AGENT = DEFAULT_OVERPASS_USER_AGENT
 _DEFAULT_ENV_FILE = Path(".env")
+APP_PROFILES = frozenset({"local", "public-fixture", "protected-live"})
 
 
 class SettingsError(RuntimeError):
@@ -102,6 +103,9 @@ class AppSettings:
     shade: ShadeSettings = ShadeSettings()
     call_budget: int | None = None
     ledger_path: Path | None = DEFAULT_LEDGER_PATH
+    app_profile: str = "local"
+    live_auth_username: str | None = None
+    live_auth_password: str | None = None
 
 
 def load_dotenv(path: Path) -> dict[str, str]:
@@ -221,10 +225,13 @@ def load_settings(
         raise SettingsError("ALLOW_LIVE must be true or false")
     allow_live = allow_live_raw == "true"
     api_key = merged.get("FORTYGUARD_API_KEY", "")
-    if allow_live and not api_key.strip():
+    app_profile = merged.get("APP_PROFILE", "local").strip() or "local"
+    if app_profile not in APP_PROFILES:
+        raise SettingsError("APP_PROFILE must be local, public-fixture, or protected-live")
+    if allow_live and app_profile != "public-fixture" and not api_key.strip():
         raise SettingsError("ALLOW_LIVE=true requires FORTYGUARD_API_KEY to be set")
     base_url = merged.get("FORTYGUARD_BASE_URL", "").strip() or DEFAULT_BASE_URL
-    return AppSettings(
+    settings = AppSettings(
         allow_live=allow_live,
         fortyguard_api_key=api_key or None,
         fortyguard_base_url=base_url,
@@ -235,7 +242,62 @@ def load_settings(
         shade=_shade_from_env(merged),
         call_budget=_call_budget_from_env(merged),
         ledger_path=_ledger_path_from_env(process_env, file_values),
+        app_profile=app_profile,
+        live_auth_username=merged.get("LIVE_AUTH_USERNAME"),
+        live_auth_password=merged.get("LIVE_AUTH_PASSWORD"),
     )
+    validate_profile_settings(
+        settings,
+        fortyguard_api_key_present=(
+            "FORTYGUARD_API_KEY" in process_env or "FORTYGUARD_API_KEY" in file_values
+        ),
+        ledger_path_configured=(
+            "FORTYGUARD_LEDGER_PATH" in process_env or "FORTYGUARD_LEDGER_PATH" in file_values
+        ),
+    )
+    return settings
+
+
+def validate_profile_settings(
+    settings: AppSettings,
+    *,
+    fortyguard_api_key_present: bool | None = None,
+    ledger_path_configured: bool | None = None,
+) -> None:
+    """Enforce deployment-profile safety invariants at every composition boundary."""
+    if settings.app_profile not in APP_PROFILES:
+        raise SettingsError("APP_PROFILE must be local, public-fixture, or protected-live")
+
+    key_present = (
+        settings.fortyguard_api_key is not None
+        if fortyguard_api_key_present is None
+        else fortyguard_api_key_present
+    )
+    if settings.app_profile == "public-fixture":
+        if settings.allow_live:
+            raise SettingsError("APP_PROFILE=public-fixture requires ALLOW_LIVE=false")
+        if key_present:
+            raise SettingsError("APP_PROFILE=public-fixture forbids FORTYGUARD_API_KEY")
+    elif settings.app_profile == "protected-live":
+        if not settings.allow_live:
+            raise SettingsError("APP_PROFILE=protected-live requires ALLOW_LIVE=true")
+        if not (settings.live_auth_username or "").strip():
+            raise SettingsError("APP_PROFILE=protected-live requires LIVE_AUTH_USERNAME")
+        if not (settings.live_auth_password or "").strip():
+            raise SettingsError("APP_PROFILE=protected-live requires LIVE_AUTH_PASSWORD")
+        if settings.call_budget is None or settings.call_budget <= 0:
+            raise SettingsError(
+                "APP_PROFILE=protected-live requires a positive FORTYGUARD_CALL_BUDGET"
+            )
+        if (
+            ledger_path_configured is False
+            or settings.ledger_path is None
+            or not str(settings.ledger_path).strip()
+            or not settings.ledger_path.is_absolute()
+        ):
+            raise SettingsError(
+                "APP_PROFILE=protected-live requires an absolute FORTYGUARD_LEDGER_PATH"
+            )
 
 
 def _osrm_from_env(merged: Mapping[str, str]) -> OsrmSettings:

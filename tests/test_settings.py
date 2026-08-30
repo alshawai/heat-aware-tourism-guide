@@ -33,6 +33,7 @@ def test_load_settings_reads_core_configuration_from_environment() -> None:
 
 def test_load_settings_defaults_to_fixture_mode_and_documented_base_url() -> None:
     settings = load_settings(environ={})
+    assert settings.app_profile == "local"
     assert settings.allow_live is False
     assert settings.fortyguard_api_key is None
     assert settings.fortyguard_base_url == "https://api.fortyguard.com"
@@ -86,6 +87,80 @@ def test_allow_live_with_blank_api_key_fails_fast() -> None:
 def test_invalid_allow_live_value_is_rejected() -> None:
     with pytest.raises(SettingsError, match="ALLOW_LIVE"):
         load_settings(environ={"ALLOW_LIVE": "yes"})
+
+
+def test_invalid_app_profile_is_rejected() -> None:
+    with pytest.raises(SettingsError, match="APP_PROFILE"):
+        load_settings(environ={"APP_PROFILE": "production"})
+
+
+def test_public_fixture_rejects_live_execution() -> None:
+    for api_key in (None, "key-1"):
+        environment = {"APP_PROFILE": "public-fixture", "ALLOW_LIVE": "true"}
+        if api_key is not None:
+            environment["FORTYGUARD_API_KEY"] = api_key
+        with pytest.raises(SettingsError, match="public-fixture.*ALLOW_LIVE"):
+            load_settings(environ=environment)
+
+
+def test_public_fixture_rejects_presence_of_api_key() -> None:
+    for api_key in ("key-1", "", "   "):
+        with pytest.raises(SettingsError, match="forbids FORTYGUARD_API_KEY"):
+            load_settings(environ={"APP_PROFILE": "public-fixture", "FORTYGUARD_API_KEY": api_key})
+
+
+def test_public_fixture_accepts_credential_free_fixture_configuration() -> None:
+    settings = load_settings(environ={"APP_PROFILE": "public-fixture"})
+    assert settings.allow_live is False
+    assert settings.fortyguard_api_key is None
+
+
+def _protected_live_environment() -> dict[str, str]:
+    return {
+        "APP_PROFILE": "protected-live",
+        "ALLOW_LIVE": "true",
+        "FORTYGUARD_API_KEY": "key-1",
+        "LIVE_AUTH_USERNAME": "maintainer",
+        "LIVE_AUTH_PASSWORD": "long-secret",
+        "FORTYGUARD_CALL_BUDGET": "25",
+        "FORTYGUARD_LEDGER_PATH": "/var/data/fortyguard-ledger.jsonl",
+    }
+
+
+def test_protected_live_accepts_bounded_authenticated_configuration() -> None:
+    settings = load_settings(environ=_protected_live_environment())
+    assert settings.app_profile == "protected-live"
+    assert settings.allow_live is True
+    assert settings.call_budget == 25
+
+
+def test_protected_live_rejects_missing_safety_invariants() -> None:
+    cases = (
+        ("ALLOW_LIVE", "false", "ALLOW_LIVE"),
+        ("LIVE_AUTH_USERNAME", " ", "LIVE_AUTH_USERNAME"),
+        ("LIVE_AUTH_PASSWORD", " ", "LIVE_AUTH_PASSWORD"),
+        ("FORTYGUARD_CALL_BUDGET", "0", "positive FORTYGUARD_CALL_BUDGET"),
+        ("FORTYGUARD_LEDGER_PATH", "", "absolute FORTYGUARD_LEDGER_PATH"),
+    )
+    for key, value, message in cases:
+        environment = _protected_live_environment()
+        environment[key] = value
+        with pytest.raises(SettingsError, match=message):
+            load_settings(environ=environment)
+
+
+def test_protected_live_requires_explicit_durable_ledger_path() -> None:
+    environment = _protected_live_environment()
+    del environment["FORTYGUARD_LEDGER_PATH"]
+    with pytest.raises(SettingsError, match="absolute FORTYGUARD_LEDGER_PATH"):
+        load_settings(environ=environment)
+
+
+def test_protected_live_requires_absolute_ledger_path() -> None:
+    environment = _protected_live_environment()
+    environment["FORTYGUARD_LEDGER_PATH"] = "data/ledger.jsonl"
+    with pytest.raises(SettingsError, match="absolute FORTYGUARD_LEDGER_PATH"):
+        load_settings(environ=environment)
 
 
 def test_polling_defaults_are_bounded() -> None:

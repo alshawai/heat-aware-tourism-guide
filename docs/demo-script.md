@@ -2,7 +2,9 @@
 
 ## Primary Scenario
 
-Run the unified fixture-backed application with networking disabled:
+The hosted public URL is pending Render provisioning. Until it is populated in
+the README, run the unified fixture-backed application locally with networking
+disabled:
 
 ```bash
 ALLOW_LIVE=false .venv/bin/uvicorn app.main:app --reload
@@ -45,4 +47,7 @@ npm run frontend:build
 
 The fixture flow makes no FortyGuard, Overpass, or OSRM requests. Live provider
 acquisition is a separate maintainer operation and must not be used for the
-public recording.
+public recording. Browser OSM tiles are allowed, but they are not a readiness
+dependency; a missing basemap does not invalidate the fixture demo. For hosted
+deployment smoke tests, health, warm-up, and rollback procedures are in the
+[deployment guide](deployment.md).

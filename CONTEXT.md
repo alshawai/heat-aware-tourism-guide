@@ -46,6 +46,18 @@ directly.
   provider-shape JSON, offline), `live` (authenticated provider call through
   the live adapter), or `cache` (replayed earlier result). One of the three is
   always explicit in `Provenance.source`; never empty-success.
+- **Deployment profile** — The server-declared operating boundary for an
+  application instance: `local`, `public-fixture`, or `protected-live`. It is
+  distinct from execution mode because it governs startup guarantees and who
+  may access the instance, not where an individual result originates.
+- **Public fixture deployment** — The publicly accessible application instance,
+  restricted to the fixed canonical-trip demonstration and incapable of live
+  provider execution. Live credentials and live provider capability are absent,
+  not merely hidden from public controls. Synonym to avoid: "public fixture
+  mode" when referring to the deployed instance rather than execution source.
+- **Protected live deployment** — A separately deployed, access-controlled
+  maintainer instance capable of live provider execution. It is never the
+  public fixture deployment and is not available to anonymous travelers.
 - **Provenance** — The record attached to every result: `source`
   (`fixture`/`provider`/`cache`), `retrieved_at`, `data_date`, `stale`,
   `forecast`, optional `activity_id`, sanitized `raw_payload`, and
@@ -85,7 +97,7 @@ directly.
 - **Credit ledger** — Append-only log of billable provider activity;
   `plan_optional` is separate from actual spend. Persists as JSONL
   (`data/ledger.jsonl`), loaded at startup, holding two record kinds:
-  **call records** (one per completed provider call, keyed by activity ID,
+  **call records** (one per submitted provider call, keyed by activity ID,
   `credits_used` null when the provider did not price it) and
   **reconciliation records** (authoritative account credit totals for a date
   window). The optional `FORTYGUARD_CALL_BUDGET` enforces an all-time **call
@@ -184,6 +196,8 @@ directly.
   recommendation staging.
 - ADR 0007 — exact-time modeled shade, nighttime route decisions, and weak
   shade-evidence behavior.
+- ADR 0008 — separated public fixture/protected live deployments, explicit
+  deployment profiles, authentication, and persistent budget enforcement.
 - `docs/design/fortyguard-extraction.md` — extraction contract from issue #6.
 - Layout: `app/domain/` (pure contracts), `app/services/` (cache, execution,
   acquisition, sidecars, ledger store), `app/integrations/fortyguard/`

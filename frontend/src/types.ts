@@ -116,6 +116,17 @@ export type RequestOptions = {
 
 export type ExecutionMode = "fixture" | "live";
 
+export type DeploymentProfile = "local" | "public-fixture" | "protected-live";
+
+export type ExecutionCapability = "fixture-only" | "fixture-and-live";
+
+export type HealthResponse = {
+  status: "ok";
+  deployment_profile: DeploymentProfile;
+  mode: ExecutionMode;
+  execution_capability: ExecutionCapability;
+};
+
 export type ApiProvenance = {
   source: string;
   data_date: string;

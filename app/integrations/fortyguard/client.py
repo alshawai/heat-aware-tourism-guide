@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from time import sleep as default_sleep
 from typing import Callable, Mapping
+from uuid import uuid4
 
 from app.domain.ledger import CreditLedger, UsageRecord
 from app.domain.security import sanitize_payload
@@ -58,18 +59,28 @@ class FortyGuardClient:
         status_404_grace_checks: int = 3,
     ) -> tuple[Mapping[str, object], ActivityMetadata]:
         reservation: int | None = None
+        activity_id: str | None = None
+        submitted_at: datetime | None = None
+        attempted_at: datetime | None = None
+        submission_attempted = False
+        submission_rejected = False
+        recorded = False
         if self._ledger is not None:
             reservation = self._ledger.authorize_call()
         try:
+            submission_attempted = True
+            attempted_at = self._clock()
             response = self._transport.post(endpoint, payload, self._api_key)
             status_code = response.get("status_code")
             if isinstance(status_code, int) and status_code >= 400:
+                submission_rejected = True
                 raise classify_provider_error(status_code, "activity submission failed")
-            activity_id = response.get("activity_id")
-            if not isinstance(activity_id, str) or not activity_id:
+            raw_activity_id = response.get("activity_id")
+            if not isinstance(raw_activity_id, str) or not raw_activity_id:
                 raise ProviderError(
                     ProviderErrorKind.MALFORMED_RESPONSE, detail="missing activity id"
                 )
+            activity_id = raw_activity_id
             submitted_at = self._clock()
             self._emit(
                 "fortyguard.submitted",
@@ -119,13 +130,28 @@ class FortyGuardClient:
                     UsageRecord(activity_id, endpoint, credits_used, self._clock(), "completed"),
                     reservation=reservation,
                 )
+                recorded = True
             self._emit(
                 "fortyguard.completed", {"activity_id": activity_id, **_response_metadata(result)}
             )
             return result, metadata
         finally:
             if reservation is not None and self._ledger is not None:
-                self._ledger.release_call(reservation)
+                if submission_attempted and not submission_rejected and not recorded:
+                    # A POST attempt may be billable even when its response or
+                    # later polling is ambiguous, so it consumes the hard bound.
+                    self._ledger.record(
+                        UsageRecord(
+                            activity_id or f"submission-unknown-{uuid4().hex}",
+                            endpoint,
+                            None,
+                            submitted_at or attempted_at or self._clock(),
+                            "submitted" if activity_id is not None else "submission_unknown",
+                        ),
+                        reservation=reservation,
+                    )
+                else:
+                    self._ledger.release_call(reservation)
 
     def _emit(self, event: str, fields: Mapping[str, object]) -> None:
         if self._event_sink is not None:

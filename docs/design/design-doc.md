@@ -392,17 +392,23 @@ covering application quality gates.
 
 ## Deployment
 
-The project requires a public URL because it has a UI. The target is a unified
-FastAPI deployment serving the built React assets and API from one service, on
-Render or Railway depending on account and deployment constraints.
+The project requires a public URL because it has a UI. The selected target is a
+unified FastAPI deployment serving the built React assets and API from one
+Render Docker web service. The checked-in Blueprint provisions the free public
+fixture service in Ohio; the deployment guide records its constraints and
+operations.
 
-Public deployment runs fixture mode by default. Live provider mode is a
-maintainer capability controlled by server-side environment variables and
-bounded operational budgets. A public user must never be able to consume the
-team's FortyGuard credits without an intentional, protected configuration.
+Public deployment is explicitly `APP_PROFILE=public-fixture` with
+`ALLOW_LIVE=false`. Live provider mode is a separate future paid deployment,
+HTTP Basic protected on every application route except `/health`, with
+server-side secrets, one worker and one instance, a persistent finite-budget
+ledger, and rollback procedures. A public user must never be able to consume
+the team's FortyGuard credits.
 
-The deployment must be available before recording and included in the README
-landing page and demo script.
+The deployment must be smoke-tested before recording. The README retains a
+pending URL placeholder until actual provisioning; the local fixture flow is
+the fallback. Browser OSM tiles are allowed and do not participate in readiness
+checks.
 
 ## Team Ownership And Schedule
 

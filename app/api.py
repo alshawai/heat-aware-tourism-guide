@@ -6,14 +6,17 @@ from dataclasses import asdict
 from datetime import date, datetime
 from enum import Enum
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import base64
+import binascii
 import json
 import math
 from pathlib import Path
+import secrets
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.domain.contracts import (
@@ -209,6 +212,8 @@ def create_app(
     trip_adapter: TripAnalysisAdapter | None = None,
     hotel_heat_analysis_service: HotelHeatAnalysisService | None = None,
     district_aoi: BoundingBox = BoundingBox(29.421, -98.490, 29.429, -98.482),
+    deployment_profile: str = "local",
+    basic_auth_credentials: tuple[str, str] | None = None,
 ) -> FastAPI:
     """Create the server-owned product API used by local runs and deployment."""
     configured_execution: HeatmapExecution = execution or HeatmapExecution(
@@ -227,9 +232,34 @@ def create_app(
     )
     app = FastAPI(title="Heat-Aware Tourism Guide")
 
+    if basic_auth_credentials is not None:
+        expected_username, expected_password = basic_auth_credentials
+
+        @app.middleware("http")
+        async def require_basic_auth(request: Request, call_next: Any) -> Any:
+            if request.url.path == "/health":
+                return await call_next(request)
+            supplied = _basic_auth_credentials(request.headers.get("Authorization"))
+            username, password = supplied if supplied is not None else (b"", b"")
+            username_matches = secrets.compare_digest(username, expected_username.encode())
+            password_matches = secrets.compare_digest(password, expected_password.encode())
+            if not (username_matches & password_matches):
+                return JSONResponse(
+                    {"detail": "authentication required"},
+                    status_code=401,
+                    headers={"WWW-Authenticate": 'Basic realm="heat-aware-tourism-guide"'},
+                )
+            return await call_next(request)
+
     @app.get("/health")
     def health() -> dict[str, str]:
-        return {"status": "ok", "mode": "live" if allow_live else "fixture"}
+        mode = "live" if allow_live else "fixture"
+        return {
+            "status": "ok",
+            "deployment_profile": deployment_profile,
+            "mode": mode,
+            "execution_capability": "fixture-and-live" if allow_live else "fixture-only",
+        }
 
     @app.get("/api/places/search")
     def places_search(q: str = "") -> dict[str, object]:
@@ -378,6 +408,20 @@ def create_app(
             return FileResponse(requested if requested.is_file() else frontend_dist / "index.html")
 
     return app
+
+
+def _basic_auth_credentials(header: str | None) -> tuple[bytes, bytes] | None:
+    if header is None:
+        return None
+    scheme, separator, token = header.partition(" ")
+    if separator != " " or scheme.lower() != "basic" or not token:
+        return None
+    try:
+        decoded = base64.b64decode(token, validate=True)
+    except (binascii.Error, ValueError):
+        return None
+    username, separator_bytes, password = decoded.partition(b":")
+    return (username, password) if separator_bytes else None
 
 
 def _required_bool(body: dict[str, object], field: str, *, default: bool) -> bool:
