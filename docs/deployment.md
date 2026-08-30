@@ -34,9 +34,10 @@ a scheduled recording because plan limits and suspension behavior can change. Se
    does not recognize `autoDeployTrigger: checksPass`, enforce the same rule in
    the repository branch protection and do not bypass failing checks.
 
-The public URL remains intentionally pending until the service is actually
-provisioned. Add it to the README and demo materials only after the first smoke
-test succeeds.
+The verified public fixture deployment is
+<https://heat-aware-tourism-guide-demo.onrender.com/>. Its first smoke test
+confirmed the public profile, built frontend and deep-link fallback, canonical
+fixture analysis, hotel ranking, static assets, and rejection of live execution.
 
 ## Configuration And Secrets
 

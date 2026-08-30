@@ -2,9 +2,11 @@
 
 ## Primary Scenario
 
-The hosted public URL is pending Render provisioning. Until it is populated in
-the README, run the unified fixture-backed application locally with networking
-disabled:
+Open the hosted fixture demonstration at
+<https://heat-aware-tourism-guide-demo.onrender.com/>. The free service sleeps
+after 15 minutes without traffic, so allow about one minute for its first load.
+
+For an offline fallback, run the unified fixture-backed application locally:
 
 ```bash
 ALLOW_LIVE=false .venv/bin/uvicorn app.main:app --reload

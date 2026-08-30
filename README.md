@@ -4,7 +4,10 @@ Heat-aware trip planning for visitors to hot US cities. The application
 combines landmark timing, outdoor neighborhood heat, and walking-route
 comparison in one fixture-backed web experience.
 
-**Public URL:** pending Render provisioning.
+**Public demo:** <https://heat-aware-tourism-guide-demo.onrender.com/>
+
+The free Render service sleeps after 15 minutes without traffic, so allow about
+one minute for the first load during judging.
 
 ## Project Shape
 
