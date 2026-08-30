@@ -1,9 +1,10 @@
-# Deploying The Demo
+# How To Deploy The Public Fixture Demo
 
-This is the how-to guide for the public fixture deployment. The repository's
-`Dockerfile` builds the React/Vite frontend with Node 22, then installs the
-Python 3.12 FastAPI runtime in a smaller final stage. The final image contains
-`app`, committed `fixtures`, and `frontend/dist`; it runs one Uvicorn worker on
+This is the how-to guide for deploying the public fixture service (and,
+later, the separate protected live instance). The repository's `Dockerfile`
+builds the React/Vite frontend with Node 22, then installs the Python 3.12
+FastAPI runtime in a smaller final stage. The final image contains `app`,
+committed `fixtures`, and `frontend/dist`; it runs one Uvicorn worker on
 `0.0.0.0` and uses Render's `PORT` value.
 
 ## Free-Tier Boundaries
@@ -154,5 +155,7 @@ Render's deploy history, then rerun health and browser smoke tests. Keep
 `ALLOW_LIVE=false` during recovery. For a persistent provider incident, leave
 the public URL unchanged if possible and use the local recording fallback.
 
-See [ADR 0009](adr/0009-separated-public-fixture-and-protected-live-deployments.md)
+See [ADR 0009](../adr/0009-separated-public-fixture-and-protected-live-deployments.md)
 for the separation, authentication, ledger, Render, and rollback rationale.
+For the maintainer-only live instance requirements, see
+[How to configure live mode](configure-live-mode.md).
