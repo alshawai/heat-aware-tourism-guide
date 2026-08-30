@@ -8,7 +8,7 @@ import math
 from typing import Any, Mapping, cast
 
 from pyproj import Transformer
-from shapely.geometry import GeometryCollection, LineString, MultiPolygon, Polygon
+from shapely.geometry import GeometryCollection, LineString, Polygon, mapping
 from shapely.geometry.base import BaseGeometry
 from shapely.ops import transform, unary_union
 
@@ -210,14 +210,15 @@ def _normalize_buildings(
             or ("building" not in tags and "building:part" not in tags)
         ):
             continue
-        geometry = _element_geometry(element)
-        if geometry is None:
+        result = _element_geometry(element)
+        if result.geometry is None:
             dropped += 1
             continue
+        dropped += result.dropped_members
         try:
             footprint = building_from_geojson(
                 f"{object_type}/{object_id}",
-                geometry,
+                result.geometry,
                 tags,
                 metres_per_level=metres_per_level,
             )
@@ -228,38 +229,92 @@ def _normalize_buildings(
     return _effective_footprints(raw), dropped
 
 
-def _element_geometry(element: Mapping[str, object]) -> Mapping[str, object] | None:
+@dataclass(frozen=True)
+class _ElementGeometry:
+    """One element's polygonal geometry and the member ways it could not use."""
+
+    geometry: Mapping[str, object] | None
+    dropped_members: int = 0
+
+
+def _element_geometry(element: Mapping[str, object]) -> _ElementGeometry:
     if element.get("type") == "way":
         ring = _ring(element.get("geometry"))
-        return {"type": "Polygon", "coordinates": [ring]} if ring is not None else None
+        return _ElementGeometry(
+            {"type": "Polygon", "coordinates": [ring]} if ring is not None else None
+        )
     members = element.get("members")
     if not isinstance(members, list):
-        return None
-    rings = [
-        ring
-        for member in members
-        if isinstance(member, Mapping)
-        for ring in [_ring(member.get("geometry"))]
-        if ring is not None and member.get("role") != "inner"
-    ]
-    if not rings:
-        return None
-    merged = cast(BaseGeometry, unary_union([Polygon(ring) for ring in rings]))
-    if merged.geom_type == "Polygon":
-        polygon = cast(Polygon, merged)
-        return {"type": "Polygon", "coordinates": [list(polygon.exterior.coords)]}
-    if merged.geom_type == "MultiPolygon":
-        return {
-            "type": "MultiPolygon",
-            "coordinates": [
-                [list(polygon.exterior.coords)] for polygon in cast(MultiPolygon, merged).geoms
-            ],
-        }
+        return _ElementGeometry(None)
+    outer: list[list[list[float]]] = []
+    inner: list[list[list[float]]] = []
+    dropped = 0
+    for member in members:
+        if not isinstance(member, Mapping):
+            dropped += 1
+            continue
+        if member.get("type") != "way":
+            # Node and sub-relation members carry no ring; they discard no area.
+            continue
+        points = _points(member.get("geometry"))
+        if points is None:
+            dropped += 1
+            continue
+        (inner if member.get("role") == "inner" else outer).append(points)
+    outer_rings, unclosed_outer = _assemble_rings(outer)
+    inner_rings, unclosed_inner = _assemble_rings(inner)
+    dropped += unclosed_outer + unclosed_inner
+    if not outer_rings:
+        return _ElementGeometry(None, dropped)
+    shell = cast(BaseGeometry, unary_union([Polygon(ring) for ring in outer_rings]))
+    holes = [Polygon(ring) for ring in inner_rings]
+    solid = shell.difference(cast(BaseGeometry, unary_union(holes))) if holes else shell
+    if solid.is_empty or solid.geom_type not in {"Polygon", "MultiPolygon"}:
+        return _ElementGeometry(None, dropped)
+    return _ElementGeometry(cast(Mapping[str, object], mapping(solid)), dropped)
+
+
+def _assemble_rings(ways: list[list[list[float]]]) -> tuple[list[list[list[float]]], int]:
+    """Stitch fragmented member ways into closed rings; count the members left over."""
+    pending = [list(way) for way in ways]
+    rings: list[list[list[float]]] = []
+    dropped_members = 0
+    while pending:
+        chain = pending.pop(0)
+        consumed = 1
+        while chain[0] != chain[-1]:
+            extended = _join(chain, pending)
+            if extended is None:
+                break
+            chain, consumed = extended, consumed + 1
+        if chain[0] == chain[-1] and len(chain) >= 4:
+            rings.append(chain)
+        else:
+            dropped_members += consumed
+    return rings, dropped_members
+
+
+def _join(chain: list[list[float]], pending: list[list[list[float]]]) -> list[list[float]] | None:
+    """Extend the chain with the first pending way sharing an endpoint, in either direction."""
+    for index, candidate in enumerate(pending):
+        if candidate[0] == chain[-1]:
+            extended = chain + candidate[1:]
+        elif candidate[-1] == chain[-1]:
+            extended = chain + candidate[-2::-1]
+        elif candidate[-1] == chain[0]:
+            extended = candidate[:-1] + chain
+        elif candidate[0] == chain[0]:
+            extended = candidate[:0:-1] + chain
+        else:
+            continue
+        pending.pop(index)
+        return extended
     return None
 
 
-def _ring(value: object) -> list[list[float]] | None:
-    if not isinstance(value, list):
+def _points(value: object) -> list[list[float]] | None:
+    """Validated lon/lat points from one Overpass geometry array, open or closed."""
+    if not isinstance(value, list) or len(value) < 2:
         return None
     coordinates: list[list[float]] = []
     for point in value:
@@ -278,9 +333,15 @@ def _ring(value: object) -> list[list[float]] | None:
         ):
             return None
         coordinates.append([float(longitude), float(latitude)])
-    if len(coordinates) < 4 or coordinates[0] != coordinates[-1]:
-        return None
     return coordinates
+
+
+def _ring(value: object) -> list[list[float]] | None:
+    """One already-closed ring of at least four validated points."""
+    points = _points(value)
+    if points is None or len(points) < 4 or points[0] != points[-1]:
+        return None
+    return points
 
 
 def _effective_footprints(raw: list[_RawBuilding]) -> tuple[BuildingFootprint, ...]:
