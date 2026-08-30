@@ -61,7 +61,7 @@
         "purpose": "offline product-state demonstration"
       },
       "response_status": "synthesized_demo",
-      "retrieved_at": "2026-08-30T16:00:00+00:00",
+      "retrieved_at": null,
       "source": "synthesized",
       "transformation_version": "demo-best-time-v1"
     },
@@ -402,7 +402,7 @@
         "route_heat_source": "landmark_reuse"
       },
       "response_status": "synthesized_demo",
-      "retrieved_at": "2026-08-30T16:00:00+00:00",
+      "retrieved_at": null,
       "source": "synthesized",
       "transformation_version": "route-landmark-heat-reuse-v1"
     },

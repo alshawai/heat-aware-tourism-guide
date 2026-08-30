@@ -2,8 +2,9 @@
 
 **Research date:** 2026-08-30  
 **Issue:** [#23, Complete fixture acquisition for canonical and alternate scenarios](https://github.com/alshawai/heat-aware-tourism-guide/issues/23)  
-**Scope:** Scenario selection and evidence only. No authenticated, metered, or
-heat-provider request was made.
+**Scope:** Scenario selection, retained public acquisition evidence, and the
+completed Issue #23 fixture outcomes. No provider request was made during this
+documentation update.
 
 ## Executive Decision
 
@@ -16,9 +17,40 @@ as described below:
 | B: weak OSM heights and optional hotel enrichment unavailable | **San Fernando Cathedral -> Spanish Governor's Palace** | The configured request returned two routes, 265.5 m / 212.3 s and 278.6 m / 222.8 s. Current OSM building data, processed with the repository's actual 250 m corridor and height model, produced area-weighted usable-height coverage of **0.3464** and **0.3405**, both below 0.70. | Inject optional hotel-enrichment failure after preserving base hotel ranking/results. Geography does not cause the enrichment failure.                                               | It is a compact downtown walk with two returned alternatives and quantitatively weak height evidence. The optional outage can visibly coexist with intact base results.                                         |
 | C: core heat provider fails, whole trip unavailable           | **Briscoe Western Art Museum -> Tower of the Americas** | The configured request returned two routes, 895.5 m / 718.1 s and 928.4 m / 744.3 s, observed 2026-08-30 at 12:30:23 UTC. Both endpoints are genuine downtown/Hemisfair attractions.                                                                                                 | Inject deterministic failure of the initial core TCM request and ensure no exact cache or matching fixture can answer; expected product result is explicit whole-trip `unavailable`. | No supported-US place can honestly guarantee a heat-provider failure. This real trip gives the unavailable fixture a credible identity while the sidecar must label the failure as synthesized, not geographic. |
 
-The canonical Menger Hotel -> The Alamo trip remains the sole fixture for
-best-time, hotel ranking, and multi-route comparison. None of these alternates
-should duplicate or replace those canonical purposes.
+The canonical Menger Hotel -> The Alamo trip remains the fixture for best-time
+and hotel ranking. Its corrected route acquisition is genuinely one route, so
+it no longer serves as a multi-route comparison. Cathedral owns that comparison
+with two genuine returned routes. None of the other scenarios fabricates a
+route or replaces the canonical hotel scope.
+
+## Implementation Outcome
+
+The four generated `trip-contract-v2` snapshots now implement the matrix.
+Provider observations and synthesized product states remain distinct in their
+sidecars and product provenance. The canonical corrected route is genuinely one
+route, so it is not described as multi-route and no second route is fabricated;
+Cathedral retains the genuine two-route comparison instead. The regenerated
+sidecars also record the selected place identities and content-addressed input
+hashes.
+
+The metered ledger contains six completed provider calls. They include the
+valid canonical destination TCM (`34.0147 C` for 2024-07-15), recovered
+canonical environment data, and three valid canonical hotel component
+acquisitions. The environment's `GMT-7` metadata conflicts with the canonical
+`America/Chicago` interpretation and is preserved as temporally inconsistent,
+not normalized into an exact timestamp. The canonical hotel night/day windows
+are declared metadata only; date-level TCM is not an interval maximum.
+
+No Cathedral heat probe was made. Cathedral route and building-height evidence
+remain genuine, while its heat, modeled decision trigger, and optional
+enrichment failure are synthesized and explicitly labeled demo evidence. Main
+Plaza heat and non-routing sections are also synthesized demo evidence; the
+Market Square no-feature result was intentionally not committed. Briscoe's
+core failure is synthesized and does not claim geographic provider failure.
+
+The offline backend and network-blocked E2E coverage exercise all four
+scenarios through the same strict live/fixture/HTTP v2 codec. Snapshot
+generation checks input hashes, round-trip stability, and overwrite safety.
 
 ## Desired Behavior First
 
@@ -485,28 +517,24 @@ official coordinate was published.
 - Synthesized provider failures must never gain a fake retrieval timestamp,
   activity ID, HTTP status, or provider claim during fixture maintenance.
 
-## Remaining Decisions For The Next Grilling Round
+## Settled By Implementation
 
-1. Confirm that case B should follow accepted ADR 0007 and show no daytime route
-   recommendation under weak height evidence, despite older design/extraction
-   text that still says shortest-route fallback.
-2. Confirm the visitor-facing destination label `Historic Market Square (El
-Mercado)` and whether a future mapped campus/entrance object should replace
-   the building centroid. The current identity is honest but narrower than the
-   official destination name.
-3. Decide whether provider-sourced OSRM and Overpass payloads receive dedicated
-   acquisition sidecars with public-provider source semantics distinct from
-   FortyGuard's `provider` fixtures, and pin the appropriate schema/config
-   versions.
-4. Choose the exact deterministic error kind for B's optional enrichment outage
-   and C's core outage. The fixtures should exercise public response contracts,
-   not arbitrary prose-only failures.
-5. Decide whether case C stores its successful route observation even though the
-   whole-trip product result exits before routing. Keeping it improves scenario
-   provenance; omitting it minimizes unused fixture data.
-6. Confirm district labels and hotel AOI policy. Recommendations A and B are
-   close to but partly west of the current hard-coded hotel AOI west bound
-   `-98.490`; C's Tower endpoint is south of its `29.421` bound. A trip can be a
+1. Case B follows ADR 0007: weak height evidence preserves both routes and makes
+   no daytime route recommendation. The stale shortest-route prose in the
+   accepted design documents has been corrected.
+2. The visitor-facing destination label is `Historic Market Square (El
+Mercado)`; its selected identity remains the narrower OSM building centroid
+   `way/79636475`.
+3. OSRM and Overpass payloads have dedicated provider sidecars with their own
+   provider identities and configuration versions.
+4. Case B uses synthesized `optional_provider_failure`; case C uses synthesized
+   `provider_data_missing`, exercising structured response contracts rather than
+   implying provider or geographic failure.
+5. Case C's genuine route observation is retained as separate provenance even
+   though the product result stops at the initial TCM failure and does not return
+   routes.
+6. The canonical hotel AOI remains `Downtown San Antonio`; alternate route and
+   building evidence remains fixture-specific. A trip can be a
    supported San Antonio trip without redefining the canonical hotel district,
    but alternate hotel-ranking fixtures need an explicit district AOI rather
    than silently reusing the canonical one.

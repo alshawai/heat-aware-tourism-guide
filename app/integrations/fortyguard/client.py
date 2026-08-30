@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 from time import sleep as default_sleep
-from typing import Callable, Mapping, cast
+from typing import Callable, Mapping
 
 from app.domain.ledger import CreditLedger, UsageRecord
 from app.domain.security import sanitize_payload
@@ -92,10 +92,7 @@ class FortyGuardClient:
             transitions: list[str] = []
 
             def get_status(_: str) -> Mapping[str, object]:
-                return cast(
-                    Mapping[str, object],
-                    self._transport.get(f"/v1/status/{activity_id}", self._api_key),
-                )
+                return self._transport.get(f"/v1/status/{activity_id}", self._api_key)
 
             result = poll_activity(
                 activity_id,

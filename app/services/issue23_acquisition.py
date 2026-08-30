@@ -15,7 +15,9 @@ from app.domain.hotels import BoundingBox
 from app.domain.ledger import BudgetExceededError, CreditLedger, UsageRecord
 from app.domain.provenance import AcquisitionRecord, Transformation, UpstreamAcquisitionReference
 from app.domain.security import sanitize_payload
-from app.integrations.fortyguard.client import ActivityRecoveryMetadata
+from app.integrations.fortyguard.client import (
+    ActivityRecoveryMetadata,
+)
 from app.integrations.fortyguard.contracts import (
     PROVIDER_CONFIG_VERSION,
     AnalyticType,
@@ -28,13 +30,14 @@ from app.integrations.fortyguard.contracts import (
 )
 from app.integrations.fortyguard.live import env_params_transformations, translate_heatmap_response
 from app.services.acquisition import (
+    AcquisitionClient,
     AcquisitionOutcome,
     EnvParamsScenario,
     HeatmapScenario,
     acquire_env_params_fixture,
     acquire_heatmap_fixture,
 )
-from app.services.sidecars import load_acquisition_record, sidecar_path
+from app.services.sidecars import load_acquisition_record, replace_pair, sidecar_path
 from app.services.execution import env_params_request_payload, heatmap_request_payload
 from app.settings import FortyGuardPollingSettings
 
@@ -49,15 +52,15 @@ DEFAULT_OUT_DIR = Path("fixtures/providers/fortyguard")
 WEAK_SCENARIO_NAME = "cathedral-governors-palace-destination-tcm"
 
 
-class AcquisitionClient(Protocol):
-    def submit_and_poll(
-        self, endpoint: str, payload: dict[str, object], **kwargs: object
-    ) -> object: ...
-
-
 class RecoveryClient(Protocol):
     def poll_existing_activity(
-        self, activity_id: str, **kwargs: object
+        self,
+        activity_id: str,
+        *,
+        sleep: Callable[[float], None] = ...,
+        max_polls: int = ...,
+        interval_seconds: float = ...,
+        status_404_grace_checks: int = ...,
     ) -> tuple[Mapping[str, object], ActivityRecoveryMetadata]: ...
 
 
@@ -316,6 +319,7 @@ def recover_issue23_canonical_env(
         derived_from=(_upstream_reference(tcm_path, "temperature_anchor_tcm"),),
         transformations=env_params_transformations()
         + (Transformation("max_normalized_tcm_in_requested_range", 1),),
+        response_metadata={},
     )
     fixture_path = out_dir / env_activity.filename
     raw = {key: value for key, value in result.items() if key not in {"credits_used", "request_id"}}
@@ -648,6 +652,8 @@ def _normalize_stored_tcm(
     if not isinstance(payload, dict):
         raise ValueError(f"TCM prerequisite must contain an object: {path}")
     translated = translate_heatmap_response(payload, request=request)
+    if record.retrieved_at is None:
+        raise ValueError(f"TCM prerequisite lacks a provider retrieval time: {path}")
     return normalize_heatmap_response(
         translated,
         request=request,
@@ -659,8 +665,12 @@ def _normalize_stored_tcm(
 
 def _upstream_reference(path: Path, role: str) -> UpstreamAcquisitionReference:
     canonical = f"fixtures/providers/fortyguard/{path.name}"
+    sidecar = sidecar_path(path)
     return UpstreamAcquisitionReference(
-        canonical, role, hashlib.sha256(path.read_bytes()).hexdigest()
+        canonical,
+        role,
+        hashlib.sha256(path.read_bytes()).hexdigest(),
+        hashlib.sha256(sidecar.read_bytes()).hexdigest(),
     )
 
 
@@ -692,6 +702,4 @@ def _validate_recovered_env_window(result: EnvParamsResult, window: TimeWindow) 
 
 
 def _replace_sidecar(path: Path, record: AcquisitionRecord) -> None:
-    sidecar_path(path).write_text(
-        json.dumps(record.to_payload(), indent=2) + "\n", encoding="utf-8"
-    )
+    replace_pair(path, path.read_bytes(), record)

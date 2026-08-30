@@ -7,6 +7,8 @@ import hashlib
 import json
 from pathlib import Path
 import shutil
+from time import sleep as default_sleep
+from typing import Callable, Mapping
 
 import pytest
 
@@ -57,14 +59,22 @@ class FakeClient:
         self.weak_temperature = weak_temperature
 
     def submit_and_poll(
-        self, endpoint: str, payload: dict[str, object], **kwargs: object
-    ) -> tuple[dict[str, object], ActivityMetadata]:
-        del kwargs
-        self.calls.append((endpoint, payload))
+        self,
+        endpoint: str,
+        payload: Mapping[str, object],
+        *,
+        sleep: Callable[[float], None] = default_sleep,
+        max_polls: int = 24,
+        interval_seconds: float = 5.0,
+        status_404_grace_checks: int = 3,
+    ) -> tuple[Mapping[str, object], ActivityMetadata]:
+        del sleep, max_polls, interval_seconds, status_404_grace_checks
+        request_payload = dict(payload)
+        self.calls.append((endpoint, request_payload))
         activity_id = f"issue23-{len(self.calls)}"
         metadata = ActivityMetadata(activity_id, SUBMITTED_AT, endpoint, tuple(payload))
         if endpoint == "/v1/env_params":
-            date_time = payload["date_time"]
+            date_time = request_payload["date_time"]
             assert isinstance(date_time, dict)
             start = int(str(date_time["start_time"])[:2])
             end = int(str(date_time["end_time"])[:2])
@@ -75,7 +85,7 @@ class FakeClient:
                 "heat_index_celsius": [36.0] * len(timestamps),
                 "relative_humidity_percent": [50.0] * len(timestamps),
             }, metadata
-        analytic = payload["analytic_type"]
+        analytic = request_payload["analytic_type"]
         value = 2.0 if analytic != "tcm" else 37.5
         if len(self.calls) == 3:
             value = self.weak_temperature
@@ -310,7 +320,7 @@ def test_canonical_env_recovery_is_get_only_and_preserves_mismatch_metadata(
     assert "must-not-be-written" not in outcome.fixture_path.read_text(encoding="utf-8")
 
 
-@pytest.mark.parametrize("ledger_case", ["missing", "wrong_endpoint"])
+@pytest.mark.parametrize("ledger_case", ["missing", "wrong_endpoint"])  # type: ignore[misc]
 def test_canonical_env_recovery_requires_matching_ledger_before_get(
     tmp_path: Path, ledger_case: str
 ) -> None:

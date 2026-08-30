@@ -1,30 +1,36 @@
 {
-  "source": "provider",
-  "provider": "overpass-api-de",
+  "activity_id": null,
+  "data_date": "2026-08-30",
+  "derived_from": [],
   "endpoint": "https://overpass-api.de/api/interpreter",
+  "provider": "overpass-api-de",
+  "provider_config_version": "overpass-building-config-v1",
   "request_configuration": {
     "aoi": {
-      "south": 29.422431929,
-      "west": -98.498865419,
+      "east": -98.491604468,
       "north": 29.427384596,
-      "east": -98.491604468
+      "south": 29.422431929,
+      "west": -98.498865419
     },
-    "search_distance_m": 250.0,
+    "model_version": "route-shade-v1",
     "query_options": {
-      "response_format": "json",
-      "timeout_seconds": 60,
-      "output": "body geom",
       "object_types": ["way", "relation"],
-      "selected_tags": ["building", "building:part"]
+      "output": "body geom",
+      "response_format": "json",
+      "selected_tags": ["building", "building:part"],
+      "timeout_seconds": 60
     },
-    "model_version": "route-shade-v1"
+    "search_distance_m": 250.0
+  },
+  "response_metadata": {
+    "element_count": 126,
+    "osm_base_timestamp": "2026-08-30T14:22:51Z",
+    "response_format": "overpass-json",
+    "response_version": "0.7"
   },
   "retrieved_at": "2026-08-30T14:26:21.629845+00:00",
-  "data_date": "2026-08-30",
-  "status": "ok",
   "schema_version": "building-v1",
-  "provider_config_version": "overpass-building-config-v1",
-  "activity_id": null,
-  "derived_from": [],
+  "source": "provider",
+  "status": "ok",
   "transformations": []
 }

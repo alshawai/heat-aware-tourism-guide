@@ -91,8 +91,8 @@ the account usage report lists their historical spend.
 uses the documented provisional component weights, retains components, and
 reports ties and candidate-set percentiles rather than an absolute grade. Route
 comparison consumes one supplied route set, uses maximum corridor heat, avoids
-shade work below the heat threshold, and recommends the shortest route when
-building-height coverage is insufficient.
+shade work below the heat threshold, and preserves all returned routes without a
+recommendation when building-height coverage is insufficient.
 
 ## Known limitations
 

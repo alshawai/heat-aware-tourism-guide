@@ -54,7 +54,7 @@ from app.services.building_execution import BuildingOutcome
 from app.services.route_analysis import _building_provenance, _solar_provenance
 from app.services.route_shade import RouteShadeService
 from app.services.routing import route_request_payload
-from app.services.sidecars import load_acquisition_record, sidecar_path
+from app.services.sidecars import load_acquisition_record, replace_pair, sidecar_path
 from app.services.trip_adapters import _best_time_result, _environment_result
 from app.services.trip_contract_v2 import decode_trip_analysis_v2, encode_trip_analysis_v2
 
@@ -70,58 +70,69 @@ class InputSpec:
     fixture: str
     role: str
     sha256: str
+    sidecar_sha256: str
 
 
 INPUTS = {
     "menger_osrm": InputSpec(
         "fixtures/providers/osrm/menger-alamo.json",
         "routing",
-        "7f5408f0b2520887b2b6ddfc01b00971e7617830e22c5794cf594a160c41a3d0",
+        "88932e6c031344322aa292e2ef8ac0b6a00de5966cf33a536c8a3ac24c4f4524",
+        "7639676a3b9d8933efc7f7d319906f2d98a832f6abae3d564c026c73625ac254",
     ),
     "main_osrm": InputSpec(
         "fixtures/providers/osrm/main-plaza-market-square.json",
         "routing",
-        "bfad4e015c360213d95ea4a5b72950d61e5e825421a2335543f9075b6aee08f4",
+        "4d72c81cc3ed992ac6de3ef72032ef44766bd98c502ad3f0acf6778db756f71e",
+        "3a82cfb0da149e48d78611a84f40b16bd4db6f4f846be0dffc4b60b2b700e3d1",
     ),
     "cathedral_osrm": InputSpec(
         "fixtures/providers/osrm/cathedral-governors-palace.json",
         "routing",
-        "aba78baeb0bb390741e0641a5828c377ca347d9deb2511360a85c9019f54a87f",
+        "840c1e9b1201d4191057d6b5e1a5ae4195a5642096e0e616d772b08e7599cca0",
+        "a67b49e9f754aae973b791d82a4b6b4849b1f986dd551435b5851ca07f04f7f3",
     ),
     "buildings": InputSpec(
         "fixtures/providers/overpass/cathedral-governors-palace-buildings.json",
         "building_geometry",
-        "e6176d2f673389a59e7d55624734a54b768a8f56f8baafe6fcbe31adb90b5d60",
+        "ef631e89b2a10b12d1948004c1ba0758c6b8403cacc7d0d2cae25c1617c88e13",
+        "d14448dfd4ae3dacdbd5d7e8e5539bb41f701f4bafae7d02a4e9d0e605c6e09b",
     ),
     "destination_tcm": InputSpec(
         "fixtures/providers/fortyguard/menger-alamo-destination-tcm-2024-07-15.json",
         "destination_tcm",
-        "98293540939b8dd1ca4c268c0e2fc9afc124b61494e20cc38564f5a06fb50c61",
+        "8aa93a776a47329233fb11c1f9c68c0074bf08f6763cf1fba8f987cf8627564b",
+        "0a31b1dbc49b7801ffe559bf40e057539a31e3dfc55e18805957f3a454bcc3cf",
     ),
     "environment": InputSpec(
         "fixtures/providers/fortyguard/menger-alamo-destination-env-params-2024-07-15.json",
         "environment_parameters",
-        "3c7e85101cbf6961eeed391443cecb4c97bc6c9beda36fc0cfdf730cd5ea9df4",
+        "7aaa3762b4c50cc64fb953ca09cef38d05970c1910a9de1e234038f52da1b56e",
+        "789c8414ba45492d22c80cfb659ef64026801c04ecf0f116f14fdd7721d58111",
     ),
     "district_tcm": InputSpec(
         "fixtures/providers/fortyguard/canonical-district-anchor-date-tcm-2024-07-15.json",
         "hotel_night_and_day_tcm",
-        "f440eeb83743303e8a99126d0e53f02ff1625f1875aa9c60b5092f96ed0257ca",
+        "7ab6f9eb46691f201a2ffe4b71fe73b36dd4e0f6a281441ad0a0f0da86e1e602",
+        "dad752e7f1f5415e0be2a52527e83450c982159dc0b73f4357f039127a802df9",
     ),
     "district_exceedance": InputSpec(
         "fixtures/providers/fortyguard/canonical-district-anchor-exceedance-above-35c-2024-07-15.json",
         "hotel_hot_hours",
-        "4226735c20081617206c77672cd1b142f643c9fcfe0da5d8be455a0c5fca54b7",
+        "6fc97903bda9801830eac7ca5937932a5ef5ca37a87a2beaed1268caffec7af8",
+        "f46eee48baf79aef0b8b2d1107becd56d568edb746b99253d33b8c7f06dcd4fe",
     ),
     "district_persistence": InputSpec(
         "fixtures/providers/fortyguard/canonical-district-anchor-persistence-above-35c-2024-07-15.json",
         "hotel_persistence",
-        "8b9cb5fc1cd31151dac10fdf854a890468b714061f3f98c2902db496da4b50d4",
+        "01e1e56cb6eb22356f9973b1204ef800231e68a9c3c6a2c9f87e8de8da722be6",
+        "64bf75fcb893e43afe0f64ffd7d0919dcce9426c90cf85c61ff927fb97ac784b",
     ),
     "hotels": InputSpec(
         HOTEL_FIXTURE,
         "base_hotel_discovery",
         "fde152a6c473fb6a38a6fe2928ccf4718a17d621e61f7d7c8da3d84d5a69e84b",
+        "1f66ac7364bec7cd5a997f224ed3fdf8c4dbdb77f55cb6bf59b085c4a0e7f3c0",
     ),
 }
 
@@ -279,10 +290,12 @@ def generate_issue23_snapshots(
         decoded = decode_trip_analysis_v2(payload, request, ExecutionMode.FIXTURE)
         if encode_trip_analysis_v2(decoded) != payload:
             raise ValueError(f"snapshot codec was not stable for {target.name}")
-        _write_json(target, payload)
         references = tuple(
             UpstreamAcquisitionReference(
-                INPUTS[name].fixture, INPUTS[name].role, INPUTS[name].sha256
+                INPUTS[name].fixture,
+                INPUTS[name].role,
+                INPUTS[name].sha256,
+                INPUTS[name].sidecar_sha256,
             )
             for name in cast(tuple[str, ...], scenario["inputs"])
         )
@@ -299,8 +312,11 @@ def generate_issue23_snapshots(
             activity_id=None,
             derived_from=references,
             transformations=(SNAPSHOT_TRANSFORMATION,),
+            response_metadata={"generator_state": "completed"},
         )
-        _write_json(sidecar_path(target), record.to_payload())
+        replace_pair(
+            target, (json.dumps(payload, indent=2, sort_keys=True) + "\n").encode(), record
+        )
     return targets
 
 
@@ -311,6 +327,9 @@ def _validate_input(spec: InputSpec) -> tuple[Mapping[str, object], AcquisitionR
         raise ValueError(
             f"input hash mismatch for {spec.fixture}: expected {spec.sha256}, got {digest}"
         )
+    sidecar_digest = hashlib.sha256(sidecar_path(path).read_bytes()).hexdigest()
+    if sidecar_digest != spec.sidecar_sha256:
+        raise ValueError(f"input sidecar hash mismatch for {spec.fixture}")
     record = load_acquisition_record(path)
     if record is None or (
         not record.replayable
@@ -323,12 +342,18 @@ def _validate_input(spec: InputSpec) -> tuple[Mapping[str, object], AcquisitionR
     return payload, record
 
 
+def _provider_retrieved_at(record: AcquisitionRecord) -> str:
+    if record.source != "provider" or record.retrieved_at is None:
+        raise ValueError("provider snapshot input requires a retrieval time")
+    return record.retrieved_at.isoformat()
+
+
 def _request(scenario: Mapping[str, object]) -> TripAnalysisRequest:
     origin = scenario["origin"]
     destination = scenario["destination"]
     assert isinstance(origin, Mapping) and isinstance(destination, Mapping)
     return TripAnalysisRequest(
-        mode=scenario["mode"],  # type: ignore[arg-type]
+        mode=cast(TripMode, scenario["mode"]),
         origin=Coordinates(float(origin["latitude"]), float(origin["longitude"])),
         destination=Coordinates(float(destination["latitude"]), float(destination["longitude"])),
         landmark_name=str(scenario["landmark_name"]),
@@ -448,6 +473,8 @@ def _canonical_best_time(
         end_hour=20,
     )
     _validate_heatmap_identity(tcm_record, tcm_request)
+    if tcm_record.retrieved_at is None:
+        raise ValueError("destination TCM input requires a provider retrieval time")
     translated = translate_heatmap_response(tcm_payload, request=tcm_request)
     heatmap = normalize_heatmap_response(
         translated,
@@ -533,6 +560,8 @@ def _normalized_metric(
         granularity=80,
     )
     _validate_heatmap_identity(record, request)
+    if record.retrieved_at is None:
+        raise ValueError("metric input requires a provider retrieval time")
     translated = translate_heatmap_response(payload, request=request)
     result = normalize_heatmap_response(
         translated,
@@ -577,7 +606,7 @@ def _provider_hotels(
             "computed",
             "2024-07-15",
             Confidence.SUFFICIENT,
-            record.retrieved_at.isoformat(),
+            _provider_retrieved_at(record),
             "hotel-ranking-v1",
             "heat-aware-tourism-guide",
             "completed",
@@ -628,7 +657,7 @@ def _synthetic_best_time(request: TripAnalysisRequest, *, elevated: bool) -> Bes
             "synthesized",
             request.date,
             Confidence.INSUFFICIENT,
-            FIXED_GENERATED_AT.isoformat(),
+            None,
             "demo-best-time-v1",
             provider,
             "synthesized_demo",
@@ -729,13 +758,13 @@ def _route_result(
         "fixture",
         routing.data_date,
         Confidence.SUFFICIENT,
-        routing.retrieved_at.isoformat(),
+        _provider_retrieved_at(routing),
         "osrm-route-normalization-v1",
         "fossgis-osrm",
         "completed",
         dict(routing.request_configuration),
         False,
-        note=f"Genuine OSRM response retrieved {routing.retrieved_at.isoformat()}.",
+        note=f"Genuine OSRM response retrieved {_provider_retrieved_at(routing)}.",
     )
     heat = Provenance(
         best.provenance.source,
@@ -752,15 +781,12 @@ def _route_result(
         False,
         note="Route heat reuses destination TCM; no corridor heat acquisition was made.",
     )
-    return cast(
-        RouteComparisonResult,
-        decide_route_comparison(
-            RouteDecisionInput(routes, best.recommended_hour_tcm_celsius),
-            cautious=False,
-            provenance=_decision_provenance(routing_provenance, heat),
-            routing_provenance=routing_provenance,
-            heat_provenance=heat,
-        ),
+    return decide_route_comparison(
+        RouteDecisionInput(routes, best.recommended_hour_tcm_celsius),
+        cautious=False,
+        provenance=_decision_provenance(routing_provenance, heat),
+        routing_provenance=routing_provenance,
+        heat_provenance=heat,
     )
 
 
@@ -825,7 +851,7 @@ def _cathedral_routes(
         "fixture",
         routing_record.data_date,
         Confidence.SUFFICIENT,
-        routing_record.retrieved_at.isoformat(),
+        _provider_retrieved_at(routing_record),
         "osrm-route-normalization-v1",
         "fossgis-osrm",
         "completed",
@@ -837,7 +863,7 @@ def _cathedral_routes(
         "synthesized",
         request.date,
         Confidence.INSUFFICIENT,
-        FIXED_GENERATED_AT.isoformat(),
+        None,
         "route-landmark-heat-reuse-v1",
         "heat-aware-tourism-guide-synthesized-demo-heat",
         "synthesized_demo",
@@ -855,17 +881,14 @@ def _cathedral_routes(
         solar, instant, centroid.y, centroid.x, clock=lambda: FIXED_GENERATED_AT
     )
     decision_provenance = _decision_provenance(routing, heat)
-    return cast(
-        RouteComparisonResult,
-        decide_route_comparison(
-            RouteDecisionInput(routes, 38.0, shade_evidence=shade.evidence),
-            cautious=False,
-            provenance=decision_provenance,
-            routing_provenance=routing,
-            heat_provenance=heat,
-            building_provenance=building,
-            solar_provenance=solar_provenance,
-        ),
+    return decide_route_comparison(
+        RouteDecisionInput(routes, 38.0, shade_evidence=shade.evidence),
+        cautious=False,
+        provenance=decision_provenance,
+        routing_provenance=routing,
+        heat_provenance=heat,
+        building_provenance=building,
+        solar_provenance=solar_provenance,
     )
 
 
@@ -893,7 +916,7 @@ def _demo_provenance(transformation: str, provider: str) -> Provenance:
         "synthesized",
         "2024-07-15",
         Confidence.INSUFFICIENT,
-        FIXED_GENERATED_AT.isoformat(),
+        None,
         transformation,
         provider,
         "synthesized_demo",

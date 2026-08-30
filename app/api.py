@@ -266,6 +266,7 @@ def create_app(
                         else None
                     ),
                     "data_date": outcome.data_date,
+                    "response_metadata": outcome.response_metadata,
                     "transformations": [
                         {"name": t.name, "version": t.version} for t in outcome.transformations
                     ],

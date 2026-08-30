@@ -107,6 +107,7 @@ def test_fixture_adapter_rejects_legacy_product_schema(tmp_path: Path) -> None:
                 "activity_id": None,
                 "derived_from": [],
                 "transformations": [],
+                "response_metadata": {},
             }
         ),
         encoding="utf-8",

@@ -219,8 +219,9 @@ the third band; cautious guidance takes action from the second band. The
 measured value and displayed observation band do not change. Recommendations
 prefer returned hours or routes below the applicable action threshold, then the
 lowest selected-metric value. Route confidence remains the higher-priority
-guardrail: when route comparison confidence is insufficient, the existing
-shortest-route fallback applies instead of cautious optimization.
+guardrail: when route comparison confidence is insufficient, the product
+preserves the returned route evidence and makes no recommendation instead of
+applying a shortest-route fallback.
 
 ## Best-Time Decision
 
@@ -307,8 +308,8 @@ Specific fallbacks include:
 - No live credentials: fixture mode.
 - Unavailable fixture for an exploratory trip: explicit unavailable state.
 - Fewer OSRM alternatives: compare those returned, including one.
-- Weak building-height coverage: show routes, recommend shortest, downgrade
-  shade confidence.
+- Weak building-height coverage: show routes, preserve partial shade evidence,
+  and make no route recommendation; the traveler compares the trade-offs.
 - Premium enrichment unavailable: omit the enrichment without affecting the
   core flow.
 - Public deployment: fixture mode only, protecting the shared credit balance.

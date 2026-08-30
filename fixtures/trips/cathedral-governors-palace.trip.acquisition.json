@@ -5,32 +5,38 @@
     {
       "fixture": "fixtures/providers/osrm/cathedral-governors-palace.json",
       "role": "routing",
-      "sha256": "aba78baeb0bb390741e0641a5828c377ca347d9deb2511360a85c9019f54a87f"
+      "sha256": "840c1e9b1201d4191057d6b5e1a5ae4195a5642096e0e616d772b08e7599cca0",
+      "sidecar_sha256": "a67b49e9f754aae973b791d82a4b6b4849b1f986dd551435b5851ca07f04f7f3"
     },
     {
       "fixture": "fixtures/providers/overpass/cathedral-governors-palace-buildings.json",
       "role": "building_geometry",
-      "sha256": "e6176d2f673389a59e7d55624734a54b768a8f56f8baafe6fcbe31adb90b5d60"
+      "sha256": "ef631e89b2a10b12d1948004c1ba0758c6b8403cacc7d0d2cae25c1617c88e13",
+      "sidecar_sha256": "d14448dfd4ae3dacdbd5d7e8e5539bb41f701f4bafae7d02a4e9d0e605c6e09b"
     },
     {
       "fixture": "fixtures/providers/fortyguard/canonical-district-anchor-date-tcm-2024-07-15.json",
       "role": "hotel_night_and_day_tcm",
-      "sha256": "f440eeb83743303e8a99126d0e53f02ff1625f1875aa9c60b5092f96ed0257ca"
+      "sha256": "7ab6f9eb46691f201a2ffe4b71fe73b36dd4e0f6a281441ad0a0f0da86e1e602",
+      "sidecar_sha256": "dad752e7f1f5415e0be2a52527e83450c982159dc0b73f4357f039127a802df9"
     },
     {
       "fixture": "fixtures/providers/fortyguard/canonical-district-anchor-exceedance-above-35c-2024-07-15.json",
       "role": "hotel_hot_hours",
-      "sha256": "4226735c20081617206c77672cd1b142f643c9fcfe0da5d8be455a0c5fca54b7"
+      "sha256": "6fc97903bda9801830eac7ca5937932a5ef5ca37a87a2beaed1268caffec7af8",
+      "sidecar_sha256": "f46eee48baf79aef0b8b2d1107becd56d568edb746b99253d33b8c7f06dcd4fe"
     },
     {
       "fixture": "fixtures/providers/fortyguard/canonical-district-anchor-persistence-above-35c-2024-07-15.json",
       "role": "hotel_persistence",
-      "sha256": "8b9cb5fc1cd31151dac10fdf854a890468b714061f3f98c2902db496da4b50d4"
+      "sha256": "01e1e56cb6eb22356f9973b1204ef800231e68a9c3c6a2c9f87e8de8da722be6",
+      "sidecar_sha256": "64bf75fcb893e43afe0f64ffd7d0919dcce9426c90cf85c61ff927fb97ac784b"
     },
     {
       "fixture": "fixtures/hotel-heat-analysis.json",
       "role": "base_hotel_discovery",
-      "sha256": "fde152a6c473fb6a38a6fe2928ccf4718a17d621e61f7d7c8da3d84d5a69e84b"
+      "sha256": "fde152a6c473fb6a38a6fe2928ccf4718a17d621e61f7d7c8da3d84d5a69e84b",
+      "sidecar_sha256": "1f66ac7364bec7cd5a997f224ed3fdf8c4dbdb77f55cb6bf59b085c4a0e7f3c0"
     }
   ],
   "endpoint": "local:trip-product-snapshot",
@@ -86,6 +92,9 @@
     },
     "route_heat_aoi": null,
     "start_hour": 10
+  },
+  "response_metadata": {
+    "generator_state": "completed"
   },
   "retrieved_at": null,
   "schema_version": "trip-contract-v2",

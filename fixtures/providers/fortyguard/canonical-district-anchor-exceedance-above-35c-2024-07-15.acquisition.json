@@ -1,52 +1,57 @@
 {
-  "source": "provider",
-  "provider": "fortyguard",
+  "activity_id": "cdc618af-2cda-4d8b-9144-7a1554343f7d",
+  "data_date": "2024-07-15",
+  "derived_from": [],
   "endpoint": "/v1/heatmap",
+  "provider": "fortyguard",
+  "provider_config_version": "fortyguard-config-v1",
   "request_configuration": {
-    "analytic_type": "exceedance",
-    "latitude": 29.425,
-    "longitude": -98.486,
-    "start_date": "2024-07-15",
-    "forecast": false,
-    "threshold_celsius": 35.0,
-    "direction": "above",
-    "granularity": 80,
-    "request_scope": "canonical_district_anchor",
     "analysis_aoi": {
-      "south": 29.421,
-      "west": -98.49,
+      "east": -98.482,
       "north": 29.429,
-      "east": -98.482
+      "south": 29.421,
+      "west": -98.49
     },
+    "analytic_type": "exceedance",
+    "caveat_code": "date_level_not_interval_maximum",
     "declared_windows": [
       {
+        "end": "05:00",
+        "interval": "[start,end)",
         "label": "night",
         "start": "00:00",
-        "end": "05:00",
-        "timezone": "America/Chicago",
-        "interval": "[start,end)"
+        "timezone": "America/Chicago"
       },
       {
+        "end": "17:00",
+        "interval": "[start,end)",
         "label": "day",
         "start": "10:00",
-        "end": "17:00",
-        "timezone": "America/Chicago",
-        "interval": "[start,end)"
+        "timezone": "America/Chicago"
       }
     ],
-    "timezone": "America/Chicago",
-    "temporal_basis": "date_level_tcm",
+    "direction": "above",
+    "forecast": false,
+    "granularity": 80,
+    "latitude": 29.425,
+    "longitude": -98.486,
+    "metric_semantics": "date_level_hours_above_threshold",
     "provider_window_validated": false,
-    "caveat_code": "date_level_not_interval_maximum",
-    "metric_semantics": "date_level_hours_above_threshold"
+    "request_scope": "canonical_district_anchor",
+    "start_date": "2024-07-15",
+    "temporal_basis": "date_level_tcm",
+    "threshold_celsius": 35.0,
+    "timezone": "America/Chicago"
+  },
+  "response_metadata": {
+    "freshness_present": false,
+    "raw_units_present": [],
+    "terminal_status": null
   },
   "retrieved_at": "2026-08-30T15:07:32.791616+00:00",
-  "data_date": "2024-07-15",
-  "status": "ok",
   "schema_version": "v1",
-  "provider_config_version": "fortyguard-config-v1",
-  "activity_id": "cdc618af-2cda-4d8b-9144-7a1554343f7d",
-  "derived_from": [],
+  "source": "provider",
+  "status": "ok",
   "transformations": [
     {
       "name": "live_envelope_unwrapped",

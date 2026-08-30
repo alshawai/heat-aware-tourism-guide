@@ -173,7 +173,7 @@ class Provenance:
     source: str
     data_date: str
     confidence: Confidence
-    retrieved_at: str
+    retrieved_at: str | None
     transformation_version: str
     provider: str
     response_status: str
@@ -192,7 +192,8 @@ class Provenance:
             raise ValueError("provenance data_date is required")
         try:
             calendar_date.fromisoformat(self.data_date)
-            datetime.fromisoformat(self.retrieved_at.replace("Z", "+00:00"))
+            if self.retrieved_at is not None:
+                datetime.fromisoformat(self.retrieved_at.replace("Z", "+00:00"))
         except ValueError as error:
             raise ValueError("provenance dates must be ISO formatted") from error
         if self.coverage is not None and not 0 <= self.coverage <= 1:
@@ -201,8 +202,12 @@ class Provenance:
             raise ValueError("provenance transformation_version is required")
         if not isinstance(self.fresh, bool):
             raise ValueError("provenance fresh must be a boolean")
-        if not self.retrieved_at or not self.provider or not self.response_status:
-            raise ValueError("provenance retrieval, provider, and response status are required")
+        if self.source == "synthesized" and self.retrieved_at is not None:
+            raise ValueError("synthesized provenance must not have a retrieval time")
+        if self.source != "synthesized" and not self.retrieved_at:
+            raise ValueError("observed provenance requires a retrieval time")
+        if not self.provider or not self.response_status:
+            raise ValueError("provenance provider and response status are required")
 
 
 @dataclass(frozen=True)

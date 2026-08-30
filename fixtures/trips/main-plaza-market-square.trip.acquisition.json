@@ -5,7 +5,8 @@
     {
       "fixture": "fixtures/providers/osrm/main-plaza-market-square.json",
       "role": "routing",
-      "sha256": "bfad4e015c360213d95ea4a5b72950d61e5e825421a2335543f9075b6aee08f4"
+      "sha256": "4d72c81cc3ed992ac6de3ef72032ef44766bd98c502ad3f0acf6778db756f71e",
+      "sidecar_sha256": "3a82cfb0da149e48d78611a84f40b16bd4db6f4f846be0dffc4b60b2b700e3d1"
     }
   ],
   "endpoint": "local:trip-product-snapshot",
@@ -51,6 +52,9 @@
     },
     "route_heat_aoi": null,
     "start_hour": 10
+  },
+  "response_metadata": {
+    "generator_state": "completed"
   },
   "retrieved_at": null,
   "schema_version": "trip-contract-v2",

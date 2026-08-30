@@ -2,10 +2,11 @@
 
 **Research date:** 2026-08-30  
 **Issue:** [#23, Complete fixture acquisition for canonical and alternate scenarios](https://github.com/alshawai/heat-aware-tourism-guide/issues/23)  
-**Scope:** Fixture/schema design under the settled scenario matrix in
+**Scope:** Completed fixture/schema implementation under the settled scenario matrix in
 [`issue-23-alternate-scenarios.md`](issue-23-alternate-scenarios.md). No private
-configuration was read, no external provider request was made, and no
-application code was changed.
+configuration was read and no external provider request was made during this
+documentation update. The implementation and committed generated sidecars are
+the factual outcome record.
 
 ## Executive Recommendation
 
@@ -706,22 +707,20 @@ correctly requires section data dates to match the request
 - Secret scan covers raw payloads, sidecars, and nested upstream references.
 - Duplicate and malformed sidecars fail inventory/startup.
 
-### Scenario contract tests
+### Completed Scenario Outcomes
 
-| Scenario                       | Required assertions                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Canonical                      | Exact Menger/Alamo coordinates and identities; best time with exact `America/Chicago` timestamp; complete hotel ranking with at least five usable hotels and all four units/windows/caveats; genuine returned multi-route set if acquisition returns one; all route geometry/evidence/provenance; no fabricated alternative. If current OSRM still returns one route, stop rather than preserving the old synthesized second route.                                     |
-| Main Plaza -> Market Square    | Searchable in both server implementations; exact sidecar match; genuine OSRM response has exactly one normalized route; `route_set_state=single_route`; route remains visible and any recommendation state is domain-valid; top-level degraded reason explicitly says comparison is limited.                                                                                                                                                                            |
-| Cathedral -> Governor's Palace | Exactly two genuine routes; dedicated heat is elevated at an exact positive-solar instant; per-route heat source/coverage; per-route explicit/inferred/unknown fractions and counts; coverage reproduces approximately 0.346416/0.340474 from the committed raw Overpass response; `insufficient_shade_comparison_required`; null recommendation; partial metrics visible; base hotel ranking present; enrichment code `optional_provider_failure`; top-level degraded. |
-| Briscoe -> Tower               | Exact request selects a synthesized initial TCM failure; cache is empty; no matching successful TCM fallback is configured; zero env/hotel/route orchestration calls after failure; `state=unavailable`; code `provider_data_missing`; all result sections null. A separately committed route observation, if retained, is not returned.                                                                                                                                |
+| Scenario                       | Required assertions                                                                                                                                                                                                                                                                                                                                                                                 |
+| ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Canonical                      | Menger Hotel `way/23727574` -> The Alamo `way/129152944`; one genuine OSRM route, 193.1 m / 154.7 s; valid provider TCM `34.0147 C`; complete best-time, six-hotel, and route sections; degraded for GMT-7 temporal inconsistency and limited one-route comparison.                                                                                                                                 |
+| Main Plaza -> Market Square    | Main Plaza `way/93118472` -> Historic Market Square (El Mercado) `way/79636475`; one genuine OSRM route, 635.7 m / 510.7 s; `single_route`; non-routing and heat sections are synthesized demo evidence, and the no-feature result is intentionally uncommitted.                                                                                                                                    |
+| Cathedral -> Governor's Palace | San Fernando Cathedral `way/80647022` -> Spanish Governor's Palace `way/78601534`; two genuine routes, 265.5 m / 212.3 s and 278.6 m / 222.8 s; genuine Overpass height evidence is 0.346416 / 0.340474 with 7 explicit, 16 inferred, and 87 unknown footprints per route; synthesized demo heat drives ADR 0007, so no recommendation is made; optional enrichment is `optional_provider_failure`. |
+| Briscoe -> Tower               | Briscoe Western Art Museum `way/337650172` -> Tower of the Americas `way/78485919`; synthesized complete unavailability with `provider_data_missing`; orchestration stops before environment, hotels, and routing. The observed public route acquisition remains separate evidence and is not returned.                                                                                             |
 
-The canonical matrix currently conflicts with mutable observed routing history:
-the corrected 2026-08-28 request returned one route, while Issue #23 asks the
-canonical scenario to demonstrate multi-route comparison
-([`issue-40-menger-alamo-coordinates.md:402-408`](issue-40-menger-alamo-coordinates.md)).
-The acceptance criterion does not permit pretending the synthesized `shady`
-route was returned. Reacquire once; if the configured provider still returns one
-route, this is a remaining product-scenario decision, not a schema problem.
+The corrected canonical acquisition now settles that conflict: the request
+genuinely returned one route, so the canonical product snapshot is one-route
+and degraded for limited comparison. Cathedral supplies the genuine two-route
+comparison. The former synthesized `shady` route is not retained as routing
+evidence.
 
 ### API and place-search tests
 
@@ -762,13 +761,13 @@ canonical happy-path E2E
 
 ## Decision 11: ADR And Context Impact
 
-One decision is architecturally significant enough for an ADR: **product-level
+The implemented architectural decision is recorded in
+[`ADR 0008`](../adr/0008-trip-v2-product-snapshots.md): **product-level
 v2 snapshots linked to lower-level acquisitions, with a shared live/fixture
 decoder, instead of replay-time full orchestration**. It fixes the fixture
 boundary, parity definition, regeneration policy, and provenance graph. Amend
-ADR 0004 or add a short successor ADR; adding a successor is clearer because
-ADR 0004 currently discusses raw provider replay but not derived product
-snapshots.
+ADR 0004 remains authoritative for raw-provider truth and degradation; it does
+not supersede this derived-snapshot decision.
 
 Update `CONTEXT.md` after implementation with:
 
@@ -780,13 +779,13 @@ Update `CONTEXT.md` after implementation with:
 
 Also correct stale accepted-design prose that still says weak coverage
 recommends shortest. ADR 0007 is authoritative, but leaving contradictory design
-documentation increases implementation risk. This documentation work should be
-part of implementation, not this research-only change.
+documentation increases implementation risk. This documentation work records
+the completed implementation rather than a remaining design task.
 
-## Decision Tree For Remaining User Decisions
+## Resolved Implementation Decisions
 
-The facts below are settled by repository evidence; the choices require a
-maintainer decision.
+The implementation has resolved the choices below. They are retained as a
+decision record, not as open work for the Issue #23 fixture boundary.
 
 1. **Can v1 represent the agreed states?**
    Fact: no; its parser requires legacy route fields and drops modern evidence.

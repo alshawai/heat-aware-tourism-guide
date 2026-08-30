@@ -37,6 +37,8 @@ def _validate_derived_references(repository_root: Path, record: AcquisitionRecor
         assert hashlib.sha256(fixture_path.read_bytes()).hexdigest() == reference.sha256, (
             f"digest mismatch for derived fixture {reference.fixture}"
         )
+        sidecar = fixture_path.with_name(f"{fixture_path.stem}.acquisition.json")
+        assert hashlib.sha256(sidecar.read_bytes()).hexdigest() == reference.sidecar_sha256
 
 
 def test_every_committed_fixture_has_an_acquisition_sidecar() -> None:
@@ -80,8 +82,13 @@ def test_derived_acquisition_reference_validation_checks_exact_bytes(tmp_path: P
     fixture = tmp_path / "fixtures" / "source.json"
     fixture.parent.mkdir()
     fixture.write_bytes(b'{"value": 1}\n')
+    sidecar = fixture.with_name("source.acquisition.json")
+    sidecar.write_text("{}")
     reference = UpstreamAcquisitionReference(
-        "fixtures/source.json", "heat", hashlib.sha256(fixture.read_bytes()).hexdigest()
+        "fixtures/source.json",
+        "heat",
+        hashlib.sha256(fixture.read_bytes()).hexdigest(),
+        hashlib.sha256(sidecar.read_bytes()).hexdigest(),
     )
     record = AcquisitionRecord(
         source="synthesized",
@@ -95,6 +102,7 @@ def test_derived_acquisition_reference_validation_checks_exact_bytes(tmp_path: P
         provider_config_version=None,
         activity_id=None,
         derived_from=(reference,),
+        response_metadata={},
     )
     _validate_derived_references(tmp_path, record)
     fixture.write_bytes(b'{"value": 2}\n')

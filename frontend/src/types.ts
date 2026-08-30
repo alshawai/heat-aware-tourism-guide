@@ -120,7 +120,7 @@ export type ApiProvenance = {
   source: string;
   data_date: string;
   confidence: "sufficient" | "insufficient";
-  retrieved_at: string;
+  retrieved_at: string | null;
   transformation_version: string;
   provider: string;
   response_status: string;
@@ -129,6 +129,7 @@ export type ApiProvenance = {
   coverage: number | null;
   note: string | null;
   activity_id: string | null;
+  response_metadata?: Record<string, unknown>;
 };
 
 export type EnvironmentSeriesEntry = {

@@ -8,6 +8,7 @@ from typing import Any, Mapping
 import pytest
 
 from app.domain.ledger import BudgetExceededError
+from app.integrations.fortyguard.client import ActivityMetadata
 from app.integrations.fortyguard.contracts import AnalyticType, EnvParamsRequest, HeatmapRequest
 from app.integrations.fortyguard.errors import ProviderError, ProviderErrorKind
 from app.services.cache import CacheService
@@ -99,6 +100,7 @@ def _write_sidecar(
         "activity_id": activity_id,
         "derived_from": [],
         "transformations": transformations or [],
+        "response_metadata": {},
     }
     fixture_path.with_name(f"{fixture_path.stem}.acquisition.json").write_text(
         json.dumps(payload), encoding="utf-8"
@@ -373,12 +375,24 @@ def test_env_params_live_success_is_cached_then_replayed_as_stale(tmp_path: Path
     cache = CacheService()
     live = EnvParamsExecution(
         fixture_path=fixture,
-        live_loader=lambda request: LiveEnvParamsPayload(ENV_FLAT_RESULT, "env-live-1"),
+        live_loader=lambda request: LiveEnvParamsPayload(
+            ENV_FLAT_RESULT,
+            "env-live-1",
+            activity=ActivityMetadata(
+                "env-live-1",
+                datetime(2026, 8, 24, tzinfo=timezone.utc),
+                "/v1/env_params",
+                (),
+                ("Completed",),
+                {"request_id": "request-1"},
+            ),
+        ),
         cache=cache,
     )
     fresh = live.run(_env_request(), live=True)
     assert fresh.source == "provider"
     assert fresh.stale is False
+    assert fresh.response_metadata == {"request_id": "request-1"}
 
     def failed(request: EnvParamsRequest) -> Mapping[str, object]:
         raise ConnectionError("provider unavailable")

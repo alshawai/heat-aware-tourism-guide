@@ -46,6 +46,9 @@
     "route_heat_aoi": null,
     "start_hour": 10
   },
+  "response_metadata": {
+    "generator_state": "completed"
+  },
   "retrieved_at": null,
   "schema_version": "trip-contract-v2",
   "source": "synthesized",

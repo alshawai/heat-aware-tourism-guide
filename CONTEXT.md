@@ -50,6 +50,11 @@ directly.
   (`fixture`/`provider`/`cache`), `retrieved_at`, `data_date`, `stale`,
   `forecast`, optional `activity_id`, sanitized `raw_payload`, and
   `transformations`.
+- **Trip product snapshot** — A generated, validated product-level response
+  using `trip-contract-v2`. It is generated offline from normalized lower-level
+  acquisitions, never hand-authored, and linked to those inputs by its sidecar
+  `derived_from` references. The same strict encoder/decoder is used for live,
+  fixture, and HTTP product responses; v1 compatibility is not provided.
 - **Transformation** — A named, versioned inference or reshaping step applied
   on the live path (e.g. `tcm_unit_celsius`, `valid_time_from_request`,
   `point_to_aoi_expansion`, `live_envelope_unwrapped`). Recorded in
@@ -104,6 +109,12 @@ directly.
   single authoritative fixture match identity (ADR 0004). Synthesized
   fixtures carry `null` activity IDs and retrieval times, never fabricated
   ones.
+- **Acquisition provider identity** — The `provider` field distinguishes the
+  source system from the generic `source` classification. A provider record is
+  an observed acquisition with retrieval metadata; a synthesized record is a
+  computed/demo or injected state and must not claim provider retrieval. Product
+  snapshots use content-addressed `derived_from` links to their lower-level
+  acquisitions.
 - **Provider configuration version** — The explicit constant
   (`fortyguard-config-v1`) naming the provider/request-construction semantics
   a response was produced under. Fourth component of cache identity alongside
@@ -164,6 +175,15 @@ directly.
   building-shade evidence is weak or uncomputable. All returned alternatives
   and available metrics remain visible, but the product makes no route
   recommendation; the traveler compares the trade-offs.
+- **Declared hotel temporal metadata** — The canonical hotel components declare
+  `00:00-05:00` night and `10:00-17:00` day windows in `America/Chicago`, but
+  the acquired TCM is date-level evidence. Those windows are metadata, not
+  interval maxima; the `date_level_not_interval_maximum` caveat remains part of
+  the result.
+- **Trip fixture selection** — A fixture adapter matches the exact sidecar
+  request configuration from an explicit path collection. No match returns
+  `scenario_unavailable`; duplicate matches are a hard error. Filenames and
+  embedded descriptive fields are not matching identity.
 - **No suitable returned route** — The explicit state when the routing provider
   returns no valid pedestrian routes, or when every returned route lacks enough
   evidence for a recommendation. A single valid route is instead shown as the
@@ -184,6 +204,12 @@ directly.
   recommendation staging.
 - ADR 0007 — exact-time modeled shade, nighttime route decisions, and weak
   shade-evidence behavior.
+- ADR 0008 — `trip-contract-v2` product snapshots, normalized acquisition links,
+  strict shared codec, four-scenario offline matrix, and regeneration policy.
+- `docs/research/issue-23-fixture-schema.md` — Issue #23 snapshot and acquisition
+  outcomes, hashes, and network-blocked coverage.
+- `docs/research/issue-23-alternate-scenarios.md` — Issue #23 place identities
+  and observed route/height evidence.
 - `docs/design/fortyguard-extraction.md` — extraction contract from issue #6.
 - Layout: `app/domain/` (pure contracts), `app/services/` (cache, execution,
   acquisition, sidecars, ledger store), `app/integrations/fortyguard/`

@@ -18,7 +18,7 @@ from app.domain.provenance import AcquisitionRecord
 from app.domain.routing import RouteRequest
 from app.domain.contracts import Coordinates
 from app.domain.security import sanitize_payload
-from app.integrations.fortyguard.client import FortyGuardClient
+from app.integrations.fortyguard.client import ActivityMetadata
 from app.integrations.fortyguard.contracts import (
     PROVIDER_CONFIG_VERSION,
     AnalyticType,
@@ -85,7 +85,8 @@ class OsrmScenario:
 
 
 class _OsrmLoader(Protocol):
-    transport: object
+    @property
+    def transport(self) -> object: ...
 
     def load(self, request: RouteRequest) -> Mapping[str, object]: ...
 
@@ -94,6 +95,19 @@ class _BuildingLoader(Protocol):
     _transport: object
 
     def query_buildings(self, aoi: object) -> dict[str, object]: ...
+
+
+class AcquisitionClient(Protocol):
+    def submit_and_poll(
+        self,
+        endpoint: str,
+        payload: Mapping[str, object],
+        *,
+        sleep: Callable[[float], None] = ...,
+        max_polls: int = ...,
+        interval_seconds: float = ...,
+        status_404_grace_checks: int = ...,
+    ) -> tuple[Mapping[str, object], ActivityMetadata]: ...
 
 
 OSRM_SCENARIOS: dict[str, OsrmScenario] = {
@@ -151,7 +165,7 @@ def osrm_request_payload(request: RouteRequest) -> dict[str, object]:
     """Keep the acquisition identity identical to production route caching."""
     from app.services.routing import route_request_payload
 
-    return cast(dict[str, object], route_request_payload(request))
+    return route_request_payload(request)
 
 
 def acquire_osrm_fixture(
@@ -183,6 +197,12 @@ def acquire_osrm_fixture(
         activity_id=None,
         derived_from=(),
         transformations=(),
+        response_metadata={
+            "route_count": count,
+            "distance_unit": "m",
+            "duration_unit": "s",
+            "waypoint_snaps": payload.get("waypoints", []),
+        },
     )
     fixture_path = _write_provider_fixture(out_dir, scenario.filename, payload)
     write_sidecar(fixture_path, record)
@@ -250,6 +270,14 @@ def acquire_overpass_building_fixture(
         activity_id=None,
         derived_from=(),
         transformations=(),
+        response_metadata={
+            "source_timestamp": source_timestamp.isoformat(),
+            "element_count": len(cast(list[object], payload["elements"]))
+            if isinstance(payload.get("elements"), list)
+            else 0,
+            "response_format": "overpass-json",
+            "response_version": "0.7",
+        },
     )
     fixture_path = _write_provider_fixture(out_dir, filename, payload)
     write_sidecar(fixture_path, record)
@@ -311,7 +339,7 @@ ENV_PARAMS_SCENARIOS: dict[str, EnvParamsScenario] = {
 
 def acquire_heatmap_fixture(
     scenario: HeatmapScenario,
-    client: FortyGuardClient,
+    client: AcquisitionClient,
     *,
     out_dir: Path,
     provider_config_version: str = PROVIDER_CONFIG_VERSION,
@@ -350,6 +378,14 @@ def acquire_heatmap_fixture(
         activity_id=metadata.activity_id,
         derived_from=(),
         transformations=request_transformations(request),
+        response_metadata={
+            **metadata.response_metadata,
+            "raw_units_present": _raw_unit_keys(result),
+            "freshness_present": "fresh" in result or "forecast" in result,
+            "terminal_status": metadata.status_transitions[-1]
+            if metadata.status_transitions
+            else None,
+        },
     )
     fixture_path = _write_fixture(out_dir, scenario.filename, result)
     write_sidecar(fixture_path, record)
@@ -358,7 +394,7 @@ def acquire_heatmap_fixture(
 
 def acquire_env_params_fixture(
     scenario: EnvParamsScenario,
-    client: FortyGuardClient,
+    client: AcquisitionClient,
     *,
     out_dir: Path,
     provider_config_version: str = PROVIDER_CONFIG_VERSION,
@@ -395,6 +431,14 @@ def acquire_env_params_fixture(
         activity_id=metadata.activity_id,
         derived_from=(),
         transformations=env_params_transformations(),
+        response_metadata={
+            **metadata.response_metadata,
+            "raw_units_present": _raw_unit_keys(result),
+            "freshness_present": "fresh" in result or "forecast" in result,
+            "terminal_status": metadata.status_transitions[-1]
+            if metadata.status_transitions
+            else None,
+        },
     )
     fixture_path = _write_fixture(out_dir, scenario.filename, result)
     write_sidecar(fixture_path, record)
@@ -410,6 +454,10 @@ def _write_fixture(out_dir: Path, filename: str, result: Mapping[str, object]) -
     fixture_path = out_dir / filename
     fixture_path.write_text(json.dumps(sanitized, indent=2) + "\n", encoding="utf-8")
     return fixture_path
+
+
+def _raw_unit_keys(result: Mapping[str, object]) -> list[str]:
+    return sorted(str(key) for key in result if "unit" in str(key).lower())
 
 
 def _preflight_fixture_paths(out_dir: Path, filename: str) -> None:

@@ -50,8 +50,11 @@ def test_acquisition_record_round_trips_through_payload() -> None:
         provider_config_version="fortyguard-config-v1",
         activity_id="activity-1",
         derived_from=(
-            UpstreamAcquisitionReference("fixtures/acquired/input.json", "heat", "a" * 64),
+            UpstreamAcquisitionReference(
+                "fixtures/acquired/input.json", "heat", "a" * 64, "b" * 64
+            ),
         ),
+        response_metadata={},
     )
     payload = record.to_payload()
     assert AcquisitionRecord.from_payload(payload) == record
@@ -71,6 +74,7 @@ def test_acquisition_record_rejects_unknown_source_and_missing_identity() -> Non
         "activity_id": None,
         "derived_from": [],
         "transformations": [],
+        "response_metadata": {},
     }
     with pytest.raises(ValueError, match="source"):
         AcquisitionRecord.from_payload({**base, "source": "guessed"})
@@ -93,6 +97,7 @@ def test_synthesized_acquisition_record_has_no_fabricated_activity_or_time() -> 
         provider_config_version=None,
         activity_id=None,
         derived_from=(),
+        response_metadata={},
     )
     assert record.activity_id is None
     assert record.retrieved_at is None
@@ -112,6 +117,7 @@ def test_acquisition_record_enforces_source_specific_metadata() -> None:
         "provider_config_version": "fortyguard-config-v1",
         "activity_id": None,
         "derived_from": (),
+        "response_metadata": {},
     }
     with pytest.raises(ValueError, match="retrieval time"):
         AcquisitionRecord(**{**values, "retrieved_at": None})
@@ -136,7 +142,12 @@ def test_upstream_acquisition_reference_rejects_malformed_values() -> None:
         ({"sha256": "A" * 64}, "lowercase"),
         ({"sha256": "a" * 63}, "lowercase"),
     ]
-    values = {"fixture": "fixtures/input.json", "role": "heat", "sha256": "a" * 64}
+    values = {
+        "fixture": "fixtures/input.json",
+        "role": "heat",
+        "sha256": "a" * 64,
+        "sidecar_sha256": "b" * 64,
+    }
     for overrides, message in invalid_values:
         with pytest.raises(ValueError, match=message):
             UpstreamAcquisitionReference(**{**values, **overrides})

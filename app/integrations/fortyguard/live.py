@@ -834,4 +834,9 @@ class LiveEnvParamsAdapter:
             interval_seconds=self._polling.interval_seconds,
             status_404_grace_checks=self._polling.status_404_grace_checks,
         )
-        return LiveEnvParamsPayload(result, metadata.activity_id, env_params_transformations())
+        return LiveEnvParamsPayload(
+            result,
+            metadata.activity_id,
+            env_params_transformations(),
+            activity=metadata,
+        )

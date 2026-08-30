@@ -8,6 +8,7 @@ import pytest
 
 from app.domain.ledger import CreditLedger
 from app.domain.provenance import AcquisitionRecord
+from app.domain.routing import RouteRequest
 from app.integrations.fortyguard.client import FortyGuardClient
 from app.integrations.fortyguard.errors import ProviderError
 from app.services.acquisition import (
@@ -221,7 +222,7 @@ def test_public_osrm_registry_and_sidecar_are_truthful(tmp_path: Path) -> None:
     class Client:
         transport = Transport()
 
-        def load(self, request: object) -> dict[str, object]:
+        def load(self, request: RouteRequest) -> dict[str, object]:
             return {
                 "code": "Ok",
                 "routes": [

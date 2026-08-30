@@ -77,6 +77,7 @@ def _fixture(tmp_path: Path, identity: dict[str, Any], **overrides: Any) -> Path
         "provider_config_version": "overpass-building-config-v1",
         "activity_id": None,
         "derived_from": (),
+        "response_metadata": {},
     }
     values.update(overrides)
     write_sidecar(path, AcquisitionRecord(**values))

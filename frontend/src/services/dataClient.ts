@@ -62,7 +62,11 @@ function validEnvironment(value: unknown) {
     ) &&
     typeof provenance.source === "string" &&
     typeof provenance.data_date === "string" &&
-    typeof provenance.retrieved_at === "string" &&
+    (provenance.source === "synthesized"
+      ? provenance.retrieved_at === null
+      : provenance.retrieved_at !== null &&
+        typeof provenance.retrieved_at === "string" &&
+        !Number.isNaN(Date.parse(provenance.retrieved_at))) &&
     typeof provenance.provider === "string" &&
     typeof provenance.response_status === "string" &&
     typeof provenance.fresh === "boolean" &&
@@ -211,8 +215,11 @@ function validApiProvenance(value: unknown) {
     typeof value.source === "string" &&
     typeof value.data_date === "string" &&
     ["sufficient", "insufficient"].includes(String(value.confidence)) &&
-    typeof value.retrieved_at === "string" &&
-    !Number.isNaN(Date.parse(value.retrieved_at)) &&
+    (value.source === "synthesized"
+      ? value.retrieved_at === null
+      : value.retrieved_at !== null &&
+        typeof value.retrieved_at === "string" &&
+        !Number.isNaN(Date.parse(value.retrieved_at))) &&
     typeof value.transformation_version === "string" &&
     typeof value.provider === "string" &&
     typeof value.response_status === "string" &&

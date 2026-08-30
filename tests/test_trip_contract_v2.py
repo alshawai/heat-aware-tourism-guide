@@ -252,7 +252,9 @@ def test_structured_whole_trip_unavailable_round_trip() -> None:
 
     assert decoded.unavailable is not None
     assert decoded.unavailable.code == "provider_data_missing"
-    assert decoded.best_time is decoded.hotels is decoded.routes is None
+    assert decoded.best_time is None
+    assert decoded.hotels is None
+    assert decoded.routes is None
 
 
 def test_unavailable_enrichment_retains_hotels_and_degrades_trip() -> None:
@@ -353,6 +355,7 @@ def write_fixture(
                 "activity_id": None,
                 "derived_from": [],
                 "transformations": [],
+                "response_metadata": {},
             }
         ),
         encoding="utf-8",

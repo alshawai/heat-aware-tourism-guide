@@ -1,24 +1,36 @@
 {
-  "source": "synthesized",
-  "provider": "heat-aware-tourism-guide",
+  "activity_id": null,
+  "data_date": "2026-08-23",
+  "derived_from": [],
   "endpoint": "https://routing.openstreetmap.de/routed-foot/route/v1",
+  "provider": "heat-aware-tourism-guide",
+  "provider_config_version": "osrm-config-v1",
   "request_configuration": {
-    "origin": { "latitude": 29.4245914, "longitude": -98.4864288 },
-    "destination": { "latitude": 29.425833, "longitude": -98.485833 },
-    "profile": "foot",
     "alternatives": true,
-    "overview": "full",
+    "destination": {
+      "latitude": 29.425833,
+      "longitude": -98.485833
+    },
     "geometries": "geojson",
-    "steps": false,
+    "origin": {
+      "latitude": 29.4245914,
+      "longitude": -98.4864288
+    },
+    "overview": "full",
+    "profile": "foot",
     "provider_instance": "fossgis-routed-foot",
-    "request_version": "osrm-route-v1"
+    "request_version": "osrm-route-v1",
+    "steps": false
+  },
+  "response_metadata": {
+    "distance_unit": "m",
+    "duration_unit": "s",
+    "route_count": 1,
+    "waypoint_snaps": []
   },
   "retrieved_at": null,
-  "data_date": "2026-08-23",
-  "status": "ok",
   "schema_version": "v1",
-  "provider_config_version": "osrm-config-v1",
-  "activity_id": null,
-  "derived_from": [],
+  "source": "synthesized",
+  "status": "ok",
   "transformations": []
 }

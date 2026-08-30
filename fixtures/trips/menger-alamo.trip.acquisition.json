@@ -5,37 +5,44 @@
     {
       "fixture": "fixtures/providers/osrm/menger-alamo.json",
       "role": "routing",
-      "sha256": "7f5408f0b2520887b2b6ddfc01b00971e7617830e22c5794cf594a160c41a3d0"
+      "sha256": "88932e6c031344322aa292e2ef8ac0b6a00de5966cf33a536c8a3ac24c4f4524",
+      "sidecar_sha256": "7639676a3b9d8933efc7f7d319906f2d98a832f6abae3d564c026c73625ac254"
     },
     {
       "fixture": "fixtures/providers/fortyguard/menger-alamo-destination-tcm-2024-07-15.json",
       "role": "destination_tcm",
-      "sha256": "98293540939b8dd1ca4c268c0e2fc9afc124b61494e20cc38564f5a06fb50c61"
+      "sha256": "8aa93a776a47329233fb11c1f9c68c0074bf08f6763cf1fba8f987cf8627564b",
+      "sidecar_sha256": "0a31b1dbc49b7801ffe559bf40e057539a31e3dfc55e18805957f3a454bcc3cf"
     },
     {
       "fixture": "fixtures/providers/fortyguard/menger-alamo-destination-env-params-2024-07-15.json",
       "role": "environment_parameters",
-      "sha256": "3c7e85101cbf6961eeed391443cecb4c97bc6c9beda36fc0cfdf730cd5ea9df4"
+      "sha256": "7aaa3762b4c50cc64fb953ca09cef38d05970c1910a9de1e234038f52da1b56e",
+      "sidecar_sha256": "789c8414ba45492d22c80cfb659ef64026801c04ecf0f116f14fdd7721d58111"
     },
     {
       "fixture": "fixtures/providers/fortyguard/canonical-district-anchor-date-tcm-2024-07-15.json",
       "role": "hotel_night_and_day_tcm",
-      "sha256": "f440eeb83743303e8a99126d0e53f02ff1625f1875aa9c60b5092f96ed0257ca"
+      "sha256": "7ab6f9eb46691f201a2ffe4b71fe73b36dd4e0f6a281441ad0a0f0da86e1e602",
+      "sidecar_sha256": "dad752e7f1f5415e0be2a52527e83450c982159dc0b73f4357f039127a802df9"
     },
     {
       "fixture": "fixtures/providers/fortyguard/canonical-district-anchor-exceedance-above-35c-2024-07-15.json",
       "role": "hotel_hot_hours",
-      "sha256": "4226735c20081617206c77672cd1b142f643c9fcfe0da5d8be455a0c5fca54b7"
+      "sha256": "6fc97903bda9801830eac7ca5937932a5ef5ca37a87a2beaed1268caffec7af8",
+      "sidecar_sha256": "f46eee48baf79aef0b8b2d1107becd56d568edb746b99253d33b8c7f06dcd4fe"
     },
     {
       "fixture": "fixtures/providers/fortyguard/canonical-district-anchor-persistence-above-35c-2024-07-15.json",
       "role": "hotel_persistence",
-      "sha256": "8b9cb5fc1cd31151dac10fdf854a890468b714061f3f98c2902db496da4b50d4"
+      "sha256": "01e1e56cb6eb22356f9973b1204ef800231e68a9c3c6a2c9f87e8de8da722be6",
+      "sidecar_sha256": "64bf75fcb893e43afe0f64ffd7d0919dcce9426c90cf85c61ff927fb97ac784b"
     },
     {
       "fixture": "fixtures/hotel-heat-analysis.json",
       "role": "base_hotel_discovery",
-      "sha256": "fde152a6c473fb6a38a6fe2928ccf4718a17d621e61f7d7c8da3d84d5a69e84b"
+      "sha256": "fde152a6c473fb6a38a6fe2928ccf4718a17d621e61f7d7c8da3d84d5a69e84b",
+      "sidecar_sha256": "1f66ac7364bec7cd5a997f224ed3fdf8c4dbdb77f55cb6bf59b085c4a0e7f3c0"
     }
   ],
   "endpoint": "local:trip-product-snapshot",
@@ -80,6 +87,9 @@
     },
     "route_heat_aoi": null,
     "start_hour": 8
+  },
+  "response_metadata": {
+    "generator_state": "completed"
   },
   "retrieved_at": null,
   "schema_version": "trip-contract-v2",

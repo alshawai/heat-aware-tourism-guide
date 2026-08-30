@@ -58,7 +58,11 @@ from app.services.execution import (
 from app.services.route_analysis import RouteAnalysisService
 from app.services.routing import RouteUnavailable
 from app.services.sidecars import load_acquisition_record
-from app.services.trip_contract_v2 import SCHEMA_VERSION, decode_trip_analysis_v2
+from app.services.trip_contract_v2 import (
+    SCHEMA_VERSION,
+    decode_trip_analysis_v2,
+    encode_trip_analysis_v2,
+)
 
 
 FRAMING_THRESHOLD_CELSIUS = 35.0
@@ -198,7 +202,7 @@ class TemporalTripAnalysisAdapter:
             heatmap = self.heatmap_execution.run(heatmap_request, live=True)
             anchor = select_anchor_celsius(heatmap.tiles, request.window)
         except (UnavailableError, ValueError) as error:
-            return _unavailable_response(request, execution_mode, str(error))
+            return _round_trip(_unavailable_response(request, execution_mode, str(error)), request)
 
         environment: EnvironmentSeriesResult | None = None
         environment_failure: str | None = None
@@ -228,7 +232,7 @@ class TemporalTripAnalysisAdapter:
                 persistence_hours=persistence_hours,
             )
         except ValueError as error:
-            return _unavailable_response(request, execution_mode, str(error))
+            return _round_trip(_unavailable_response(request, execution_mode, str(error)), request)
         routes: RouteComparisonResult | None = None
         route_reason: str | None = None
         if self.route_analysis is None:
@@ -244,14 +248,17 @@ class TemporalTripAnalysisAdapter:
         degraded_reasons = {"hotels": "hotel ranking is not implemented on the temporal live path"}
         if route_reason is not None:
             degraded_reasons["routes"] = route_reason
-        return TripAnalysisResponse(
-            request_identity=_request_identity(request),
-            mode=request.mode,
-            execution_mode=execution_mode,
-            state=ResultState.DEGRADED,
-            best_time=best_time,
-            routes=routes,
-            degraded_reasons=degraded_reasons,
+        return _round_trip(
+            TripAnalysisResponse(
+                request_identity=_request_identity(request),
+                mode=request.mode,
+                execution_mode=execution_mode,
+                state=ResultState.DEGRADED,
+                best_time=best_time,
+                routes=routes,
+                degraded_reasons=degraded_reasons,
+            ),
+            request,
         )
 
     def _framing_value(
@@ -561,6 +568,15 @@ def _unavailable_response(
         execution_mode=execution_mode,
         state=ResultState.UNAVAILABLE,
         unavailable=UnavailableResult(reason, recoverable, code, action),
+    )
+
+
+def _round_trip(
+    response: TripAnalysisResponse, request: TripAnalysisRequest
+) -> TripAnalysisResponse:
+    """Apply the same strict product codec used by snapshots and HTTP."""
+    return decode_trip_analysis_v2(
+        encode_trip_analysis_v2(response, envelope="snapshot"), request, ExecutionMode.LIVE
     )
 
 

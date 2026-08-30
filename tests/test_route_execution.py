@@ -15,20 +15,29 @@ from app.services.routing import RouteExecution, RouteUnavailable, route_request
 from app.services.sidecars import write_sidecar
 
 
-def _request(**overrides: object) -> RouteRequest:
-    values: dict[str, object] = {
-        "origin": Coordinates(29.4245914, -98.4864288),
-        "destination": Coordinates(29.425833, -98.485833),
-        "profile": "foot",
-        "alternatives": True,
-        "overview": "full",
-        "geometries": "geojson",
-        "steps": False,
-        "provider_instance": "fossgis-routed-foot",
-        "request_version": "osrm-route-v1",
-    }
-    values.update(overrides)
-    return RouteRequest(**values)
+def _request(
+    *,
+    origin: Coordinates = Coordinates(29.4245914, -98.4864288),
+    destination: Coordinates = Coordinates(29.425833, -98.485833),
+    profile: str = "foot",
+    alternatives: bool = True,
+    overview: str = "full",
+    geometries: str = "geojson",
+    steps: bool = False,
+    provider_instance: str = "fossgis-routed-foot",
+    request_version: str = "osrm-route-v1",
+) -> RouteRequest:
+    return RouteRequest(
+        origin=origin,
+        destination=destination,
+        profile=profile,
+        alternatives=alternatives,
+        overview=overview,
+        geometries=geometries,
+        steps=steps,
+        provider_instance=provider_instance,
+        request_version=request_version,
+    )
 
 
 def _payload() -> dict[str, object]:
@@ -64,6 +73,7 @@ def _fixture(tmp_path: Path, request: RouteRequest) -> Path:
             provider_config_version="osrm-config-v1",
             activity_id=None,
             derived_from=(),
+            response_metadata={},
         ),
     )
     return path

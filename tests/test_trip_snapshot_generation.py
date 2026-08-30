@@ -1,6 +1,7 @@
 import hashlib
 import json
 from pathlib import Path
+from typing import Mapping
 
 import pytest
 
@@ -53,7 +54,9 @@ def test_generator_rejects_changed_input_hash(
 ) -> None:
     original = INPUTS["menger_osrm"]
     monkeypatch.setitem(
-        INPUTS, "menger_osrm", type(original)(original.fixture, original.role, "0" * 64)
+        INPUTS,
+        "menger_osrm",
+        type(original)(original.fixture, original.role, "0" * 64, original.sidecar_sha256),
     )
     with pytest.raises(ValueError, match="input hash mismatch"):
         generate_issue23_snapshots(tmp_path / "trips")
@@ -73,23 +76,34 @@ def test_required_snapshot_states_and_evidence_labels() -> None:
     snapshots = {path.name: _load(path) for path in Path("fixtures/trips").glob("*.trip.json")}
     canonical = snapshots["menger-alamo.trip.json"]
     assert canonical["state"] == ResultState.DEGRADED.value
-    assert canonical["best_time"]["temporal_evidence"] == TemporalEvidenceState.INCONSISTENT.value  # type: ignore[index]
-    assert canonical["best_time"]["recommendation_time"] is None  # type: ignore[index]
-    assert len(canonical["routes"]["alternatives"]) == 1  # type: ignore[index]
-    assert canonical["routes"]["route_set_state"] == RouteSetState.SINGLE_ROUTE.value  # type: ignore[index]
-    assert canonical["hotels"]["usable_count"] >= 5  # type: ignore[index]
+    best_time = canonical["best_time"]
+    routes = canonical["routes"]
+    hotels = canonical["hotels"]
+    assert isinstance(best_time, Mapping)
+    assert isinstance(routes, Mapping)
+    assert isinstance(hotels, Mapping)
+    assert best_time["temporal_evidence"] == TemporalEvidenceState.INCONSISTENT.value
+    assert best_time["recommendation_time"] is None
+    alternatives = routes["alternatives"]
+    assert isinstance(alternatives, list)
+    assert len(alternatives) == 1
+    assert routes["route_set_state"] == RouteSetState.SINGLE_ROUTE.value
+    assert isinstance(hotels["usable_count"], int)
+    assert hotels["usable_count"] >= 5
 
     main = snapshots["main-plaza-market-square.trip.json"]
     assert main["routes"]["route_set_state"] == RouteSetState.SINGLE_ROUTE.value  # type: ignore[index]
     assert "synthesized-demo" in main["best_time"]["provenance"]["provider"]  # type: ignore[index]
 
     cathedral = snapshots["cathedral-governors-palace.trip.json"]
-    assert cathedral["routes"]["route_set_state"] == RouteSetState.ALTERNATIVES_RETURNED.value  # type: ignore[index]
+    cathedral_routes = cathedral["routes"]
+    assert isinstance(cathedral_routes, Mapping)
+    assert cathedral_routes["route_set_state"] == RouteSetState.ALTERNATIVES_RETURNED.value
     assert (
-        cathedral["routes"]["decision_state"]
+        cathedral_routes["decision_state"]
         == RouteDecisionState.INSUFFICIENT_SHADE_COMPARISON_REQUIRED.value
-    )  # type: ignore[index]
-    assert cathedral["routes"]["recommended_id"] is None  # type: ignore[index]
+    )
+    assert cathedral_routes["recommended_id"] is None
     assert cathedral["hotels"]["enrichment"]["state"] == EnrichmentState.UNAVAILABLE.value  # type: ignore[index]
 
     unavailable = snapshots["briscoe-tower-unavailable.trip.json"]
