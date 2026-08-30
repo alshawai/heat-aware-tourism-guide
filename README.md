@@ -2,7 +2,7 @@
 
 Heat-aware trip planning for visitors to hot US cities. The application
 combines landmark timing, outdoor neighborhood heat, and walking-route
-comparison in one fixture-backed web experience.
+comparison in one web experience.
 
 **Public demo:** <https://heat-aware-tourism-guide-demo.onrender.com/>
 
@@ -31,6 +31,29 @@ and demo instructions are organized under the Diataxis structure:
 - [Deployment decision](docs/adr/0009-separated-public-fixture-and-protected-live-deployments.md)
 - [Fixture demo script](docs/demo-script.md)
 - [Provider and coordinate research](docs/research/)
+
+## Running the Application
+
+A local run reads `.env`, which is gitignored. Set `ALLOW_LIVE=true` there with a
+`FORTYGUARD_API_KEY` and the server declares `mode: live` on `/health`; the
+frontend then sends `execution_mode: live` for every trip analysis and hotel
+ranking, so no screen replays fixtures or mock data:
+
+```bash
+npm run backend:dev    # http://127.0.0.1:8000, live when .env says ALLOW_LIVE=true
+npm run frontend:dev   # Vite dev server, proxied to the API above
+curl -s http://127.0.0.1:8000/health
+```
+
+`ALLOW_LIVE=true` without a key fails fast at startup. Every live trip analysis
+spends billable FortyGuard activities, and a custom hour override spends another
+set, so set `FORTYGUARD_CALL_BUDGET` to cap the account-lifetime call count
+before a long session. To review the flow without spending credits, force
+fixtures for one run:
+
+```bash
+ALLOW_LIVE=false npm run backend:dev
+```
 
 ## Contributor Quality Gates
 
