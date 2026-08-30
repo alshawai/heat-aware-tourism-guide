@@ -9,6 +9,9 @@ import math
 import re
 from typing import Iterable, Mapping, cast
 
+from astral import Observer
+from astral.sun import azimuth as astral_azimuth
+from astral.sun import elevation as astral_elevation
 from pyproj import Transformer
 from shapely.geometry import LineString, shape
 from shapely.geometry.base import BaseGeometry
@@ -32,6 +35,9 @@ SHADE_MODEL_LIMITATIONS = (
     "and buildings beyond the configured search boundary"
 )
 
+SOLAR_MODEL_IDENTITY = "astral-3.2-apparent"
+"""Solar-position provider identity recorded in shade provenance."""
+
 
 @dataclass(frozen=True)
 class RouteShadeEvidence:
@@ -48,7 +54,10 @@ class RouteShadeEvidence:
     limitations: tuple[str, ...] = (SHADE_MODEL_LIMITATIONS,)
 
     def __post_init__(self) -> None:
-        if not math.isfinite(self.modeled_shade_percent) or not 0 <= self.modeled_shade_percent <= 100:
+        if (
+            not math.isfinite(self.modeled_shade_percent)
+            or not 0 <= self.modeled_shade_percent <= 100
+        ):
             raise ValueError("modeled shade percent must be finite and between 0 and 100")
         fractions = (
             self.explicit_area_fraction,
@@ -71,7 +80,9 @@ class RouteShadeEvidence:
             self.unknown_count,
             self.dropped_geometry_count,
         )
-        if any(isinstance(value, bool) or not isinstance(value, int) or value < 0 for value in counts):
+        if any(
+            isinstance(value, bool) or not isinstance(value, int) or value < 0 for value in counts
+        ):
             raise ValueError("building quality and dropped geometry counts must be non-negative")
         if not isinstance(self.confidence, ShadeConfidence):
             raise ValueError("shade confidence must be a ShadeConfidence value")
@@ -105,7 +116,9 @@ class SolarPosition:
     elevation_degrees: float
 
     def __post_init__(self) -> None:
-        if not all(math.isfinite(value) for value in (self.azimuth_degrees, self.elevation_degrees)):
+        if not all(
+            math.isfinite(value) for value in (self.azimuth_degrees, self.elevation_degrees)
+        ):
             raise ValueError("solar position must be finite")
         if not 0 <= self.azimuth_degrees < 360:
             raise ValueError("solar azimuth must be in [0, 360)")
@@ -148,27 +161,17 @@ def classify_building_height(
 
 
 def solar_position(instant: datetime, latitude: float, longitude: float) -> SolarPosition:
-    """Return an approximate true-north solar position for deterministic modelling."""
+    """Return the apparent true-north solar position for one exact timezone-aware instant."""
     if instant.tzinfo is None or instant.utcoffset() is None:
         raise ValueError("solar instant must be timezone-aware")
     if not -90 <= latitude <= 90 or not -180 <= longitude <= 180:
         raise ValueError("solar coordinates are out of range")
+    observer = Observer(latitude=latitude, longitude=longitude)
     utc = instant.astimezone(timezone.utc)
-    day = utc.timetuple().tm_yday
-    hour = utc.hour + utc.minute / 60 + utc.second / 3600
-    gamma = 2 * math.pi / 365 * (day - 1 + (hour - 12) / 24)
-    declination = (0.006918 - 0.399912 * math.cos(gamma) + 0.070257 * math.sin(gamma)
-                   - 0.006758 * math.cos(2 * gamma) + 0.000907 * math.sin(2 * gamma))
-    equation = 229.18 * (0.000075 + 0.001868 * math.cos(gamma) - 0.032077 * math.sin(gamma)
-                         - 0.014615 * math.cos(2 * gamma) - 0.040849 * math.sin(2 * gamma))
-    minutes = utc.hour * 60 + utc.minute + utc.second / 60
-    true_solar_minutes = minutes + equation + 4 * longitude
-    hour_angle = math.radians((true_solar_minutes / 4) - 180)
-    lat = math.radians(latitude)
-    elevation = math.degrees(math.asin(math.sin(lat) * math.sin(declination)
-                                       + math.cos(lat) * math.cos(declination) * math.cos(hour_angle)))
-    azimuth = math.degrees(math.atan2(math.sin(hour_angle), math.cos(hour_angle) * math.sin(lat)
-                                      - math.tan(declination) * math.cos(lat))) + 180
+    azimuth = float(astral_azimuth(observer, utc))
+    elevation = float(astral_elevation(observer, utc))
+    if not math.isfinite(azimuth) or not math.isfinite(elevation):
+        raise ValueError("solar provider returned a non-finite position")
     return SolarPosition(azimuth % 360, elevation)
 
 
