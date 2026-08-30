@@ -351,6 +351,8 @@ def create_app(
     ) -> dict[str, object]:
         token = body.get("result_set_token")
         try:
+            if not isinstance(token, str):
+                raise ResultTokenError("invalid result_set_token")
             claims = verify_result_token(token, token_secret)
             allowed = (
                 claims.get("hotel_ids", [])

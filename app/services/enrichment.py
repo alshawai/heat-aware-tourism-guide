@@ -120,7 +120,7 @@ class EnrichmentService:
                     usage=EnrichmentUsage(estimated_credits=estimate),
                     limitations=LIMITATIONS[kind],
                 )
-        common = dict(
+        common: dict[str, Any] = dict(
             kind=kind,
             target_id=target_id,
             base_result=base_result or {},

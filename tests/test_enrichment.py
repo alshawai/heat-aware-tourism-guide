@@ -9,30 +9,35 @@ from app.services.cache import CacheService
 from app.services.enrichment import EnrichmentService
 from app.api import create_app
 from fastapi.testclient import TestClient
+from pathlib import Path
+from typing import Any, cast
+from app.domain.enrichment import EnrichmentAdapter
 
 
 class Adapter:
-    def __init__(self, payload=None, error=None):
+    def __init__(
+        self, payload: dict[str, Any] | None = None, error: Exception | None = None
+    ) -> None:
         self.payload = payload
         self.error = error
 
-    def enrich(self, context, request):
+    def enrich(self, context: object, request: dict[str, Any]) -> dict[str, Any] | None:
         if self.error is not None:
             raise self.error
         return self.payload
 
 
-def service(adapter, *, budget=1, live=True):
+def service(adapter: Adapter, *, budget: int = 1, live: bool = True) -> EnrichmentService:
     return EnrichmentService(
         ledger=CreditLedger(enrichment_budget=budget),
-        adapters={EnrichmentKind.ENVIRONMENT: adapter},
+        adapters={EnrichmentKind.ENVIRONMENT: cast(EnrichmentAdapter, adapter)},
         estimates={"environment": 10},
         clock=lambda: datetime(2026, 8, 30, 12, tzinfo=timezone.utc),
         live=live,
     )
 
 
-def test_budget_exhaustion_preserves_base_result():
+def test_budget_exhaustion_preserves_base_result() -> None:
     configured = service(Adapter({"entries": []}), budget=0)
     result = configured.run(
         kind=EnrichmentKind.ENVIRONMENT,
@@ -45,7 +50,7 @@ def test_budget_exhaustion_preserves_base_result():
     assert result.base_result == {"rank": 1}
 
 
-def test_fixture_success_does_not_consume_budget():
+def test_fixture_success_does_not_consume_budget() -> None:
     configured = service(Adapter({"entries": [{"value": 32}]}), budget=1, live=False)
     result = configured.run(kind=EnrichmentKind.ENVIRONMENT, target_id="hotel-1")
     assert result.state is EnrichmentState.AVAILABLE
@@ -54,7 +59,7 @@ def test_fixture_success_does_not_consume_budget():
     assert result.usage.completed_calls == 0
 
 
-def test_partial_failure_preserves_base_result():
+def test_partial_failure_preserves_base_result() -> None:
     configured = service(Adapter(error=RuntimeError("provider down")))
     result = configured.run(
         kind=EnrichmentKind.ENVIRONMENT,
@@ -66,7 +71,7 @@ def test_partial_failure_preserves_base_result():
     assert result.base_result == {"rank": 1, "score": 0.8}
 
 
-def test_result_tokens_are_signed_and_expire():
+def test_result_tokens_are_signed_and_expire() -> None:
     issued = datetime(2026, 8, 30, 12, tzinfo=timezone.utc)
     token = issue_result_token(
         {"request_identity": "r1", "hotel_ids": ["h1"]}, "secret", now=issued
@@ -78,11 +83,15 @@ def test_result_tokens_are_signed_and_expire():
         verify_result_token(token + "x", "secret", now=issued)
 
 
-def test_fresh_cache_hit_does_not_invoke_adapter_or_budget():
+def test_fresh_cache_hit_does_not_invoke_adapter_or_budget() -> None:
     cache = CacheService()
     first = EnrichmentService(
         ledger=CreditLedger(enrichment_budget=1),
-        adapters={EnrichmentKind.SATELLITE_CANOPY: Adapter({"canopy_percentage": 20})},
+        adapters={
+            EnrichmentKind.SATELLITE_CANOPY: cast(
+                EnrichmentAdapter, Adapter({"canopy_percentage": 20})
+            )
+        },
         estimates={"satellite_canopy": 12},
         clock=lambda: datetime(2026, 8, 30, 12, tzinfo=timezone.utc),
         live=True,
@@ -104,8 +113,9 @@ def test_fresh_cache_hit_does_not_invoke_adapter_or_budget():
     assert cached.provenance.source == "cache"
 
 
-def test_api_enrichment_requires_token_and_preserves_fixture_boundary():
-    client = TestClient(create_app(__import__("pathlib").Path("fixtures/heatmap-historical.json")))
+def test_api_enrichment_requires_token_and_preserves_fixture_boundary() -> None:
+    fixture_path = Path("fixtures/heatmap-historical.json")
+    client = TestClient(create_app(fixture_path))
     missing = client.post(
         "/api/hotels/node:1/environment",
         json={"temperature_anchor_celsius": 32},
@@ -122,7 +132,7 @@ def test_api_enrichment_requires_token_and_preserves_fixture_boundary():
         "api-secret",
     )
     app = create_app(
-        __import__("pathlib").Path("fixtures/heatmap-historical.json"),
+        fixture_path,
         result_token_secret="api-secret",
     )
     response = TestClient(app).post(
@@ -137,7 +147,7 @@ def test_api_enrichment_requires_token_and_preserves_fixture_boundary():
     assert payload["usage"]["completed_calls"] == 0
 
 
-def test_api_route_enrichment_uses_midpoint_and_rejects_distant_point():
+def test_api_route_enrichment_uses_midpoint_and_rejects_distant_point() -> None:
     geometry = [[-98.48, 29.42], [-98.479, 29.421]]
     token = issue_result_token(
         {
@@ -149,7 +159,7 @@ def test_api_route_enrichment_uses_midpoint_and_rejects_distant_point():
     )
     client = TestClient(
         create_app(
-            __import__("pathlib").Path("fixtures/heatmap-historical.json"),
+            Path("fixtures/heatmap-historical.json"),
             result_token_secret="route-secret",
         )
     )

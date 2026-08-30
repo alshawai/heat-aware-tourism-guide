@@ -68,7 +68,8 @@ class FortyGuardClient:
             status_code = response.get("status_code")
             if isinstance(status_code, int) and status_code >= 400:
                 raise classify_provider_error(status_code, "activity submission failed")
-            activity_id = response.get("activity_id")
+            candidate_activity_id = response.get("activity_id")
+            activity_id = candidate_activity_id if isinstance(candidate_activity_id, str) else None
             if not isinstance(activity_id, str) or not activity_id:
                 raise ProviderError(
                     ProviderErrorKind.MALFORMED_RESPONSE, detail="missing activity id"

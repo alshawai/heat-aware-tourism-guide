@@ -562,7 +562,11 @@ def create_production_app(
         )
 
         class LiveEnvironmentEnrichment:
-            def enrich(self, context, request):
+            def enrich(self, context: object, request: Mapping[str, object]) -> EnrichmentPayload:
+                from app.domain.enrichment import EnrichmentContext
+
+                if not isinstance(context, EnrichmentContext):
+                    raise ValueError("invalid enrichment context")
                 if context.coordinates is None:
                     raise ValueError("missing spatial input")
                 anchor = request.get("temperature_anchor_celsius")

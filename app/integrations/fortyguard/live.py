@@ -847,7 +847,15 @@ class LiveSegmentationAdapter:
         self._endpoint = endpoint
         self._polling = polling
 
-    def enrich(self, context, request):
+    def enrich(
+        self,
+        context: object,
+        request: Mapping[str, object],
+    ) -> EnrichmentPayload:
+        from app.domain.enrichment import EnrichmentContext
+
+        if not isinstance(context, EnrichmentContext):
+            raise ValueError("invalid enrichment context")
         if context.coordinates is None:
             raise ValueError("missing spatial input")
         if self._endpoint == "/v1/satellite":
@@ -863,10 +871,15 @@ class LiveSegmentationAdapter:
                 "granularity": 80,
             }
         else:
-            point = request.get("point") or {
-                "latitude": context.coordinates.latitude,
-                "longitude": context.coordinates.longitude,
-            }
+            point_value = request.get("point")
+            point: Mapping[str, object] = (
+                point_value
+                if isinstance(point_value, Mapping)
+                else {
+                    "latitude": context.coordinates.latitude,
+                    "longitude": context.coordinates.longitude,
+                }
+            )
             payload = {**point, "vertical_angle": 10.0, "horizontal_angle": 0.0, "back_view": False}
         result, metadata = self._client.submit_and_poll(
             self._endpoint,
