@@ -9,6 +9,8 @@ import type {
   RequestOptions,
   TripAnalysisRequest,
   TripAnalysisResponse,
+  EnrichmentKind,
+  EnrichmentResponse,
 } from "../types";
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -480,8 +482,35 @@ function isTripAnalysisResponse(
 }
 
 async function readJson(response: Response) {
-  if (!response.ok) throw new Error("Request failed");
-  return response.json() as Promise<unknown>;
+  const body = (await response.json()) as unknown;
+  if (!response.ok) {
+    const detail = isObject(body) && isObject(body.detail) ? body.detail : body;
+    const error = new Error(
+      isObject(detail) && typeof detail.error === "string"
+        ? detail.error
+        : "Request failed"
+    ) as Error & { code?: string };
+    if (isObject(detail) && typeof detail.error_kind === "string")
+      error.code = detail.error_kind;
+    throw error;
+  }
+  return body;
+}
+
+function isEnrichmentResponse(value: unknown): value is EnrichmentResponse {
+  return (
+    isObject(value) &&
+    value.status === "success" &&
+    ["environment", "satellite_canopy", "street_view"].includes(
+      String(value.kind)
+    ) &&
+    typeof value.target_id === "string" &&
+    ["available", "unavailable", "not_requested"].includes(
+      String(value.state)
+    ) &&
+    isObject(value.usage) &&
+    Array.isArray(value.limitations)
+  );
 }
 
 export const dataClient = {
@@ -537,6 +566,34 @@ export const dataClient = {
     if (!isHotelRankResponse(value)) {
       throw new Error("Invalid hotel ranking response");
     }
+    return value;
+  },
+  async requestEnrichment(
+    kind: EnrichmentKind,
+    targetId: string,
+    resultSetToken: string,
+    temperatureAnchor?: number,
+    signal?: AbortSignal
+  ): Promise<EnrichmentResponse> {
+    const path =
+      kind === "environment"
+        ? `/api/hotels/${encodeURIComponent(targetId)}/environment`
+        : kind === "satellite_canopy"
+          ? `/api/routes/${encodeURIComponent(targetId)}/canopy`
+          : `/api/routes/${encodeURIComponent(targetId)}/street-view`;
+    const body: Record<string, unknown> = { result_set_token: resultSetToken };
+    if (temperatureAnchor !== undefined)
+      body.temperature_anchor_celsius = temperatureAnchor;
+    const value = await readJson(
+      await fetch(path, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+        signal,
+      })
+    );
+    if (!isEnrichmentResponse(value))
+      throw new Error("Invalid enrichment response");
     return value;
   },
   searchLocations(query: string, locations = scenarioLocations) {

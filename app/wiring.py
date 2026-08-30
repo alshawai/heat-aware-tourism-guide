@@ -21,6 +21,7 @@ from shapely.geometry.base import BaseGeometry
 
 from app.api import create_app
 from app.domain.contracts import ExecutionMode, TripAnalysisAdapter
+from app.domain.enrichment import EnrichmentKind, EnrichmentPayload
 from app.domain.hotel_heat_score import ComponentEvidence
 from app.domain.hotels import BoundingBox, DiscoveryState, HotelDiscoveryResult
 from app.domain.ledger import CreditLedger
@@ -29,7 +30,9 @@ from app.domain.security import sanitize_payload
 from app.integrations.fortyguard.client import FortyGuardClient
 from app.integrations.fortyguard.contracts import (
     AnalyticType,
+    EnvParamsRequest,
     HeatmapRequest,
+    normalize_env_params_response,
     normalize_heatmap_response,
 )
 from app.integrations.fortyguard.errors import ProviderError
@@ -39,6 +42,7 @@ from app.integrations.fortyguard.live import (
     LiveFortyGuardTransport,
     LiveHeatmapAdapter,
     LiveSharedRouteHeatAdapter,
+    LiveSegmentationAdapter,
 )
 from app.integrations.osrm.client import OsrmClient
 from app.integrations.osrm.transport import HttpOsrmTransport
@@ -51,6 +55,7 @@ from app.services.hotel_discovery import HotelDiscoveryService
 from app.services.hotel_heat_score import HotelHeatAnalysisService
 from app.services.hotel_heat_score import build_fixture_hotel_heat_analysis_service
 from app.services.execution import EnvParamsExecution, HeatmapExecution
+from app.services.enrichment import EnrichmentService, FixtureEnrichmentAdapter
 from app.services.ledger_store import JsonlLedgerStore
 from app.services.route_analysis import RouteAnalysisService
 from app.services.route_shade import RouteShadeService
@@ -80,8 +85,11 @@ def build_ledger(settings: AppSettings) -> CreditLedger:
     count, and is checked before each provider call.
     """
     if settings.ledger_path is None:
-        return CreditLedger(settings.call_budget)
-    return JsonlLedgerStore(settings.ledger_path).load(budget=settings.call_budget)
+        return CreditLedger(settings.call_budget, settings.enrichment_call_budget)
+    return JsonlLedgerStore(settings.ledger_path).load(
+        budget=settings.call_budget,
+        enrichment_budget=settings.enrichment_call_budget,
+    )
 
 
 def build_live_client(
@@ -552,6 +560,84 @@ def create_production_app(
                 heatmap_fixture.parent / "acquired" / "overpass-buildings-canonical.json"
             ),
         )
+
+        class LiveEnvironmentEnrichment:
+            def enrich(self, context, request):
+                if context.coordinates is None:
+                    raise ValueError("missing spatial input")
+                anchor = request.get("temperature_anchor_celsius")
+                if not isinstance(anchor, (int, float)) or isinstance(anchor, bool):
+                    raise ValueError("temperature anchor is required")
+                result = LiveEnvParamsAdapter(client, polling=resolved.polling).load(
+                    EnvParamsRequest(
+                        context.coordinates.latitude,
+                        context.coordinates.longitude,
+                        date.today(),
+                        float(anchor),
+                    )
+                )
+                return EnrichmentPayload(
+                    {
+                        "entries": [
+                            {
+                                "valid_time": entry.valid_time.isoformat(),
+                                "heat_index_celsius": entry.heat_index_celsius,
+                                "humidity_percent": entry.humidity_percent,
+                                "parameters": dict(entry.parameters),
+                            }
+                            for entry in normalize_env_params_response(
+                                result.payload,
+                                request=EnvParamsRequest(
+                                    context.coordinates.latitude,
+                                    context.coordinates.longitude,
+                                    date.today(),
+                                    float(anchor),
+                                ),
+                            ).entries
+                        ],
+                        "warning": "caller-supplied temperature anchor; not a real 24-hour forecast",
+                    },
+                    result.activity_id,
+                    "provider",
+                    "completed",
+                    datetime.now(timezone.utc).isoformat(),
+                )
+
+        enrichment_service = EnrichmentService(
+            ledger=ledger,
+            adapters={
+                EnrichmentKind.ENVIRONMENT: LiveEnvironmentEnrichment(),
+                EnrichmentKind.SATELLITE_CANOPY: LiveSegmentationAdapter(
+                    client, "/v1/satellite", resolved.polling
+                ),
+                EnrichmentKind.STREET_VIEW: LiveSegmentationAdapter(
+                    client, "/v1/streetview", resolved.polling
+                ),
+            },
+            estimates=resolved.enrichment_estimated_credits,
+            live=True,
+            adapter_manages_budget=True,
+        )
+    else:
+        fixture_payload = {}
+        if env_fixture.is_file():
+            fixture_payload = json.loads(env_fixture.read_text(encoding="utf-8"))
+        cache = CacheService()
+        enrichment_service = EnrichmentService(
+            ledger=CreditLedger(enrichment_budget=0),
+            adapters={
+                EnrichmentKind.ENVIRONMENT: FixtureEnrichmentAdapter(fixture_payload),
+                EnrichmentKind.SATELLITE_CANOPY: FixtureEnrichmentAdapter(
+                    _load_enrichment_fixture(heatmap_fixture.parent / "satellite-canopy.json")
+                ),
+                EnrichmentKind.STREET_VIEW: FixtureEnrichmentAdapter(
+                    _load_enrichment_fixture(heatmap_fixture.parent / "street-view.json")
+                ),
+            },
+            estimates={"environment": 0, "satellite_canopy": 0, "street_view": 0},
+            live=False,
+            cache=cache,
+        )
     if trip_adapter is None:
         fixture_trip_adapter = FixtureTripAnalysisAdapter(
             heatmap_fixture.parent / "trip-analysis.json"
@@ -591,4 +677,15 @@ def create_production_app(
         trip_adapter=trip_adapter,
         hotel_heat_analysis_service=hotel_heat_analysis_service,
         district_aoi=resolved.overpass.district_aoi,
+        result_token_secret=resolved.result_token_secret,
+        enrichment_service=enrichment_service,
     )
+
+
+def _load_enrichment_fixture(path: Path) -> dict[str, object]:
+    if not path.is_file():
+        return {"fixture_data_unavailable": True}
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError(f"enrichment fixture {path} must be an object")
+    return payload

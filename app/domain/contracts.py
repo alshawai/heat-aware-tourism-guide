@@ -1065,6 +1065,7 @@ class TripAnalysisResponse:
     routes: RouteComparisonResult | None = None
     unavailable: UnavailableResult | None = None
     degraded_reasons: dict[str, str] | None = None
+    result_set_token: str | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.mode, TripMode):

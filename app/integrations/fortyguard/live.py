@@ -19,6 +19,7 @@ from shapely.geometry.base import BaseGeometry
 from shapely.ops import transform as shapely_ops_transform
 
 from app.domain.environment import TimeWindow
+from app.domain.enrichment import EnrichmentPayload
 from app.domain.route_heat import SharedRouteHeatRequest
 from app.domain.provenance import Transformation
 from app.integrations.fortyguard.client import ActivityMetadata, FortyGuardClient
@@ -833,5 +834,51 @@ class LiveEnvParamsAdapter:
             max_polls=self._polling.max_polls,
             interval_seconds=self._polling.interval_seconds,
             status_404_grace_checks=self._polling.status_404_grace_checks,
+            scope="enrichment",
         )
         return LiveEnvParamsPayload(result, metadata.activity_id, env_params_transformations())
+
+
+class LiveSegmentationAdapter:
+    """Submit documented segmentation requests while preserving opaque classes."""
+
+    def __init__(self, client: FortyGuardClient, endpoint: str, polling: FortyGuardPollingSettings):
+        self._client = client
+        self._endpoint = endpoint
+        self._polling = polling
+
+    def enrich(self, context, request):
+        if context.coordinates is None:
+            raise ValueError("missing spatial input")
+        if self._endpoint == "/v1/satellite":
+            payload = {
+                "sat": {
+                    "latitude": context.coordinates.latitude,
+                    "longitude": context.coordinates.longitude,
+                },
+                "date_time": {
+                    "start_date": request.get("date", date.today().isoformat()),
+                    "filter_type": 3,
+                },
+                "granularity": 80,
+            }
+        else:
+            point = request.get("point") or {
+                "latitude": context.coordinates.latitude,
+                "longitude": context.coordinates.longitude,
+            }
+            payload = {**point, "vertical_angle": 10.0, "horizontal_angle": 0.0, "back_view": False}
+        result, metadata = self._client.submit_and_poll(
+            self._endpoint,
+            payload,
+            max_polls=self._polling.max_polls,
+            interval_seconds=self._polling.interval_seconds,
+            status_404_grace_checks=self._polling.status_404_grace_checks,
+            scope="enrichment",
+        )
+        return EnrichmentPayload(
+            {"provider_result": dict(result), "segmentation": True},
+            metadata.activity_id,
+            "provider",
+            "completed",
+        )

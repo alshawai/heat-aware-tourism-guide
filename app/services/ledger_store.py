@@ -66,10 +66,11 @@ class JsonlLedgerStore:
     def read_records(self) -> list[UsageRecord]:
         return self.read_all()[0]
 
-    def load(self, budget: int | None = None) -> CreditLedger:
+    def load(self, budget: int | None = None, enrichment_budget: int | None = None) -> CreditLedger:
         calls, reconciliations = self.read_all()
         return CreditLedger(
             budget,
+            enrichment_budget,
             initial_records=calls,
             initial_reconciliations=reconciliations,
             on_record=self.append,
@@ -85,6 +86,7 @@ class JsonlLedgerStore:
                 "credits_used": record.credits_used,
                 "completed_at": record.completed_at.isoformat(),
                 "status": record.status,
+                "scope": record.scope,
             }
         )
 
@@ -118,6 +120,7 @@ def _parse_call(payload: Mapping[str, Any]) -> UsageRecord:
         credits_used=credits_used,
         completed_at=_parse_datetime(payload["completed_at"]),
         status=payload["status"],
+        scope=payload.get("scope", "core"),
     )
 
 

@@ -1,0 +1,15 @@
+{
+  "source": "synthesized",
+  "endpoint": "/v1/streetview",
+  "request_configuration": {
+    "kind": "street_view",
+    "schema_version": "enrichment-v1"
+  },
+  "retrieved_at": null,
+  "data_date": "2026-08-30",
+  "status": "ok",
+  "schema_version": "enrichment-v1",
+  "provider_config_version": "fortyguard-enrichment-v1",
+  "activity_id": null,
+  "transformations": []
+}

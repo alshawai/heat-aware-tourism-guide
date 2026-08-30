@@ -88,6 +88,8 @@ class HotelHeatAssignment:
     identity: OsmIdentity
     name: str
     components: Mapping[str, ComponentAssignment]
+    latitude: float | None = None
+    longitude: float | None = None
 
     @property
     def complete(self) -> bool:
@@ -169,7 +171,11 @@ class NeighbourhoodHeatScorer:
                 )
             assignments.append(
                 HotelHeatAssignment(
-                    hotel.primary_identity, hotel.name, MappingProxyType(components)
+                    hotel.primary_identity,
+                    hotel.name,
+                    MappingProxyType(components),
+                    hotel.latitude,
+                    hotel.longitude,
                 )
             )
         return tuple(assignments)

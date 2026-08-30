@@ -56,10 +56,13 @@ class FortyGuardClient:
         max_polls: int = 24,
         interval_seconds: float = 5.0,
         status_404_grace_checks: int = 3,
+        scope: str = "core",
     ) -> tuple[Mapping[str, object], ActivityMetadata]:
         reservation: int | None = None
+        submitted = False
+        activity_id: str | None = None
         if self._ledger is not None:
-            reservation = self._ledger.authorize_call()
+            reservation = self._ledger.authorize(scope=scope, now=self._clock())
         try:
             response = self._transport.post(endpoint, payload, self._api_key)
             status_code = response.get("status_code")
@@ -71,6 +74,7 @@ class FortyGuardClient:
                     ProviderErrorKind.MALFORMED_RESPONSE, detail="missing activity id"
                 )
             submitted_at = self._clock()
+            submitted = True
             self._emit(
                 "fortyguard.submitted",
                 {
@@ -116,15 +120,25 @@ class FortyGuardClient:
                 # priced it. A silent provider means unknown cost, not zero cost
                 # (ADR 0004 §5); credits are reconciled from the account endpoint.
                 self._ledger.record(
-                    UsageRecord(activity_id, endpoint, credits_used, self._clock(), "completed"),
+                    UsageRecord(
+                        activity_id, endpoint, credits_used, self._clock(), "completed", scope
+                    ),
                     reservation=reservation,
                 )
             self._emit(
                 "fortyguard.completed", {"activity_id": activity_id, **_response_metadata(result)}
             )
             return result, metadata
+        except Exception:
+            if submitted and activity_id is not None and self._ledger is not None:
+                self._ledger.record(
+                    UsageRecord(activity_id, endpoint, None, self._clock(), "failed", scope),
+                    reservation=reservation,
+                )
+                reservation = None
+            raise
         finally:
-            if reservation is not None and self._ledger is not None:
+            if reservation is not None and self._ledger is not None and not submitted:
                 self._ledger.release_call(reservation)
 
     def _emit(self, event: str, fields: Mapping[str, object]) -> None:

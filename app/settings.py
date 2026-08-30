@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import math
 import os
 from pathlib import Path
@@ -95,12 +95,15 @@ class AppSettings:
     allow_live: bool
     fortyguard_api_key: str | None
     fortyguard_base_url: str
+    result_token_secret: str | None = None
     polling: FortyGuardPollingSettings = FortyGuardPollingSettings()
     area: FortyGuardAreaSettings = FortyGuardAreaSettings()
     overpass: OverpassSettings = OverpassSettings()
     osrm: OsrmSettings = OsrmSettings()
     shade: ShadeSettings = ShadeSettings()
     call_budget: int | None = None
+    enrichment_call_budget: int | None = None
+    enrichment_estimated_credits: dict[str, int] = field(default_factory=dict)
     ledger_path: Path | None = DEFAULT_LEDGER_PATH
 
 
@@ -228,12 +231,15 @@ def load_settings(
         allow_live=allow_live,
         fortyguard_api_key=api_key or None,
         fortyguard_base_url=base_url,
+        result_token_secret=merged.get("RESULT_SET_TOKEN_SECRET") or None,
         polling=polling or _polling_from_env(merged),
         area=area or _area_from_env(merged),
         overpass=_overpass_from_env(merged),
         osrm=_osrm_from_env(merged),
         shade=_shade_from_env(merged),
         call_budget=_call_budget_from_env(merged),
+        enrichment_call_budget=_enrichment_budget_from_env(merged),
+        enrichment_estimated_credits=_enrichment_estimates_from_env(merged),
         ledger_path=_ledger_path_from_env(process_env, file_values),
     )
 
@@ -357,6 +363,35 @@ def _call_budget_from_env(merged: Mapping[str, str]) -> int | None:
     if value < 0:
         raise SettingsError("FORTYGUARD_CALL_BUDGET must be non-negative")
     return value
+
+
+def _enrichment_budget_from_env(merged: Mapping[str, str]) -> int | None:
+    raw = merged.get("FORTYGUARD_ENRICHMENT_CALL_BUDGET", "").strip()
+    if not raw:
+        return None
+    try:
+        value = int(raw)
+    except ValueError:
+        raise SettingsError("FORTYGUARD_ENRICHMENT_CALL_BUDGET must be an integer") from None
+    if value < 0:
+        raise SettingsError("FORTYGUARD_ENRICHMENT_CALL_BUDGET must be non-negative")
+    return value
+
+
+def _enrichment_estimates_from_env(merged: Mapping[str, str]) -> dict[str, int]:
+    estimates: dict[str, int] = {}
+    for kind in ("ENVIRONMENT", "SATELLITE", "STREETVIEW"):
+        raw = merged.get(f"FORTYGUARD_{kind}_ESTIMATED_CREDITS", "").strip()
+        if not raw:
+            continue
+        try:
+            value = int(raw)
+        except ValueError:
+            raise SettingsError(f"FORTYGUARD_{kind}_ESTIMATED_CREDITS must be an integer") from None
+        if value < 0:
+            raise SettingsError(f"FORTYGUARD_{kind}_ESTIMATED_CREDITS must be non-negative")
+        estimates[kind.lower()] = value
+    return estimates
 
 
 def _ledger_path_from_env(
