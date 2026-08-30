@@ -15,15 +15,15 @@ export function WelcomeScreen() {
         </p>
       </div>
       <div className="feature-grid">
-        <Link className="feature-card" to="/walk/location">
+        <Link className="feature-card" to="/trip/setup">
           <span className="feature-icon">
             <Footprints />
           </span>
           <div>
             <h2>Plan a walk</h2>
             <p>
-              Find a better time, then compare the walking routes returned for
-              your trip.
+              Set both ends of your walk, then see the best hour and the
+              returned walking routes together.
             </p>
           </div>
           <ArrowRight />

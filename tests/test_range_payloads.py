@@ -174,6 +174,43 @@ class TestHeatmapRangePayload:
         payload = build_documented_heatmap_payload(_tcm_request(), today=date.today())
         assert payload["date_time"] == {"start_date": date.today().isoformat(), "filter_type": 3}
 
+    def test_one_hour_window_emits_the_documented_single_hour_filter(self) -> None:
+        """A one-hour window is filter 1, not a range whose bounds are equal.
+
+        The provider range is inclusive, so rendering a one-hour window as
+        ``filter_type: 2`` would submit ``start_time == end_time`` — an
+        undocumented degenerate range the provider rejects at submission. The
+        per-hour heat fan-out sends nothing but one-hour windows.
+        """
+        payload = build_documented_heatmap_payload(
+            _tcm_request(start_hour=8, end_hour=9), today=date.today()
+        )
+        assert payload["date_time"] == {
+            "start_date": date.today().isoformat(),
+            "filter_type": 1,
+            "start_time": "08:00",
+        }
+
+    def test_two_hour_window_is_still_a_range(self) -> None:
+        payload = build_documented_heatmap_payload(
+            _tcm_request(start_hour=8, end_hour=10), today=date.today()
+        )
+        assert payload["date_time"] == {
+            "start_date": date.today().isoformat(),
+            "filter_type": 2,
+            "start_time": "08:00",
+            "end_time": "09:00",
+        }
+
+    def test_one_hour_window_keeps_heatmap_and_env_params_identical(self) -> None:
+        """Issue #44's invariant survives the single-hour collapse."""
+        heatmap = build_documented_heatmap_payload(
+            _historical_tcm_request(start_date=date(2026, 8, 24), start_hour=8, end_hour=9),
+            today=date.today(),
+        )
+        env_params = build_documented_env_params_payload(_env_request(start_hour=8, end_hour=9))
+        assert heatmap["date_time"] == env_params["date_time"]
+
     def test_historical_range_request_is_valid(self) -> None:
         request = _historical_tcm_request(start_hour=8, end_hour=20)
         payload = build_documented_heatmap_payload(request, today=date.today())

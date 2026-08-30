@@ -1,4 +1,4 @@
-import { ArrowLeft, MapPin, SunMedium } from "lucide-react";
+import { ArrowLeft, Database, Radio, SunMedium } from "lucide-react";
 import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useAppState } from "./AppState";
 import type { MockMode } from "../types";
@@ -6,8 +6,12 @@ import type { MockMode } from "../types";
 export function AppShell() {
   const location = useLocation();
   const navigate = useNavigate();
-  const { mode, setMode } = useAppState();
+  const { health, mode, setMode } = useAppState();
   const isHome = location.pathname === "/";
+  // The mock-state selector drives the hotel mock scenarios only; the trip
+  // screens read real server responses and must not be previewed from here.
+  const showMockSelector =
+    import.meta.env.DEV && location.pathname.startsWith("/hotels");
   return (
     <div className="app-shell">
       <header className="topbar">
@@ -33,15 +37,28 @@ export function AppShell() {
             <ArrowLeft size={18} />
             <span>Back</span>
           </button>
-          <span>
-            <MapPin size={15} /> Mock data workspace
+          <span className="workspace-chip">
+            {health.status === "available" ? (
+              <>
+                {health.mode === "fixture" ? (
+                  <Database size={15} />
+                ) : (
+                  <Radio size={15} />
+                )}{" "}
+                {health.deployment_profile} · {health.mode}
+              </>
+            ) : health.status === "checking" ? (
+              "Checking workspace..."
+            ) : (
+              "Workspace mode unavailable"
+            )}
           </span>
         </div>
       )}
       <main>
         <Outlet />
       </main>
-      {import.meta.env.DEV && !isHome && (
+      {showMockSelector && (
         <aside className="dev-panel" aria-label="Development data state">
           <label htmlFor="mock-state">Preview state</label>
           <select

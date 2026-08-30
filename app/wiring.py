@@ -619,7 +619,11 @@ def create_production_app(
         live_trip_adapter: TripAnalysisAdapter
         if execution is not None and env_params_execution is not None:
             live_trip_adapter = TemporalTripAnalysisAdapter(
-                execution, env_params_execution, route_analysis
+                execution,
+                env_params_execution,
+                route_analysis,
+                max_concurrency=resolved.temporal_fanout.max_concurrency,
+                remaining_calls=lambda: ledger.remaining,
             )
         else:
             live_trip_adapter = LiveTripAnalysisAdapter(

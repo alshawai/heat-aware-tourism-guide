@@ -38,6 +38,20 @@ class FortyGuardPollingSettings:
 
 
 @dataclass(frozen=True)
+class TemporalFanoutSettings:
+    """Per-hour heatmap fan-out configuration for the temporal trip analysis.
+
+    The provider's heatmap product carries no per-hour timestamp, so one
+    windowed request can only ever describe a single hour. The adapter issues
+    one single-hour request per traveler hour instead; this bounds how many of
+    those run at once so a twelve-hour window stays inside a demo's patience
+    without hammering the provider.
+    """
+
+    max_concurrency: int = 4
+
+
+@dataclass(frozen=True)
 class FortyGuardAreaSettings:
     """Area heatmap corridor configuration."""
 
@@ -99,6 +113,7 @@ class AppSettings:
     result_token_secret: str | None = None
     polling: FortyGuardPollingSettings = FortyGuardPollingSettings()
     area: FortyGuardAreaSettings = FortyGuardAreaSettings()
+    temporal_fanout: TemporalFanoutSettings = TemporalFanoutSettings()
     overpass: OverpassSettings = OverpassSettings()
     osrm: OsrmSettings = OsrmSettings()
     shade: ShadeSettings = ShadeSettings()
@@ -200,6 +215,19 @@ def _polling_from_env(merged: Mapping[str, str]) -> FortyGuardPollingSettings:
     )
 
 
+def _temporal_fanout_from_env(merged: Mapping[str, str]) -> TemporalFanoutSettings:
+    raw = merged.get("TRIP_FANOUT_MAX_CONCURRENCY", "").strip()
+    if not raw:
+        return TemporalFanoutSettings()
+    try:
+        value = int(raw)
+    except ValueError:
+        raise SettingsError("TRIP_FANOUT_MAX_CONCURRENCY must be an integer") from None
+    if value < 1:
+        raise SettingsError("TRIP_FANOUT_MAX_CONCURRENCY must be a positive integer")
+    return TemporalFanoutSettings(max_concurrency=value)
+
+
 def load_settings(
     *,
     environ: Mapping[str, str] | None = None,
@@ -241,6 +269,7 @@ def load_settings(
         result_token_secret=merged.get("RESULT_SET_TOKEN_SECRET") or None,
         polling=polling or _polling_from_env(merged),
         area=area or _area_from_env(merged),
+        temporal_fanout=_temporal_fanout_from_env(merged),
         overpass=_overpass_from_env(merged),
         osrm=_osrm_from_env(merged),
         shade=_shade_from_env(merged),

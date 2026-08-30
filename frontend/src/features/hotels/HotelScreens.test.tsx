@@ -75,7 +75,9 @@ describe("hotel ranking screens", () => {
     ).toBeGreaterThan(0);
     expect(screen.getAllByText("°C").length).toBeGreaterThan(0);
     expect(screen.getAllByText("hours").length).toBeGreaterThan(0);
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    // The shell probes /health once on mount and rankHotels probes it again to
+    // pick its execution mode, so the ranking costs three requests in total.
+    expect(fetchMock).toHaveBeenCalledTimes(3);
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/hotels/rank",
       expect.objectContaining({
@@ -101,7 +103,7 @@ describe("hotel ranking screens", () => {
       screen.getByRole("button", { name: "Apply local weights" })
     );
     expect(screen.getByText("Current weighting: custom")).toBeInTheDocument();
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
 
     await user.click(
       screen.getByRole("link", { name: "View details for Canopy House" })
@@ -118,6 +120,6 @@ describe("hotel ranking screens", () => {
         "Dimensionless percentile aggregate; no mixed-unit raw values are summed."
       )
     ).toBeInTheDocument();
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 });

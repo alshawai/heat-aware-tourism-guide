@@ -1,6 +1,5 @@
 import { scenarioLocations } from "../mocks/data";
 import { mockHotelRanking } from "../mocks/mockHotelRanking";
-import { mockTripAnalyze } from "../mocks/mockTripAnalyze";
 import type {
   HealthResponse,
   HotelRankRequest,
@@ -820,7 +819,9 @@ async function resilientFetch(
 }
 
 export const dataClient = {
-  analyzeTrip: mockTripAnalyze,
+  // Resilience is opt-in and carries the caller's abort signal, so the trip
+  // flow's health check stays fail-fast (no retries, no timeout) while the
+  // hotel flow can ask for cold-start retries.
   async getHealth(resilience: ResilienceOptions = {}): Promise<HealthResponse> {
     const value = await readJson(
       await resilientFetch("/health", {}, resilience)

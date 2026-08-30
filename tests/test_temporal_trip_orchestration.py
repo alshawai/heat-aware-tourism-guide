@@ -2,6 +2,7 @@
 
 from pathlib import Path
 import shutil
+import threading
 from typing import Any, Mapping
 
 import pytest
@@ -76,6 +77,29 @@ def _heatmap_payload() -> dict[str, object]:
     }
 
 
+def _hour_payload(hour: int, value: float) -> dict[str, object]:
+    """A single-hour TCM response stamped with the hour it was asked for.
+
+    This mirrors the live provider: the heatmap product carries no per-hour
+    timestamp, so every tile of a request is stamped with that request's start
+    hour. Only one request per hour can therefore produce an hourly series.
+    """
+    return {
+        "mode": "historical",
+        "features": [
+            {
+                "geometry": {"type": "Point", "coordinates": [-98.485833, 29.425833]},
+                "properties": {
+                    "id": f"tcm-{hour:02d}",
+                    "value": value,
+                    "unit": "C",
+                    "valid_time": f"2026-08-23T{hour:02d}:00:00-05:00",
+                },
+            }
+        ],
+    }
+
+
 def _framing_payload(value: float) -> dict[str, object]:
     return {
         "mode": "historical",
@@ -138,9 +162,11 @@ def test_temporal_adapter_chains_one_heatmap_call_into_one_env_params_call(
 
     response = adapter.analyze(_request(), ExecutionMode.LIVE)
 
-    assert len(heatmap_requests) == 3
+    tcm_requests = [request for request in heatmap_requests if request.analytic_type.value == "tcm"]
+    assert len(heatmap_requests) == 14
+    assert len(tcm_requests) == 12
     assert len(env_requests) == 1
-    heatmap_request = heatmap_requests[0]
+    heatmap_request = tcm_requests[0]
     env_request = env_requests[0]
     assert (heatmap_request.latitude, heatmap_request.longitude) == (
         _request().destination.latitude,
@@ -150,10 +176,10 @@ def test_temporal_adapter_chains_one_heatmap_call_into_one_env_params_call(
         heatmap_request.latitude,
         heatmap_request.longitude,
     )
-    assert (heatmap_request.start_date, heatmap_request.start_hour, heatmap_request.end_hour) == (
-        env_request.start_date,
-        env_request.start_hour,
-        env_request.end_hour,
+    assert heatmap_request.start_date == env_request.start_date
+    assert (env_request.start_hour, env_request.end_hour) == (
+        _request().start_hour,
+        _request().end_hour,
     )
     assert env_request.temperature_anchor_celsius == 39.4
     assert response.state is ResultState.DEGRADED
@@ -176,6 +202,122 @@ def test_temporal_adapter_chains_one_heatmap_call_into_one_env_params_call(
     assert response.best_time.metric_label.value == "provider_tcm"
     assert response.best_time.hourly[0].metric.label.value == "noaa_heat_index"
     assert response.best_time.hourly[1].metric.label.value == "provider_tcm"
+
+
+def test_hourly_fanout_issues_one_heatmap_request_per_hour(tmp_path: Path) -> None:
+    """Twelve single-hour requests, twelve hourly entries — the chart's precondition."""
+    requested: list[HeatmapRequest] = []
+    lock = threading.Lock()
+
+    def load_heatmap(request: HeatmapRequest) -> Mapping[str, object]:
+        with lock:
+            requested.append(request)
+        if request.analytic_type.value != "tcm":
+            return _framing_payload(1.0)
+        assert request.start_hour is not None
+        return _hour_payload(request.start_hour, 30.0 + request.start_hour)
+
+    adapter = TemporalTripAnalysisAdapter(
+        HeatmapExecution(fixture_path=tmp_path / "heatmap.json", live_loader=load_heatmap),
+        EnvParamsExecution(
+            fixture_path=tmp_path / "env.json",
+            live_loader=lambda request: _env_payload(),
+        ),
+    )
+
+    response = adapter.analyze(_request(), ExecutionMode.LIVE)
+
+    tcm_windows: list[tuple[int, int]] = []
+    for request in requested:
+        if request.analytic_type.value != "tcm":
+            continue
+        assert request.start_hour is not None and request.end_hour is not None
+        tcm_windows.append((request.start_hour, request.end_hour))
+    assert sorted(start for start, _ in tcm_windows) == list(range(8, 20))
+    assert all(end == start + 1 for start, end in tcm_windows)
+    assert response.best_time is not None
+    assert tuple(entry.hour for entry in response.best_time.hourly) == tuple(range(8, 20))
+    assert response.best_time.provenance.request_configuration["unavailable_hours"] == []
+
+
+def test_one_failing_hour_keeps_the_remaining_series_and_records_the_gap(tmp_path: Path) -> None:
+    def load_heatmap(request: HeatmapRequest) -> Mapping[str, object]:
+        if request.analytic_type.value != "tcm":
+            raise ConnectionError("framing unavailable")
+        assert request.start_hour is not None
+        if request.start_hour == 13:
+            raise ConnectionError("hour 13 unavailable")
+        return _hour_payload(request.start_hour, 30.0 + request.start_hour)
+
+    adapter = TemporalTripAnalysisAdapter(
+        HeatmapExecution(fixture_path=tmp_path / "heatmap.json", live_loader=load_heatmap),
+        EnvParamsExecution(
+            fixture_path=tmp_path / "env.json",
+            live_loader=lambda request: _env_payload(),
+        ),
+    )
+
+    response = adapter.analyze(_request(), ExecutionMode.LIVE)
+
+    assert response.state is ResultState.DEGRADED
+    assert response.best_time is not None
+    hours = tuple(entry.hour for entry in response.best_time.hourly)
+    assert hours == tuple(hour for hour in range(8, 20) if hour != 13)
+    assert response.best_time.provenance.request_configuration["unavailable_hours"] == [13]
+    assert response.best_time.provenance.note is not None
+    assert "13:00" in response.best_time.provenance.note
+    assert "13:00" in response.best_time.recommendation_reason
+
+
+def test_preflight_budget_guard_refuses_without_spending_a_call(tmp_path: Path) -> None:
+    calls = 0
+
+    def load_heatmap(request: HeatmapRequest) -> Mapping[str, object]:
+        nonlocal calls
+        calls += 1
+        return _heatmap_payload()
+
+    env_calls = 0
+
+    def load_environment(request: EnvParamsRequest) -> Mapping[str, object]:
+        nonlocal env_calls
+        env_calls += 1
+        return _env_payload()
+
+    adapter = TemporalTripAnalysisAdapter(
+        HeatmapExecution(fixture_path=tmp_path / "heatmap.json", live_loader=load_heatmap),
+        EnvParamsExecution(fixture_path=tmp_path / "env.json", live_loader=load_environment),
+        remaining_calls=lambda: 10,
+    )
+
+    response = adapter.analyze(_request(), ExecutionMode.LIVE)
+
+    assert calls == 0
+    assert env_calls == 0
+    assert response.state is ResultState.UNAVAILABLE
+    assert response.unavailable is not None
+    assert response.unavailable.code == "insufficient_call_budget"
+    assert "17 provider calls" in response.unavailable.reason
+    assert "only 10 remain" in response.unavailable.reason
+
+
+def test_preflight_budget_guard_allows_an_affordable_window(tmp_path: Path) -> None:
+    adapter = TemporalTripAnalysisAdapter(
+        HeatmapExecution(
+            fixture_path=tmp_path / "heatmap.json",
+            live_loader=lambda request: _heatmap_payload(),
+        ),
+        EnvParamsExecution(
+            fixture_path=tmp_path / "env.json",
+            live_loader=lambda request: _env_payload(),
+        ),
+        remaining_calls=lambda: 17,
+    )
+
+    response = adapter.analyze(_request(), ExecutionMode.LIVE)
+
+    assert response.state is ResultState.DEGRADED
+    assert response.best_time is not None
 
 
 def test_temporal_adapter_preserves_best_time_for_unavailable_routes(
@@ -268,7 +410,7 @@ def test_env_params_unavailable_returns_explicit_unavailable_after_one_call(
 
     response = adapter.analyze(_request(), ExecutionMode.LIVE)
 
-    assert heatmap_calls == 3
+    assert heatmap_calls == 14
     assert env_calls == 1
     assert response.state is ResultState.DEGRADED
     assert response.best_time is not None

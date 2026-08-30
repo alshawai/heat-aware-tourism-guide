@@ -76,10 +76,35 @@ ALLOW_LIVE=false .venv/bin/uvicorn app.main:app --reload   # backend on :8000
 npm run frontend:dev                                       # frontend on :5173
 ```
 
-Open `http://127.0.0.1:5173`, set the trip date to `2024-07-15`, and analyze
-the curated Menger Hotel to The Alamo trip. The full walkthrough, including
+Open `http://127.0.0.1:5173` and analyze the prefilled Menger Hotel to The
+Alamo trip. In fixture mode the date and window are the acquired scenario's own,
+so they are submitted for you; moving both pins to another acquired pair swaps in
+that scenario's window. The full walkthrough, including
 alternate scenarios and the unavailable state, is in the
 [tutorial](docs/tutorials/first-run.md).
+
+## Running Live
+
+A local run reads `.env`, which is gitignored. Set `ALLOW_LIVE=true` there with a
+`FORTYGUARD_API_KEY` and the server declares `mode: live` on `/health`; the
+frontend then sends `execution_mode: live` for every trip analysis and hotel
+ranking, so no screen replays fixtures or mock data:
+
+```bash
+npm run backend:dev    # http://127.0.0.1:8000, live when .env says ALLOW_LIVE=true
+npm run frontend:dev   # Vite dev server, proxied to the API above
+curl -s http://127.0.0.1:8000/health
+```
+
+`ALLOW_LIVE=true` without a key fails fast at startup. A live trip analysis now
+spends one heatmap activity per hour in the window plus the environmental,
+route-heat, and framing calls, and a custom hour override spends another set, so
+set `FORTYGUARD_CALL_BUDGET` to cap the account-lifetime call count before a long
+session. To review the flow without spending credits, force fixtures for one run:
+
+```bash
+ALLOW_LIVE=false npm run backend:dev
+```
 
 ## Quality gates
 
