@@ -527,6 +527,19 @@ dd {
   margin-top: 20px;
   align-items: center;
 }
+.decision-banner {
+  margin: 0 0 22px;
+  padding: 16px 18px;
+  border-left: 4px solid #c18320;
+  background: #fff3d9;
+  color: #684c1b;
+  line-height: 1.5;
+}
+.route-geometry-note {
+  padding: 16px 18px;
+  border-left: 4px solid var(--line);
+  background: var(--panel);
+}
 .route-detail strong,
 .local-score strong {
   font-size: 22px;

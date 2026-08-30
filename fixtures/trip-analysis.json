@@ -91,6 +91,13 @@
         "identity": "short",
         "distance_m": 193.1,
         "duration_s": 154.7,
+        "geometry": {
+          "type": "LineString",
+          "coordinates": [
+            [-98.4864288, 29.4245914],
+            [-98.485833, 29.425833]
+          ]
+        },
         "heat_value": 38,
         "modeled_shade_percent": 20,
         "building_coverage": 0.9
@@ -99,6 +106,14 @@
         "identity": "shady",
         "distance_m": 245.0,
         "duration_s": 196.0,
+        "geometry": {
+          "type": "LineString",
+          "coordinates": [
+            [-98.4864288, 29.4245914],
+            [-98.4861, 29.4252],
+            [-98.485833, 29.425833]
+          ]
+        },
         "heat_value": 38,
         "modeled_shade_percent": 80,
         "building_coverage": 0.9,

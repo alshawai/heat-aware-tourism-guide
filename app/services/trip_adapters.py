@@ -785,6 +785,7 @@ def _route_option(
     item = _mapping(value, "route alternative")
     identity = _string(item["identity"], "route identity")
     shade = item.get("modeled_shade_percent")
+    geometry = _route_geometry(item.get("geometry"))
     return RouteOption(
         identity=identity,
         distance_m=_number(item["distance_m"], "distance_m"),
@@ -813,6 +814,7 @@ def _route_option(
             metric=metric,
             cautious=cautious,
         ),
+        geometry=geometry,
     )
 
 
@@ -953,6 +955,24 @@ def _boolean(value: object, field: str) -> bool:
 def _number_dict(value: object, field: str) -> dict[str, float]:
     mapping = _mapping(value, field)
     return {str(key): _number(item, f"{field}.{key}") for key, item in mapping.items()}
+
+
+def _route_geometry(value: object) -> tuple[tuple[float, float], ...]:
+    coordinates = _mapping(value, "route geometry").get("coordinates")
+    if not isinstance(coordinates, list):
+        raise ValueError("route geometry coordinates must be a list")
+    return tuple(
+        (
+            _number(_mapping(point, "route geometry point").get("longitude"), "longitude")
+            if isinstance(point, Mapping)
+            else _number(point[0], "longitude"),
+            _number(_mapping(point, "route geometry point").get("latitude"), "latitude")
+            if isinstance(point, Mapping)
+            else _number(point[1], "latitude"),
+        )
+        for point in coordinates
+        if isinstance(point, (list, tuple, Mapping))
+    )
 
 
 def _request_identity(request: TripAnalysisRequest) -> str:

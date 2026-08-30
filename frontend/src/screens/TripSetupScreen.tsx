@@ -1,5 +1,6 @@
 import { AlertTriangle, CheckCircle2, Database, Radio } from "lucide-react";
 import { useEffect, useRef, useState, type FormEvent } from "react";
+import { Link } from "react-router-dom";
 import { useAppState } from "../app/AppState";
 import { dataClient } from "../services/dataClient";
 import type {
@@ -566,6 +567,13 @@ export function TripSetupScreen() {
                     value={tripAnalysis.best_time.heat_interpretation}
                   />
                 </>
+              )}
+            {(tripAnalysis.state === "success" ||
+              tripAnalysis.state === "degraded") &&
+              tripAnalysis.routes && (
+                <Link className="button-link" to="/walk/routes">
+                  Compare returned routes
+                </Link>
               )}
             <button
               type="button"
