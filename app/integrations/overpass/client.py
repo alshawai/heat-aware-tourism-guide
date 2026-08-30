@@ -1,4 +1,4 @@
-"""Bounded Overpass client for hotel queries."""
+"""Bounded Overpass client for hotel and route-building queries."""
 
 from __future__ import annotations
 
@@ -32,7 +32,13 @@ class OverpassClient:
         self._sleep = sleep
 
     def query(self, aoi: BoundingBox) -> dict[str, object]:
-        query = build_hotel_query(aoi)
+        return self._execute(build_hotel_query(aoi))
+
+    def query_buildings(self, aoi: BoundingBox) -> dict[str, object]:
+        """Fetch polygon geometry and height tags for one bounded route AOI."""
+        return self._execute(build_building_query(aoi))
+
+    def _execute(self, query: str) -> dict[str, object]:
         for attempt in range(1, self._max_attempts + 1):
             try:
                 return self._transport.execute(query)
@@ -46,3 +52,15 @@ class OverpassClient:
 def build_hotel_query(aoi: BoundingBox) -> str:
     bounds = ",".join(format(value, ".12g") for value in (aoi.south, aoi.west, aoi.north, aoi.east))
     return f'[out:json][timeout:60];\nnwr["tourism"="hotel"]({bounds});\nout center;'
+
+
+def build_building_query(aoi: BoundingBox) -> str:
+    bounds = ",".join(
+        format(value, ".12g") for value in (aoi.south, aoi.west, aoi.north, aoi.east)
+    )
+    return (
+        '[out:json][timeout:60];\n('
+        f'way["building"]({bounds});relation["building"]({bounds});'
+        f'way["building:part"]({bounds});relation["building:part"]({bounds});'
+        ');\nout body geom;'
+    )

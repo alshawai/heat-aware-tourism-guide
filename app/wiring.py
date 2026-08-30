@@ -52,6 +52,7 @@ from app.services.hotel_heat_score import build_fixture_hotel_heat_analysis_serv
 from app.services.execution import EnvParamsExecution, HeatmapExecution
 from app.services.ledger_store import JsonlLedgerStore
 from app.services.route_analysis import RouteAnalysisService
+from app.services.route_shade import RouteShadeService
 from app.services.routing import RouteExecution
 from app.services.trip_adapters import (
     FixtureTripAnalysisAdapter,
@@ -435,6 +436,22 @@ def build_live_route_analysis_service(
         client,
         polling=settings.polling,
     )
+    overpass = settings.overpass
+    shade = settings.shade
+    shade_service = RouteShadeService(
+        OverpassClient(
+            HttpOverpassTransport(
+                overpass.endpoint,
+                user_agent=overpass.user_agent,
+                timeout_seconds=overpass.timeout_seconds,
+            ),
+            max_attempts=overpass.max_attempts,
+            retry_delay_seconds=overpass.retry_delay_seconds,
+        ),
+        corridor_buffer_m=shade.building_search_distance_m,
+        minimum_building_coverage=shade.minimum_building_height_coverage,
+        metres_per_level=shade.metres_per_level,
+    )
     return RouteAnalysisService(
         route_execution,
         profile=osrm.profile,
@@ -449,6 +466,7 @@ def build_live_route_analysis_service(
         corridor_buffer_m=settings.area.buffer_m,
         corridor_granularity=settings.area.granularity,
         shared_heat_loader=shared_heat.load,
+        shade_evidence_loader=shade_service.load,
     )
 
 

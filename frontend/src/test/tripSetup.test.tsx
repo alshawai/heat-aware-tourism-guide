@@ -26,6 +26,9 @@ const successResponse = {
     persistence_hours: 2,
     framing_threshold_celsius: 35,
     framing_direction: "above",
+    recommendation_time: "2026-08-23T09:00:00-05:00",
+    recommendation_timezone: "America/Chicago",
+    temporal_evidence: "exact",
     environmental_concerns: [],
     provenance: {
       source: "fixture",

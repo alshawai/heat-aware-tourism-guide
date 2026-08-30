@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Sequence, cast
+from typing import Mapping, Sequence, cast
 
 from app.domain.contracts import (
     Confidence,
@@ -16,6 +16,7 @@ from app.domain.contracts import (
     RouteOption,
     RouteSetState,
 )
+from app.domain.route_shade import RouteShadeEvidence, ShadeConfidence
 from app.domain.heat_policy import classify_heat
 from app.domain.route_heat import RouteHeatEvidence
 from app.domain.routing import ReturnedRoute, RouteSet
@@ -29,6 +30,8 @@ class RouteDecisionInput:
     landmark_tcm_celsius: float | None
     heat_evidence: tuple[RouteHeatEvidence, ...] | None = None
     shared_heat_unavailable: bool = False
+    nighttime: bool = False
+    shade_evidence: Mapping[str, RouteShadeEvidence] | None = None
 
 
 def decide_route_comparison(
@@ -114,6 +117,110 @@ def decide_route_comparison(
     elevated = any(item.action_required for item in interpretations)
     lowest = routes[numeric_values.index(min(numeric_values))].identity
     if elevated:
+        if decision.nighttime:
+            heat_by_id = dict(
+                zip((route.identity for route in routes), numeric_values, strict=True)
+            )
+            coolest = min(
+                routes,
+                key=lambda route: (
+                    heat_by_id[route.identity],
+                    route.distance_m,
+                    route.identity,
+                ),
+            )
+            nighttime_evidence = {
+                route.identity: RouteShadeEvidence(
+                    modeled_shade_percent=0.0,
+                    building_coverage=0.0,
+                    confidence=ShadeConfidence.NOT_APPLICABLE,
+                    explicit_area_fraction=0.0,
+                    inferred_levels_area_fraction=0.0,
+                    unknown_area_fraction=0.0,
+                    explicit_count=0,
+                    inferred_levels_count=0,
+                    unknown_count=0,
+                    dropped_geometry_count=0,
+                )
+                for route in routes
+            }
+            options = _options(
+                routes,
+                values=numeric_values,
+                cautious=cautious,
+                source=source,
+                coverages=coverages,
+                recommended_id=coolest.identity,
+                recommendation_reason="coolest returned route at night",
+                shade_evidence=nighttime_evidence,
+            )
+            return _result(
+                options, route_set_state=route_set_state,
+                decision_state=RouteDecisionState.NIGHTTIME_COOLEST_RECOMMENDED,
+                reason="sun is below the horizon; the coolest returned route is recommended",
+                confidence=Confidence.SUFFICIENT, provenance=provenance,
+                routing_provenance=routing_provenance, heat_provenance=heat_provenance,
+                heat_status=HeatStatus.ELEVATED, corridor_heat_value=max(numeric_values),
+                lowest_heat_route_id=lowest, cautious=cautious, recommended_id=coolest.identity,
+            )
+        shade_evidence = decision.shade_evidence
+        if shade_evidence is not None:
+            valid = all(
+                route.identity in shade_evidence
+                and shade_evidence[route.identity].confidence is ShadeConfidence.SUFFICIENT
+                for route in routes
+            )
+            if valid:
+                best = min(
+                    routes,
+                    key=lambda route: (
+                        -shade_evidence[route.identity].modeled_shade_percent,
+                        route.distance_m,
+                        route.identity,
+                    ),
+                )
+                options = _options(
+                    routes,
+                    values=numeric_values,
+                    cautious=cautious,
+                    source=source,
+                    coverages=coverages,
+                    recommended_id=best.identity,
+                    recommendation_reason=(
+                        "only returned route with sufficient modeled shade evidence"
+                        if len(routes) == 1
+                        else "highest modeled shade among returned routes"
+                    ),
+                    shade_evidence=shade_evidence,
+                )
+                state = (RouteDecisionState.SHADE_ONLY_ROUTE_RECOMMENDED
+                         if len(routes) == 1 else RouteDecisionState.SHADE_SHADIEST_RECOMMENDED)
+                return _result(
+                    options, route_set_state=route_set_state, decision_state=state,
+                    reason="highest modeled OSM building shade among returned routes is recommended",
+                    confidence=Confidence.SUFFICIENT, provenance=provenance,
+                    routing_provenance=routing_provenance, heat_provenance=heat_provenance,
+                    heat_status=HeatStatus.ELEVATED, corridor_heat_value=max(numeric_values),
+                    lowest_heat_route_id=lowest, cautious=cautious, recommended_id=best.identity,
+                )
+            options = _options(
+                routes,
+                values=numeric_values,
+                cautious=cautious,
+                source=source,
+                coverages=coverages,
+                shade_evidence=shade_evidence,
+            )
+            return _result(
+                options, route_set_state=route_set_state,
+                decision_state=RouteDecisionState.INSUFFICIENT_SHADE_COMPARISON_REQUIRED,
+                reason="daytime building-shade evidence is insufficient; compare returned route trade-offs",
+                confidence=Confidence.INSUFFICIENT, provenance=provenance,
+                routing_provenance=routing_provenance, heat_provenance=heat_provenance,
+                heat_status=HeatStatus.ELEVATED, corridor_heat_value=max(numeric_values),
+                fallback_reason="building-height coverage or solar evidence was insufficient",
+                lowest_heat_route_id=lowest, cautious=cautious,
+            )
         options = _options(
             routes,
             values=numeric_values,
@@ -170,6 +277,8 @@ def _options(
     source: RouteHeatSource | None = None,
     coverages: Sequence[float | None] | None = None,
     recommended_id: str | None = None,
+    recommendation_reason: str = "shortest returned route under mild heat",
+    shade_evidence: Mapping[str, RouteShadeEvidence] | None = None,
 ) -> tuple[RouteOption, ...]:
     result: list[RouteOption] = []
     for index, (route, value) in enumerate(zip(routes, values, strict=True)):
@@ -181,6 +290,7 @@ def _options(
             if value is not None
             else None
         )
+        shade = (shade_evidence or {}).get(route_identity)
         result.append(
             RouteOption(
                 identity=route_identity,
@@ -196,20 +306,31 @@ def _options(
                 )
                 if interpretation
                 else None,
-                modeled_shade_percent=None,
-                shade_confidence=None,
-                building_coverage=0.0,
+                modeled_shade_percent=shade.modeled_shade_percent if shade else None,
+                shade_confidence=shade.confidence if shade else None,
+                building_coverage=shade.building_coverage if shade else 0.0,
                 recommended=route_identity == recommended_id,
                 recommendation_reason=(
-                    "shortest returned route under mild heat"
-                    if route_identity == recommended_id
-                    else None
+                    recommendation_reason if route_identity == recommended_id else None
                 ),
-                shade_model_label=None,
+                shade_model_label=(
+                    "modeled OSM building-shade estimate, not measured real-world shade"
+                    if shade else None
+                ),
                 heat_interpretation=interpretation,
                 geometry=route.geometry.coordinates,
                 heat_coverage=coverages[index] if coverages is not None else None,
                 heat_source=source,
+                building_explicit_fraction=shade.explicit_area_fraction if shade else 0.0,
+                building_inferred_levels_fraction=(
+                    shade.inferred_levels_area_fraction if shade else 0.0
+                ),
+                building_unknown_fraction=shade.unknown_area_fraction if shade else 0.0,
+                building_explicit_count=shade.explicit_count if shade else 0,
+                building_inferred_levels_count=shade.inferred_levels_count if shade else 0,
+                building_unknown_count=shade.unknown_count if shade else 0,
+                dropped_building_geometry_count=(shade.dropped_geometry_count if shade else 0),
+                shade_limitations=shade.limitations if shade else (),
             )
         )
     return tuple(result)

@@ -5,13 +5,15 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from datetime import date, datetime
 
-from shapely.geometry import shape
+from shapely.geometry import MultiLineString, shape
 
 from app.domain.contracts import (
     BestTimeResult,
     Confidence,
     Provenance,
     RouteComparisonResult,
+    RouteDecisionState,
+    TemporalEvidenceState,
     TripAnalysisRequest,
 )
 from app.domain.route_decision import RouteDecisionInput, decide_route_comparison
@@ -20,7 +22,8 @@ from app.domain.route_heat import (
     aggregate_shared_route_heat,
     build_shared_route_aoi,
 )
-from app.domain.routing import RouteRequest
+from app.domain.route_shade import RouteShadeEvidence, SolarPosition, solar_position
+from app.domain.routing import RouteRequest, RouteSet
 from app.integrations.fortyguard.contracts import (
     AnalyticType,
     HeatmapRequest,
@@ -39,6 +42,11 @@ from app.services.routing import (
 
 class SharedRouteHeatUnavailable(RuntimeError):
     """The shared corridor activity could not provide normalized heat evidence."""
+
+
+ShadeEvidence = Mapping[str, RouteShadeEvidence]
+ShadeEvidenceLoader = Callable[[RouteSet, SolarPosition, datetime], ShadeEvidence]
+SolarLocator = Callable[[datetime, float, float], SolarPosition]
 
 
 class RouteAnalysisService:
@@ -63,6 +71,8 @@ class RouteAnalysisService:
             [SharedRouteHeatRequest], Mapping[str, object] | LiveHeatmapPayload
         ]
         | None = None,
+        shade_evidence_loader: ShadeEvidenceLoader | None = None,
+        solar_locator: SolarLocator = solar_position,
         clock: Callable[[], datetime] = lambda: datetime.now().astimezone(),
     ) -> None:
         self.route_execution = route_execution
@@ -78,6 +88,8 @@ class RouteAnalysisService:
         self.corridor_buffer_m = corridor_buffer_m
         self.corridor_granularity = corridor_granularity
         self.shared_heat_loader = shared_heat_loader
+        self.shade_evidence_loader = shade_evidence_loader
+        self.solar_locator = solar_locator
         self.clock = clock
 
     def analyze(
@@ -113,13 +125,13 @@ class RouteAnalysisService:
 
         if not outcome.routes.any_longer_than(self.representative_distance_m):
             heat_provenance = _landmark_heat_provenance(best_time.provenance)
-            return decide_route_comparison(
+            return self._decide(
                 RouteDecisionInput(
                     route_set=outcome.routes,
                     landmark_tcm_celsius=best_time.recommended_hour_tcm_celsius,
                 ),
-                cautious=request.cautious,
-                provenance=_decision_provenance(routing_provenance, heat_provenance),
+                request=request,
+                best_time=best_time,
                 routing_provenance=routing_provenance,
                 heat_provenance=heat_provenance,
             )
@@ -160,14 +172,87 @@ class RouteAnalysisService:
                 heat_provenance=None,
             )
         heat_provenance = _shared_heat_provenance(heatmap)
-        return decide_route_comparison(
+        return self._decide(
             RouteDecisionInput(
                 route_set=outcome.routes,
                 landmark_tcm_celsius=None,
                 heat_evidence=evidence,
             ),
+            request=request,
+            best_time=best_time,
+            routing_provenance=routing_provenance,
+            heat_provenance=heat_provenance,
+        )
+
+    def _decide(
+        self,
+        decision: RouteDecisionInput,
+        *,
+        request: TripAnalysisRequest,
+        best_time: BestTimeResult,
+        routing_provenance: Provenance,
+        heat_provenance: Provenance,
+    ) -> RouteComparisonResult:
+        provenance = _decision_provenance(routing_provenance, heat_provenance)
+        preliminary = decide_route_comparison(
+            decision,
             cautious=request.cautious,
-            provenance=_decision_provenance(routing_provenance, heat_provenance),
+            provenance=provenance,
+            routing_provenance=routing_provenance,
+            heat_provenance=heat_provenance,
+        )
+        if (
+            preliminary.decision_state is not RouteDecisionState.SHADE_REQUIRED
+            or self.shade_evidence_loader is None
+            or decision.route_set is None
+        ):
+            return preliminary
+        if (
+            best_time.temporal_evidence is not TemporalEvidenceState.EXACT
+            or best_time.recommendation_time is None
+        ):
+            shade_decision = RouteDecisionInput(
+                decision.route_set,
+                decision.landmark_tcm_celsius,
+                decision.heat_evidence,
+                shade_evidence={},
+            )
+        else:
+            route_geometry = MultiLineString(
+                [route.geometry.coordinates for route in decision.route_set.routes]
+            )
+            centroid = route_geometry.centroid
+            solar = self.solar_locator(
+                best_time.recommendation_time,
+                centroid.y,
+                centroid.x,
+            )
+            if solar.elevation_degrees <= 0:
+                shade_decision = RouteDecisionInput(
+                    decision.route_set,
+                    decision.landmark_tcm_celsius,
+                    decision.heat_evidence,
+                    nighttime=True,
+                )
+            else:
+                try:
+                    shade_evidence = self.shade_evidence_loader(
+                        decision.route_set,
+                        solar,
+                        best_time.recommendation_time,
+                    )
+                except (ConnectionError, OSError, RuntimeError, TimeoutError, ValueError):
+                    shade_evidence = {}
+                shade_decision = RouteDecisionInput(
+                    decision.route_set,
+                    decision.landmark_tcm_celsius,
+                    decision.heat_evidence,
+                    shade_evidence=shade_evidence,
+                )
+        return decide_route_comparison(
+            shade_decision,
+            cautious=request.cautious,
+            provenance=provenance,
             routing_provenance=routing_provenance,
             heat_provenance=heat_provenance,
         )

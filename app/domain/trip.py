@@ -76,7 +76,7 @@ class RouteCandidate:
 
 @dataclass(frozen=True)
 class RouteComparison:
-    recommended_id: str
+    recommended_id: str | None
     reason: str
     corridor_heat_value: float
     shade_was_computed: bool
@@ -111,7 +111,7 @@ class RouteComparator:
         shade_values = {route.identity: shade(route) for route in routes}
         if building_coverage < 0.7:
             return RouteComparison(
-                shortest.identity, "insufficient shade coverage", corridor_heat, True
+                None, "insufficient shade coverage; traveler comparison required", corridor_heat, True
             )
         best = max(routes, key=lambda route: (shade_values[route.identity], -route.distance_m))
         return RouteComparison(
