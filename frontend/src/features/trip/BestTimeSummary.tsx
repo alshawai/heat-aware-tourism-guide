@@ -1,3 +1,4 @@
+import { AlertTriangle } from "lucide-react";
 import type { BestTimeResult } from "../../types";
 import { formatClockHour, formatMetric, formatParameterName } from "./format";
 
@@ -25,6 +26,13 @@ export function BestTimeSummary({ result }: { result: BestTimeResult }) {
     <section aria-label="Best visit time">
       <h3>Recommended visit: {formatClockHour(result.recommendation_hour)}</h3>
       <p>{result.recommendation_reason}</p>
+      {result.temporal_evidence === "inconsistent" && (
+        <p className="series-warning" role="note">
+          <AlertTriangle size={17} />
+          The provider timestamp is inconsistent with local time, so this is an
+          hour-only recommendation.
+        </p>
+      )}
       <p>
         {source}, {dataMode}, {freshness}. Data date:{" "}
         {result.provenance.data_date}.

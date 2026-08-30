@@ -21,6 +21,14 @@ function isResultSection(value: unknown) {
   return value === null || isObject(value);
 }
 
+function hasExactKeys(value: Record<string, unknown>, expected: string[]) {
+  const actual = Object.keys(value);
+  return (
+    actual.length === expected.length &&
+    actual.every((key) => expected.includes(key))
+  );
+}
+
 function isNullableFiniteNumber(value: unknown) {
   return (
     value === null || (typeof value === "number" && Number.isFinite(value))
@@ -55,7 +63,11 @@ function validEnvironment(value: unknown) {
     ) &&
     typeof provenance.source === "string" &&
     typeof provenance.data_date === "string" &&
-    typeof provenance.retrieved_at === "string" &&
+    (provenance.source === "synthesized"
+      ? provenance.retrieved_at === null
+      : provenance.retrieved_at !== null &&
+        typeof provenance.retrieved_at === "string" &&
+        !Number.isNaN(Date.parse(provenance.retrieved_at))) &&
     typeof provenance.provider === "string" &&
     typeof provenance.response_status === "string" &&
     typeof provenance.fresh === "boolean" &&
@@ -87,7 +99,11 @@ function validUnavailable(value: unknown) {
     isObject(value) &&
     typeof value.reason === "string" &&
     value.reason.length > 0 &&
-    typeof value.recoverable === "boolean"
+    typeof value.recoverable === "boolean" &&
+    (value.code === undefined || typeof value.code === "string") &&
+    (value.action === undefined ||
+      value.action === null ||
+      typeof value.action === "string")
   );
 }
 
@@ -191,6 +207,149 @@ function isUnitFraction(value: unknown) {
     Number.isFinite(value) &&
     value >= 0 &&
     value <= 1
+  );
+}
+
+function validApiProvenance(value: unknown) {
+  return (
+    isObject(value) &&
+    typeof value.source === "string" &&
+    typeof value.data_date === "string" &&
+    ["sufficient", "insufficient"].includes(String(value.confidence)) &&
+    (value.source === "synthesized"
+      ? value.retrieved_at === null
+      : value.retrieved_at !== null &&
+        typeof value.retrieved_at === "string" &&
+        !Number.isNaN(Date.parse(value.retrieved_at))) &&
+    typeof value.transformation_version === "string" &&
+    typeof value.provider === "string" &&
+    typeof value.response_status === "string" &&
+    isObject(value.request_configuration) &&
+    typeof value.fresh === "boolean" &&
+    (value.coverage === null || isUnitFraction(value.coverage)) &&
+    (value.note === null || typeof value.note === "string") &&
+    (value.activity_id === null || typeof value.activity_id === "string")
+  );
+}
+
+const hotelComponents = ["night", "hot_hours", "persistence", "day"];
+
+function validHotels(value: unknown) {
+  if (value === null) return true;
+  if (
+    !isObject(value) ||
+    !Array.isArray(value.ranked) ||
+    !isNonNegativeInteger(value.usable_count) ||
+    value.usable_count !== value.ranked.length ||
+    !isNonNegativeInteger(value.discovered_count) ||
+    !validApiProvenance(value.provenance) ||
+    !isObject(value.weights) ||
+    !isObject(value.component_units) ||
+    !isObject(value.enrichment) ||
+    !hasExactKeys(value, [
+      "ranked",
+      "weights",
+      "usable_count",
+      "discovered_count",
+      "provenance",
+      "enrichment",
+      "component_units",
+      "component_temporal_metadata",
+    ]) ||
+    !hasExactKeys(value.weights, hotelComponents) ||
+    !hasExactKeys(value.component_units, hotelComponents) ||
+    !hasExactKeys(value.enrichment, ["state", "code", "reason"])
+  ) {
+    return false;
+  }
+  const weights = value.weights as Record<string, unknown>;
+  const componentUnits = value.component_units as Record<string, unknown>;
+  const discoveredCount = value.discovered_count as number;
+  if (
+    !hotelComponents.every(
+      (component) =>
+        typeof weights[component] === "number" &&
+        Number.isFinite(weights[component]) &&
+        Number(weights[component]) >= 0
+    ) ||
+    Math.abs(
+      hotelComponents.reduce(
+        (sum, component) => sum + Number(weights[component]),
+        0
+      ) - 1
+    ) > 0.001 ||
+    componentUnits.night !== "C" ||
+    componentUnits.day !== "C" ||
+    componentUnits.hot_hours !== "hours" ||
+    componentUnits.persistence !== "hours" ||
+    discoveredCount < Number(value.usable_count)
+  ) {
+    return false;
+  }
+  const enrichment = value.enrichment;
+  const enrichmentValid =
+    enrichment.state === "unavailable"
+      ? enrichment.code === "optional_provider_failure" &&
+        typeof enrichment.reason === "string" &&
+        enrichment.reason.length > 0
+      : ["available", "not_requested"].includes(String(enrichment.state)) &&
+        enrichment.code === null &&
+        enrichment.reason === null;
+  const temporal = value.component_temporal_metadata;
+  const temporalValid =
+    temporal === null ||
+    (isObject(temporal) &&
+      ["night", "day"].every((component) => {
+        const metadata = temporal[component];
+        return (
+          isObject(metadata) &&
+          hasExactKeys(metadata, [
+            "start",
+            "end",
+            "timezone",
+            "interval",
+            "temporal_basis",
+            "provider_window_validated",
+            "caveat_code",
+          ]) &&
+          typeof metadata.start === "string" &&
+          typeof metadata.end === "string" &&
+          typeof metadata.timezone === "string" &&
+          metadata.interval === "[start,end)" &&
+          typeof metadata.temporal_basis === "string" &&
+          typeof metadata.provider_window_validated === "boolean" &&
+          typeof metadata.caveat_code === "string"
+        );
+      }));
+  return (
+    enrichmentValid &&
+    temporalValid &&
+    value.ranked.every((hotel) => {
+      if (!isObject(hotel) || !isObject(hotel.components)) return false;
+      const components = hotel.components;
+      return (
+        hasExactKeys(hotel, [
+          "identity",
+          "components",
+          "score",
+          "percentile",
+          "tie_group",
+        ]) &&
+        hasExactKeys(components, hotelComponents) &&
+        typeof hotel.identity === "string" &&
+        hotelComponents.every(
+          (component) =>
+            typeof components[component] === "number" &&
+            Number.isFinite(components[component])
+        ) &&
+        typeof hotel.score === "number" &&
+        Number.isFinite(hotel.score) &&
+        typeof hotel.percentile === "number" &&
+        hotel.percentile >= 0 &&
+        hotel.percentile <= 100 &&
+        isNonNegativeInteger(hotel.tie_group)
+      );
+    })
   );
 }
 
@@ -413,18 +572,54 @@ function isTripAnalysisResponse(
   value: unknown,
   request: TripAnalysisRequest
 ): value is TripAnalysisResponse {
+  const modern = isObject(value) && value.schema_version === "trip-contract-v2";
+  const modernEnvelopeKeys = [
+    "schema_version",
+    "state",
+    "best_time",
+    "hotels",
+    "routes",
+    "unavailable",
+    "degraded_reasons",
+    "request_identity",
+    "mode",
+    "execution_mode",
+  ];
+  if (
+    modern &&
+    !hasExactKeys(
+      value,
+      value.result_set_token === undefined
+        ? modernEnvelopeKeys
+        : [...modernEnvelopeKeys, "result_set_token"]
+    )
+  ) {
+    return false;
+  }
   if (
     !isObject(value) ||
     value.request_identity !==
       `${request.mode}:${request.date}:${request.start_hour}-${request.end_hour}` ||
     value.mode !== request.mode ||
     value.execution_mode !== request.execution_mode ||
-    !["series_ready", "success", "degraded", "unavailable", "error"].includes(
-      String(value.state)
+    !(
+      value.result_set_token === undefined ||
+      typeof value.result_set_token === "string"
     ) ||
-    !(value.environment === null || validEnvironment(value.environment)) ||
+    !(modern
+      ? ["success", "degraded", "unavailable"].includes(String(value.state))
+      : [
+          "series_ready",
+          "success",
+          "degraded",
+          "unavailable",
+          "error",
+        ].includes(String(value.state))) ||
+    !(modern
+      ? value.environment === undefined
+      : value.environment === null || validEnvironment(value.environment)) ||
     !validBestTime(value.best_time) ||
-    !isResultSection(value.hotels) ||
+    !(modern ? validHotels(value.hotels) : isResultSection(value.hotels)) ||
     !validRoutes(value.routes)
   ) {
     return false;
@@ -438,7 +633,7 @@ function isTripAnalysisResponse(
       value.degraded_reasons === null
     );
   }
-  if (value.environment !== null) return false;
+  if (!modern && value.environment !== null) return false;
   if (value.state === "success") {
     return Boolean(
       value.best_time &&
@@ -451,6 +646,9 @@ function isTripAnalysisResponse(
   if (value.state === "degraded") {
     const reasons = value.degraded_reasons;
     if (!validReasons(reasons)) return false;
+    if (modern) {
+      return hasResults && value.unavailable === null;
+    }
     const expectedReasons = [
       ...(!value.best_time ? ["best_time"] : []),
       ...(!value.hotels ? ["hotels"] : []),
@@ -513,9 +711,121 @@ function isEnrichmentResponse(value: unknown): value is EnrichmentResponse {
   );
 }
 
+type ColdStartRetryReason = "timeout" | "network" | "server";
+
+type ResilienceOptions = {
+  signal?: AbortSignal;
+  /** Maximum cold-start retries after the first attempt. 0 (default) = plain fetch. */
+  retries?: number;
+  /** Per-attempt timeout in ms. Omitted (default) = no timeout, exactly like fetch. */
+  timeoutMs?: number;
+  onRetry?: (info: { attempt: number; reason: ColdStartRetryReason }) => void;
+};
+
+// A free-tier host (e.g. Render) spins the service down after idle and then
+// stalls or returns a proxy error for ~1 minute while it wakes. These statuses
+// and any transport failure are therefore treated as "the server is waking up"
+// and retried, rather than surfaced immediately as a terminal error.
+const COLD_START_STATUSES = new Set([502, 503, 504]);
+const DEFAULT_COLD_START_RETRIES = 5;
+const DEFAULT_ATTEMPT_TIMEOUT_MS = 12_000;
+const COLD_START_BACKOFF_MS = [1_000, 2_000, 4_000, 8_000, 10_000];
+
+function coldStartBackoff(attempt: number): number {
+  return COLD_START_BACKOFF_MS[
+    Math.min(attempt - 1, COLD_START_BACKOFF_MS.length - 1)
+  ];
+}
+
+function abortableDelay(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(signal.reason ?? new DOMException("Aborted", "AbortError"));
+      return;
+    }
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(signal?.reason ?? new DOMException("Aborted", "AbortError"));
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
+// fetch that can survive a cold start. Resilience is fully opt-in: with the
+// defaults it makes a single attempt with no timeout, identical to plain fetch.
+// When retries/timeoutMs are supplied, timeouts, transport failures, and
+// 502/503/504 responses are retried with bounded backoff; a caller-initiated
+// abort is always propagated at once and never retried.
+async function resilientFetch(
+  input: string,
+  init: RequestInit,
+  resilience: ResilienceOptions = {}
+): Promise<Response> {
+  const {
+    signal: externalSignal,
+    retries = 0,
+    timeoutMs,
+    onRetry,
+  } = resilience;
+  for (let attempt = 1; ; attempt += 1) {
+    const controller = new AbortController();
+    const timer =
+      timeoutMs === undefined
+        ? undefined
+        : setTimeout(
+            () =>
+              controller.abort(
+                new DOMException("Request timed out", "TimeoutError")
+              ),
+            timeoutMs
+          );
+    const forwardAbort = () => controller.abort(externalSignal?.reason);
+    if (externalSignal) {
+      if (externalSignal.aborted) controller.abort(externalSignal.reason);
+      else
+        externalSignal.addEventListener("abort", forwardAbort, { once: true });
+    }
+    let retryReason: ColdStartRetryReason | null = null;
+    let response: Response | null = null;
+    try {
+      const result = await fetch(input, { ...init, signal: controller.signal });
+      if (COLD_START_STATUSES.has(result.status) && attempt <= retries) {
+        retryReason = "server";
+      } else {
+        response = result;
+      }
+    } catch (error) {
+      // The caller cancelled (e.g. component unmounted): never retry.
+      if (externalSignal?.aborted) throw error;
+      if (attempt > retries) throw error;
+      retryReason =
+        error instanceof DOMException && error.name === "TimeoutError"
+          ? "timeout"
+          : "network";
+    } finally {
+      if (timer !== undefined) clearTimeout(timer);
+      externalSignal?.removeEventListener("abort", forwardAbort);
+    }
+    if (response) return response;
+    if (retryReason) {
+      onRetry?.({ attempt, reason: retryReason });
+      await abortableDelay(coldStartBackoff(attempt), externalSignal);
+    }
+  }
+}
+
 export const dataClient = {
-  async getHealth(signal?: AbortSignal): Promise<HealthResponse> {
-    const value = await readJson(await fetch("/health", { signal }));
+  // Resilience is opt-in and carries the caller's abort signal, so the trip
+  // flow's health check stays fail-fast (no retries, no timeout) while the
+  // hotel flow can ask for cold-start retries.
+  async getHealth(resilience: ResilienceOptions = {}): Promise<HealthResponse> {
+    const value = await readJson(
+      await resilientFetch("/health", {}, resilience)
+    );
     if (
       !isObject(value) ||
       value.status !== "ok" ||
@@ -566,19 +876,33 @@ export const dataClient = {
     if (options.mode !== undefined || options.scenario !== undefined) {
       return mockHotelRanking(location, options);
     }
-    const health = await this.getHealth(options.signal);
+    const onColdStartRetry = options.onColdStartRetry;
+    // The hotel flow opts into full cold-start handling: a free-tier instance
+    // may be waking, so give each attempt a timeout and retry with backoff.
+    const resilience: ResilienceOptions = {
+      signal: options.signal,
+      retries: DEFAULT_COLD_START_RETRIES,
+      timeoutMs: DEFAULT_ATTEMPT_TIMEOUT_MS,
+      onRetry: onColdStartRetry
+        ? (info) => onColdStartRetry(info.attempt)
+        : undefined,
+    };
+    const health = await this.getHealth(resilience);
     const request: HotelRankRequest = {
       // The current hotel flow is scoped to the canonical district AOI.
       district_name: "Downtown San Antonio",
       execution_mode: health.mode,
     };
     const value = await readJson(
-      await fetch("/api/hotels/rank", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(request),
-        signal: options.signal,
-      })
+      await resilientFetch(
+        "/api/hotels/rank",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(request),
+        },
+        resilience
+      )
     );
     if (!isHotelRankResponse(value)) {
       throw new Error("Invalid hotel ranking response");

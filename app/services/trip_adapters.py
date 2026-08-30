@@ -9,11 +9,13 @@ from dataclasses import replace
 from datetime import date, datetime
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from pathlib import Path
+from collections.abc import Sequence
 from typing import Callable, Mapping
 
 from app.domain.contracts import (
     BestTimeResult,
     Confidence,
+    Coordinates,
     EnrichmentState,
     EnvironmentSeriesEntry,
     EnvironmentSeriesResult,
@@ -58,6 +60,11 @@ from app.services.execution import (
 from app.services.route_analysis import RouteAnalysisService
 from app.services.routing import RouteUnavailable
 from app.services.sidecars import load_acquisition_record
+from app.services.trip_contract_v2 import (
+    SCHEMA_VERSION,
+    decode_trip_analysis_v2,
+    encode_trip_analysis_v2,
+)
 
 
 FRAMING_THRESHOLD_CELSIUS = 35.0
@@ -104,8 +111,52 @@ def _merge_heatmap_results(results: tuple[HeatmapResult, ...]) -> HeatmapResult:
 
 
 class FixtureTripAnalysisAdapter:
-    def __init__(self, fixture_path: Path) -> None:
-        self.fixture_path = fixture_path
+    def __init__(self, fixture_path: Path | Sequence[Path]) -> None:
+        self.fixture_paths = (
+            (fixture_path,) if isinstance(fixture_path, Path) else tuple(fixture_path)
+        )
+        if not self.fixture_paths:
+            raise ValueError("at least one trip fixture path is required")
+        if any(not isinstance(path, Path) for path in self.fixture_paths):
+            raise ValueError("trip fixture paths must be Path values")
+        self.fixture_path = self.fixture_paths[0]
+        self._fixtures = tuple(self._load_fixture(path) for path in self.fixture_paths)
+
+    @staticmethod
+    def _load_fixture(
+        fixture_path: Path,
+    ) -> tuple[Path, Mapping[str, object], Mapping[str, object], str]:
+        with fixture_path.open(encoding="utf-8") as fixture:
+            payload = json.load(fixture)
+        if not isinstance(payload, Mapping):
+            raise ValueError(f"trip fixture {fixture_path} must contain an object")
+        record = load_acquisition_record(fixture_path)
+        if record is None:
+            raise ValueError(f"trip fixture {fixture_path} requires an acquisition sidecar")
+        if record.status not in {"ok", "unavailable"}:
+            raise ValueError(
+                f"trip fixture sidecar for {fixture_path} has unsupported status {record.status!r}"
+            )
+        if not record.request_configuration:
+            raise ValueError(f"trip fixture sidecar for {fixture_path} requires request identity")
+        schema_version = payload.get("schema_version", record.schema_version)
+        if schema_version != record.schema_version:
+            raise ValueError(f"trip fixture {fixture_path} schema does not match its sidecar")
+        fixture_request = _request_from_fixture_identity(record.request_configuration)
+        if schema_version != SCHEMA_VERSION:
+            raise ValueError(f"trip fixture {fixture_path} must use {SCHEMA_VERSION}")
+        if set(payload) != {
+            "schema_version",
+            "state",
+            "best_time",
+            "hotels",
+            "routes",
+            "unavailable",
+            "degraded_reasons",
+        }:
+            raise ValueError(f"trip fixture {fixture_path} has an invalid v2 envelope")
+        decode_trip_analysis_v2(payload, fixture_request, ExecutionMode.FIXTURE)
+        return fixture_path, payload, record.request_configuration, schema_version
 
     def analyze(
         self,
@@ -114,12 +165,11 @@ class FixtureTripAnalysisAdapter:
     ) -> TripAnalysisResponse:
         if execution_mode is not ExecutionMode.FIXTURE:
             raise ValueError("fixture adapter only supports fixture execution")
-        with self.fixture_path.open(encoding="utf-8") as fixture:
-            payload = json.load(fixture)
-        if not isinstance(payload, Mapping):
-            raise ValueError("trip fixture must contain an object")
-        scenario = _fixture_scenario(self.fixture_path, payload)
-        if scenario is None or not _fixture_matches(scenario, request):
+        matches = [fixture for fixture in self._fixtures if _fixture_matches(fixture[2], request)]
+        if len(matches) > 1:
+            duplicate_paths = ", ".join(str(fixture[0]) for fixture in matches)
+            raise ValueError(f"duplicate matching trip fixtures: {duplicate_paths}")
+        if not matches:
             return TripAnalysisResponse(
                 request_identity=_request_identity(request),
                 mode=request.mode,
@@ -136,20 +186,8 @@ class FixtureTripAnalysisAdapter:
                     action="edit_setup_or_use_live_data",
                 ),
             )
-        return normalize_trip_analysis(payload, request, ExecutionMode.FIXTURE)
-
-
-def _fixture_scenario(
-    fixture_path: Path, payload: Mapping[str, object]
-) -> Mapping[str, object] | None:
-    """The authoritative match identity: acquisition sidecar, else the embedded block."""
-    record = load_acquisition_record(fixture_path)
-    if record is not None:
-        if not record.replayable:
-            return None
-        return record.request_configuration or None
-    embedded = payload.get("scenario")
-    return embedded if isinstance(embedded, Mapping) else None
+        _, payload, _, schema_version = matches[0]
+        return decode_trip_analysis_v2(payload, request, ExecutionMode.FIXTURE)
 
 
 class LiveTripAnalysisAdapter:
@@ -166,6 +204,8 @@ class LiveTripAnalysisAdapter:
         payload = self.loader(request)
         if not isinstance(payload, Mapping):
             raise ValueError("live trip analysis must return an object")
+        if payload.get("schema_version") == SCHEMA_VERSION:
+            return decode_trip_analysis_v2(payload, request, execution_mode)
         return normalize_trip_analysis(payload, request, execution_mode)
 
 
@@ -221,7 +261,7 @@ class TemporalTripAnalysisAdapter:
             heatmap, hourly_failures = self._hourly_heatmap(heatmap_request, request)
             anchor = select_anchor_celsius(heatmap.tiles, request.window)
         except (UnavailableError, ValueError) as error:
-            return _unavailable_response(request, execution_mode, str(error))
+            return _round_trip(_unavailable_response(request, execution_mode, str(error)), request)
 
         environment: EnvironmentSeriesResult | None = None
         environment_failure: str | None = None
@@ -252,7 +292,7 @@ class TemporalTripAnalysisAdapter:
                 hourly_failures=hourly_failures,
             )
         except ValueError as error:
-            return _unavailable_response(request, execution_mode, str(error))
+            return _round_trip(_unavailable_response(request, execution_mode, str(error)), request)
         routes: RouteComparisonResult | None = None
         route_reason: str | None = None
         if self.route_analysis is None:
@@ -268,14 +308,17 @@ class TemporalTripAnalysisAdapter:
         degraded_reasons = {"hotels": "hotel ranking is not implemented on the temporal live path"}
         if route_reason is not None:
             degraded_reasons["routes"] = route_reason
-        return TripAnalysisResponse(
-            request_identity=_request_identity(request),
-            mode=request.mode,
-            execution_mode=execution_mode,
-            state=ResultState.DEGRADED,
-            best_time=best_time,
-            routes=routes,
-            degraded_reasons=degraded_reasons,
+        return _round_trip(
+            TripAnalysisResponse(
+                request_identity=_request_identity(request),
+                mode=request.mode,
+                execution_mode=execution_mode,
+                state=ResultState.DEGRADED,
+                best_time=best_time,
+                routes=routes,
+                degraded_reasons=degraded_reasons,
+            ),
+            request,
         )
 
     def _budget_refusal(
@@ -676,6 +719,15 @@ def _unavailable_response(
     )
 
 
+def _round_trip(
+    response: TripAnalysisResponse, request: TripAnalysisRequest
+) -> TripAnalysisResponse:
+    """Apply the same strict product codec used by snapshots and HTTP."""
+    return decode_trip_analysis_v2(
+        encode_trip_analysis_v2(response, envelope="snapshot"), request, ExecutionMode.LIVE
+    )
+
+
 class ModeDispatchTripAnalysisAdapter:
     """Selects the adapter owned by the requested execution mode."""
 
@@ -902,7 +954,13 @@ def _hotels(
         usable_count=_integer(hotel_payload["usable_count"], "usable_count"),
         discovered_count=_integer(hotel_payload["discovered_count"], "discovered_count"),
         provenance=hotel_provenance,
-        enrichment=OptionalEnrichment(enrichment_state, enrichment_reason),
+        enrichment=OptionalEnrichment(
+            enrichment_state,
+            code="optional_provider_failure"
+            if enrichment_state is EnrichmentState.UNAVAILABLE
+            else None,
+            reason=enrichment_reason,
+        ),
         component_units=_string_dict(hotel_payload["component_units"], "component_units"),
     )
 
@@ -1192,6 +1250,7 @@ def _fixture_matches(scenario: Mapping[str, object], request: TripAnalysisReques
     destination = _mapping(scenario.get("destination"), "scenario destination")
     return (
         scenario.get("mode", TripMode.CURATED.value) == request.mode.value
+        and scenario.get("cautious", False) is request.cautious
         and _string(scenario.get("landmark_name"), "scenario landmark_name")
         == request.landmark_name
         and _string(scenario.get("district_name"), "scenario district_name")
@@ -1200,17 +1259,81 @@ def _fixture_matches(scenario: Mapping[str, object], request: TripAnalysisReques
         and _integer(scenario.get("start_hour"), "scenario start_hour") == request.start_hour
         and _integer(scenario.get("end_hour"), "scenario end_hour") == request.end_hour
         and math.isclose(
-            _number(origin.get("latitude"), "origin latitude"), request.origin.latitude
+            _number(origin.get("latitude"), "origin latitude"),
+            request.origin.latitude,
+            abs_tol=1e-7,
+            rel_tol=0,
         )
         and math.isclose(
-            _number(origin.get("longitude"), "origin longitude"), request.origin.longitude
+            _number(origin.get("longitude"), "origin longitude"),
+            request.origin.longitude,
+            abs_tol=1e-7,
+            rel_tol=0,
         )
         and math.isclose(
             _number(destination.get("latitude"), "destination latitude"),
             request.destination.latitude,
+            abs_tol=1e-7,
+            rel_tol=0,
         )
         and math.isclose(
             _number(destination.get("longitude"), "destination longitude"),
             request.destination.longitude,
+            abs_tol=1e-7,
+            rel_tol=0,
         )
+    )
+
+
+def _request_from_fixture_identity(scenario: Mapping[str, object]) -> TripAnalysisRequest:
+    allowed = {
+        "mode",
+        "landmark_name",
+        "district_name",
+        "date",
+        "start_hour",
+        "end_hour",
+        "cautious",
+        "origin",
+        "destination",
+        "generator_version",
+        "generator_metadata",
+        "hotel_aoi",
+        "building_aoi",
+        "route_heat_aoi",
+    }
+    unknown = set(scenario) - allowed
+    if unknown:
+        raise ValueError(f"trip fixture request identity contains unknown keys: {sorted(unknown)}")
+    origin = _mapping(scenario.get("origin"), "scenario origin")
+    destination = _mapping(scenario.get("destination"), "scenario destination")
+    place_fields = {
+        "application_id",
+        "name",
+        "latitude",
+        "longitude",
+        "osm_identity",
+        "coordinate_meaning",
+        "authority",
+    }
+    if not {"latitude", "longitude"} <= set(origin) or set(origin) - place_fields:
+        raise ValueError("trip fixture origin identity has invalid fields")
+    if not {"latitude", "longitude"} <= set(destination) or set(destination) - place_fields:
+        raise ValueError("trip fixture destination identity has invalid fields")
+    return TripAnalysisRequest(
+        mode=TripMode(_string(scenario.get("mode"), "scenario mode")),
+        origin=Coordinates(
+            _number(origin.get("latitude"), "origin latitude"),
+            _number(origin.get("longitude"), "origin longitude"),
+        ),
+        destination=Coordinates(
+            _number(destination.get("latitude"), "destination latitude"),
+            _number(destination.get("longitude"), "destination longitude"),
+        ),
+        landmark_name=_string(scenario.get("landmark_name"), "scenario landmark_name"),
+        district_name=_string(scenario.get("district_name"), "scenario district_name"),
+        date=_string(scenario.get("date"), "scenario date"),
+        start_hour=_integer(scenario.get("start_hour"), "scenario start_hour"),
+        end_hour=_integer(scenario.get("end_hour"), "scenario end_hour"),
+        cautious=_boolean(scenario.get("cautious", False), "scenario cautious"),
     )

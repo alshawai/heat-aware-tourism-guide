@@ -25,6 +25,10 @@ import { BestTimeSummary } from "./BestTimeSummary";
 import { actionGuidance } from "./decisionLabels";
 import { EndpointPicker } from "./EndpointMap";
 import {
+  CANONICAL_FIXTURE_SCENARIO,
+  fixtureScenarioFor,
+} from "./fixtureScenarios";
+import {
   formatClockHour,
   formatHour,
   formatMetric,
@@ -54,11 +58,6 @@ import {
   useTripAnalysis,
 } from "./useTripAnalysis";
 
-/** The public demonstration is pinned to the committed fixture window. */
-const PUBLIC_FIXTURE_DATE = "2026-08-23";
-const PUBLIC_FIXTURE_START_HOUR = 8;
-const PUBLIC_FIXTURE_END_HOUR = 20;
-
 function isPublicFixture(health: HealthState) {
   return (
     health.status === "available" &&
@@ -70,8 +69,10 @@ function isPublicFixture(health: HealthState) {
  * The setup the request will actually carry.
  *
  * On the public demonstration the traveler's date, window, and endpoints are
- * replaced by the fixture facts rather than merely disabled, so what is
- * validated, submitted, and reused by an hour override are the same values.
+ * replaced by the acquired canonical scenario rather than merely disabled, so
+ * what is validated, submitted, and reused by an hour override are the same
+ * values — and they are read from the scenario catalog, so they cannot drift
+ * from the fixture the deployment actually holds.
  */
 function effectiveSetup(setup: TripSetup, health: HealthState): TripSetup {
   if (!isPublicFixture(health)) return setup;
@@ -79,9 +80,9 @@ function effectiveSetup(setup: TripSetup, health: HealthState): TripSetup {
     ...setup,
     origin: CANONICAL_ORIGIN,
     destination: CANONICAL_DESTINATION,
-    date: PUBLIC_FIXTURE_DATE,
-    startHour: PUBLIC_FIXTURE_START_HOUR,
-    endHour: PUBLIC_FIXTURE_END_HOUR,
+    date: CANONICAL_FIXTURE_SCENARIO.date,
+    startHour: CANONICAL_FIXTURE_SCENARIO.startHour,
+    endHour: CANONICAL_FIXTURE_SCENARIO.endHour,
   };
 }
 
@@ -171,12 +172,52 @@ export function TripSetupScreen() {
   const busy = phase === "submitting";
   const publicFixture = isPublicFixture(health);
   const effective = effectiveSetup(tripSetup, health);
+  const fixtureMode =
+    health.status === "available" && health.mode === "fixture";
+  const fixtureScenario = fixtureMode
+    ? fixtureScenarioFor(effective.origin, effective.destination)
+    : undefined;
 
   // Every edit invalidates any retained analysis, so the results screen can
   // never describe a trip the traveler has since changed.
   function edit(change: Partial<TripSetup>) {
     setTripSetup({ ...tripSetup, ...change });
     reset();
+  }
+
+  /**
+   * Move one pin, and in fixture mode adopt whatever the new pair was acquired
+   * with.
+   *
+   * Fixture replay matches a request on the date, the window, the landmark, and
+   * the district as well as the coordinates, and each scenario was acquired with
+   * its own (`fixtureScenarios.ts`). Snapping to them on selection is what lets a
+   * traveler reach a committed scenario at all; the fields stay editable, so a
+   * date fixture replay does not hold still answers with the server's refusal.
+   */
+  function moveEndpoint(
+    role: "origin" | "destination",
+    point: TripSetup["origin"]
+  ) {
+    setEndpointError("");
+    const moved =
+      role === "origin"
+        ? { origin: point, destination: tripSetup.destination }
+        : { origin: tripSetup.origin, destination: point };
+    const scenario = fixtureMode
+      ? fixtureScenarioFor(moved.origin, moved.destination)
+      : undefined;
+    if (!scenario) {
+      edit(moved);
+      return;
+    }
+    edit({
+      ...moved,
+      destination: { ...moved.destination, context: scenario.districtName },
+      date: scenario.date,
+      startHour: scenario.startHour,
+      endHour: scenario.endHour,
+    });
   }
 
   async function submit(event?: FormEvent) {
@@ -249,12 +290,7 @@ export function TripSetupScreen() {
             destination={effective.destination}
             disabled={busy || publicFixture}
             error={endpointError}
-            onChange={(role, point) => {
-              setEndpointError("");
-              edit(
-                role === "origin" ? { origin: point } : { destination: point }
-              );
-            }}
+            onChange={moveEndpoint}
           />
 
           <div className="setup-fields">
@@ -345,8 +381,18 @@ export function TripSetupScreen() {
           </p>
           {publicFixture && (
             <p className="fixture-facts" role="note">
-              Public demonstration facts are fixed to August 23, 2026, from
-              08:00 to 20:00. Cautious guidance remains available below.
+              Public demonstration facts are fixed to the committed scenario:{" "}
+              {effective.date},{" "}
+              {formatWindowLabel(effective.startHour, effective.endHour)}.
+              Cautious guidance remains available below.
+            </p>
+          )}
+          {!publicFixture && fixtureScenario && (
+            <p className="fixture-facts" role="note">
+              Fixture replay holds this walk on {effective.date}, so the date
+              and hours follow the committed scenario. Another date returns the
+              server&apos;s no-matching-fixture answer rather than invented
+              data.
             </p>
           )}
 

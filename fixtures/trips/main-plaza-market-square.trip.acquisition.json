@@ -1,0 +1,69 @@
+{
+  "activity_id": null,
+  "data_date": "2024-07-15",
+  "derived_from": [
+    {
+      "fixture": "fixtures/providers/osrm/main-plaza-market-square.json",
+      "role": "routing",
+      "sha256": "4d72c81cc3ed992ac6de3ef72032ef44766bd98c502ad3f0acf6778db756f71e",
+      "sidecar_sha256": "3a82cfb0da149e48d78611a84f40b16bd4db6f4f846be0dffc4b60b2b700e3d1"
+    }
+  ],
+  "endpoint": "local:trip-product-snapshot",
+  "provider": "heat-aware-tourism-guide",
+  "provider_config_version": "trip-product-config-v1",
+  "request_configuration": {
+    "building_aoi": null,
+    "cautious": false,
+    "date": "2024-07-15",
+    "destination": {
+      "application_id": "historic-market-square-el-mercado",
+      "authority": "OpenStreetMap/Nominatim selected object",
+      "coordinate_meaning": "Nominatim centroid of building footprint",
+      "latitude": 29.4254009,
+      "longitude": -98.4994785,
+      "name": "Historic Market Square (El Mercado)",
+      "osm_identity": "way/79636475"
+    },
+    "district_name": "Downtown San Antonio",
+    "end_hour": 17,
+    "generator_metadata": {
+      "provider_observations": ["routing"],
+      "route_heat_semantics": "reuses synthesized destination demo TCM",
+      "synthesized_sections": ["best_time", "hotels", "route_heat"]
+    },
+    "generator_version": "trip-product-snapshot-v1",
+    "hotel_aoi": {
+      "east": -98.482,
+      "north": 29.429,
+      "south": 29.421,
+      "west": -98.49
+    },
+    "landmark_name": "Historic Market Square (El Mercado)",
+    "mode": "exploratory",
+    "origin": {
+      "application_id": "main-plaza",
+      "authority": "OpenStreetMap/Nominatim selected object",
+      "coordinate_meaning": "Nominatim centroid of park polygon",
+      "latitude": 29.4245773,
+      "longitude": -98.4935063,
+      "name": "Main Plaza",
+      "osm_identity": "way/93118472"
+    },
+    "route_heat_aoi": null,
+    "start_hour": 10
+  },
+  "response_metadata": {
+    "generator_state": "completed"
+  },
+  "retrieved_at": null,
+  "schema_version": "trip-contract-v2",
+  "source": "synthesized",
+  "status": "ok",
+  "transformations": [
+    {
+      "name": "trip-product-snapshot",
+      "version": 1
+    }
+  ]
+}

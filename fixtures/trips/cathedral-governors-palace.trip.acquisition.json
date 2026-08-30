@@ -1,0 +1,109 @@
+{
+  "activity_id": null,
+  "data_date": "2024-07-15",
+  "derived_from": [
+    {
+      "fixture": "fixtures/providers/osrm/cathedral-governors-palace.json",
+      "role": "routing",
+      "sha256": "840c1e9b1201d4191057d6b5e1a5ae4195a5642096e0e616d772b08e7599cca0",
+      "sidecar_sha256": "a67b49e9f754aae973b791d82a4b6b4849b1f986dd551435b5851ca07f04f7f3"
+    },
+    {
+      "fixture": "fixtures/providers/overpass/cathedral-governors-palace-buildings.json",
+      "role": "building_geometry",
+      "sha256": "ef631e89b2a10b12d1948004c1ba0758c6b8403cacc7d0d2cae25c1617c88e13",
+      "sidecar_sha256": "d14448dfd4ae3dacdbd5d7e8e5539bb41f701f4bafae7d02a4e9d0e605c6e09b"
+    },
+    {
+      "fixture": "fixtures/providers/fortyguard/canonical-district-anchor-date-tcm-2024-07-15.json",
+      "role": "hotel_night_and_day_tcm",
+      "sha256": "7ab6f9eb46691f201a2ffe4b71fe73b36dd4e0f6a281441ad0a0f0da86e1e602",
+      "sidecar_sha256": "dad752e7f1f5415e0be2a52527e83450c982159dc0b73f4357f039127a802df9"
+    },
+    {
+      "fixture": "fixtures/providers/fortyguard/canonical-district-anchor-exceedance-above-35c-2024-07-15.json",
+      "role": "hotel_hot_hours",
+      "sha256": "6fc97903bda9801830eac7ca5937932a5ef5ca37a87a2beaed1268caffec7af8",
+      "sidecar_sha256": "f46eee48baf79aef0b8b2d1107becd56d568edb746b99253d33b8c7f06dcd4fe"
+    },
+    {
+      "fixture": "fixtures/providers/fortyguard/canonical-district-anchor-persistence-above-35c-2024-07-15.json",
+      "role": "hotel_persistence",
+      "sha256": "01e1e56cb6eb22356f9973b1204ef800231e68a9c3c6a2c9f87e8de8da722be6",
+      "sidecar_sha256": "64bf75fcb893e43afe0f64ffd7d0919dcce9426c90cf85c61ff927fb97ac784b"
+    },
+    {
+      "fixture": "fixtures/hotel-heat-analysis.json",
+      "role": "base_hotel_discovery",
+      "sha256": "fde152a6c473fb6a38a6fe2928ccf4718a17d621e61f7d7c8da3d84d5a69e84b",
+      "sidecar_sha256": "1f66ac7364bec7cd5a997f224ed3fdf8c4dbdb77f55cb6bf59b085c4a0e7f3c0"
+    }
+  ],
+  "endpoint": "local:trip-product-snapshot",
+  "provider": "heat-aware-tourism-guide",
+  "provider_config_version": "trip-product-config-v1",
+  "request_configuration": {
+    "building_aoi": {
+      "east": -98.491604468,
+      "north": 29.427384596,
+      "south": 29.422431929,
+      "west": -98.498865419
+    },
+    "cautious": false,
+    "date": "2024-07-15",
+    "destination": {
+      "application_id": "spanish-governors-palace",
+      "authority": "OpenStreetMap/Nominatim selected object",
+      "coordinate_meaning": "Nominatim centroid of museum footprint",
+      "latitude": 29.4248225,
+      "longitude": -98.4959872,
+      "name": "Spanish Governor's Palace",
+      "osm_identity": "way/78601534"
+    },
+    "district_name": "Downtown San Antonio",
+    "end_hour": 17,
+    "generator_metadata": {
+      "computed_sections": ["solar_position", "modeled_building_shade"],
+      "demo_heat_purpose": "exercise ADR 0007; not a provider observation",
+      "provider_observations": [
+        "routing",
+        "building_geometry",
+        "hotel_components"
+      ],
+      "synthesized_sections": ["best_time_heat", "optional_enrichment_failure"]
+    },
+    "generator_version": "trip-product-snapshot-v1",
+    "hotel_aoi": {
+      "east": -98.482,
+      "north": 29.429,
+      "south": 29.421,
+      "west": -98.49
+    },
+    "landmark_name": "Spanish Governor's Palace",
+    "mode": "exploratory",
+    "origin": {
+      "application_id": "san-fernando-cathedral",
+      "authority": "OpenStreetMap/Nominatim selected object",
+      "coordinate_meaning": "Nominatim centroid of cathedral footprint",
+      "latitude": 29.424559,
+      "longitude": -98.4942042,
+      "name": "San Fernando Cathedral",
+      "osm_identity": "way/80647022"
+    },
+    "route_heat_aoi": null,
+    "start_hour": 10
+  },
+  "response_metadata": {
+    "generator_state": "completed"
+  },
+  "retrieved_at": null,
+  "schema_version": "trip-contract-v2",
+  "source": "synthesized",
+  "status": "ok",
+  "transformations": [
+    {
+      "name": "trip-product-snapshot",
+      "version": 1
+    }
+  ]
+}

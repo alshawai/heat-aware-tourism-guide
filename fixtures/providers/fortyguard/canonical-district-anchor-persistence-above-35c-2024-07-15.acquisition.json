@@ -1,0 +1,69 @@
+{
+  "activity_id": "15a6f14d-5e90-48ea-8f2c-250329119f79",
+  "data_date": "2024-07-15",
+  "derived_from": [],
+  "endpoint": "/v1/heatmap",
+  "provider": "fortyguard",
+  "provider_config_version": "fortyguard-config-v1",
+  "request_configuration": {
+    "analysis_aoi": {
+      "east": -98.482,
+      "north": 29.429,
+      "south": 29.421,
+      "west": -98.49
+    },
+    "analytic_type": "persistence",
+    "caveat_code": "date_level_not_interval_maximum",
+    "declared_windows": [
+      {
+        "end": "05:00",
+        "interval": "[start,end)",
+        "label": "night",
+        "start": "00:00",
+        "timezone": "America/Chicago"
+      },
+      {
+        "end": "17:00",
+        "interval": "[start,end)",
+        "label": "day",
+        "start": "10:00",
+        "timezone": "America/Chicago"
+      }
+    ],
+    "direction": "above",
+    "forecast": false,
+    "granularity": 80,
+    "latitude": 29.425,
+    "longitude": -98.486,
+    "metric_semantics": "date_level_hours_above_threshold",
+    "provider_window_validated": false,
+    "request_scope": "canonical_district_anchor",
+    "start_date": "2024-07-15",
+    "temporal_basis": "date_level_tcm",
+    "threshold_celsius": 35.0,
+    "timezone": "America/Chicago"
+  },
+  "response_metadata": {
+    "freshness_present": false,
+    "raw_units_present": [],
+    "terminal_status": null
+  },
+  "retrieved_at": "2026-08-30T15:07:57.057720+00:00",
+  "schema_version": "v1",
+  "source": "provider",
+  "status": "ok",
+  "transformations": [
+    {
+      "name": "live_envelope_unwrapped",
+      "version": 1
+    },
+    {
+      "name": "point_to_aoi_expansion",
+      "version": 1
+    },
+    {
+      "name": "valid_time_from_request",
+      "version": 2
+    }
+  ]
+}

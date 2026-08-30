@@ -130,15 +130,22 @@ class EnrichmentState(str, Enum):
 @dataclass(frozen=True)
 class OptionalEnrichment:
     state: EnrichmentState
+    code: str | None = None
     reason: str | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.state, EnrichmentState):
             raise ValueError("enrichment state must be an EnrichmentState value")
-        if self.state is EnrichmentState.UNAVAILABLE and not self.reason:
-            raise ValueError("unavailable enrichment requires a reason")
-        if self.state is not EnrichmentState.UNAVAILABLE and self.reason is not None:
-            raise ValueError("only unavailable enrichment may include a reason")
+        if self.state is EnrichmentState.UNAVAILABLE:
+            if (
+                not isinstance(self.code, str)
+                or not self.code.strip()
+                or not isinstance(self.reason, str)
+                or not self.reason.strip()
+            ):
+                raise ValueError("unavailable enrichment requires a nonblank code and reason")
+        elif self.code is not None or self.reason is not None:
+            raise ValueError("only unavailable enrichment may include a code and reason")
 
 
 # ---------------------------------------------------------------------------
@@ -166,7 +173,7 @@ class Provenance:
     source: str
     data_date: str
     confidence: Confidence
-    retrieved_at: str
+    retrieved_at: str | None
     transformation_version: str
     provider: str
     response_status: str
@@ -185,7 +192,8 @@ class Provenance:
             raise ValueError("provenance data_date is required")
         try:
             calendar_date.fromisoformat(self.data_date)
-            datetime.fromisoformat(self.retrieved_at.replace("Z", "+00:00"))
+            if self.retrieved_at is not None:
+                datetime.fromisoformat(self.retrieved_at.replace("Z", "+00:00"))
         except ValueError as error:
             raise ValueError("provenance dates must be ISO formatted") from error
         if self.coverage is not None and not 0 <= self.coverage <= 1:
@@ -194,8 +202,12 @@ class Provenance:
             raise ValueError("provenance transformation_version is required")
         if not isinstance(self.fresh, bool):
             raise ValueError("provenance fresh must be a boolean")
-        if not self.retrieved_at or not self.provider or not self.response_status:
-            raise ValueError("provenance retrieval, provider, and response status are required")
+        if self.source == "synthesized" and self.retrieved_at is not None:
+            raise ValueError("synthesized provenance must not have a retrieval time")
+        if self.source != "synthesized" and not self.retrieved_at:
+            raise ValueError("observed provenance requires a retrieval time")
+        if not self.provider or not self.response_status:
+            raise ValueError("provenance provider and response status are required")
 
 
 @dataclass(frozen=True)
@@ -684,6 +696,37 @@ class RankedHotel:
 
 
 @dataclass(frozen=True)
+class HotelComponentTemporalMetadata:
+    """Machine-readable temporal qualification for a hotel component."""
+
+    start: str
+    end: str
+    timezone: str
+    interval: str
+    temporal_basis: str
+    provider_window_validated: bool
+    caveat_code: str
+
+    def __post_init__(self) -> None:
+        if not all(
+            isinstance(value, str) and value.strip()
+            for value in (
+                self.start,
+                self.end,
+                self.timezone,
+                self.interval,
+                self.temporal_basis,
+                self.caveat_code,
+            )
+        ):
+            raise ValueError("hotel component temporal metadata requires nonblank strings")
+        if self.interval != "[start,end)":
+            raise ValueError("hotel component windows must be half-open")
+        if not isinstance(self.provider_window_validated, bool):
+            raise ValueError("provider_window_validated must be a boolean")
+
+
+@dataclass(frozen=True)
 class HotelRankingResult:
     """Ranked hotel list with weights and component breakdown."""
 
@@ -694,6 +737,7 @@ class HotelRankingResult:
     provenance: Provenance
     enrichment: OptionalEnrichment = OptionalEnrichment(EnrichmentState.NOT_REQUESTED)
     component_units: dict[str, str] | None = None
+    component_temporal_metadata: dict[str, HotelComponentTemporalMetadata] | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.enrichment, OptionalEnrichment):
@@ -724,6 +768,22 @@ class HotelRankingResult:
         expected_units = {"night": "C", "hot_hours": "hours", "persistence": "hours", "day": "C"}
         if self.component_units != expected_units:
             raise ValueError("hotel component units must match their metric definitions")
+        if self.component_temporal_metadata is not None:
+            if set(self.component_temporal_metadata) != {"night", "day"}:
+                raise ValueError("hotel temporal metadata must qualify night and day")
+            expected_windows = {"night": ("00:00", "05:00"), "day": ("10:00", "17:00")}
+            for name, metadata in self.component_temporal_metadata.items():
+                if not isinstance(metadata, HotelComponentTemporalMetadata):
+                    raise ValueError("hotel temporal metadata values must be typed")
+                if (metadata.start, metadata.end) != expected_windows[name]:
+                    raise ValueError(f"{name} hotel component has the wrong declared window")
+                if (
+                    metadata.timezone != "America/Chicago"
+                    or metadata.temporal_basis != "date_level_tcm"
+                    or metadata.provider_window_validated
+                    or metadata.caveat_code != "date_level_not_interval_maximum"
+                ):
+                    raise ValueError("hotel date-level TCM temporal caveat is incomplete")
         expected_scores = {
             hotel.identity: sum(hotel.components[name] * self.weights[name] for name in required)
             for hotel in self.ranked
@@ -1104,6 +1164,8 @@ class TripAnalysisResponse:
                 raise ValueError("success state must not include unavailable")
             if self.degraded_reasons is not None:
                 raise ValueError("success state must not include degraded_reasons")
+            if self.hotels.enrichment.state is EnrichmentState.UNAVAILABLE:
+                raise ValueError("unavailable hotel enrichment requires degraded state")
         elif self.state is ResultState.UNAVAILABLE:
             if not isinstance(self.unavailable, UnavailableResult):
                 raise ValueError("unavailable state requires unavailable detail")
@@ -1161,6 +1223,21 @@ class TripAnalysisResponse:
                 )
                 else ""
             }
+            if self.best_time is not None and (
+                self.best_time.temporal_evidence is TemporalEvidenceState.INCONSISTENT
+                or self.best_time.provenance.confidence is Confidence.INSUFFICIENT
+            ):
+                allowed_present.add("best_time")
+            if (
+                self.hotels is not None
+                and self.hotels.enrichment.state is EnrichmentState.UNAVAILABLE
+            ):
+                allowed_present.add("hotels")
+            if (
+                self.hotels is not None
+                and self.hotels.provenance.confidence is Confidence.INSUFFICIENT
+            ):
+                allowed_present.add("hotels")
             if set(self.degraded_reasons) != missing | (allowed_present - {""}):
                 raise ValueError("degraded reasons must match missing sections")
         elif self.state is ResultState.ERROR:

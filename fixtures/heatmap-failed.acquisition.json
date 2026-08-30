@@ -1,12 +1,19 @@
 {
-  "source": "synthesized",
-  "endpoint": "/v1/heatmap",
-  "request_configuration": {},
-  "retrieved_at": null,
-  "data_date": null,
-  "status": "failed",
-  "schema_version": "v1",
-  "provider_config_version": null,
   "activity_id": null,
+  "data_date": null,
+  "derived_from": [],
+  "endpoint": "/v1/heatmap",
+  "provider": "heat-aware-tourism-guide",
+  "provider_config_version": null,
+  "request_configuration": {},
+  "response_metadata": {
+    "freshness_present": false,
+    "raw_units_present": [],
+    "terminal_status": null
+  },
+  "retrieved_at": null,
+  "schema_version": "v1",
+  "source": "synthesized",
+  "status": "failed",
   "transformations": []
 }

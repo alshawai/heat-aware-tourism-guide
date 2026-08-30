@@ -11,6 +11,7 @@ import {
   LocationPicker,
   ResultProblem,
   ResultSkeleton,
+  WakingNotice,
 } from "../../components/Shared";
 import { dataClient } from "../../services/dataClient";
 import { hotelLocations } from "../../mocks/data";
@@ -47,7 +48,7 @@ function useHotelRequest() {
   const { hotelLocation, mode, ranking, setRanking } = useAppState();
   const requestedLocation = useRef<string | null>(null);
   const requestVersion = useRef(0);
-  const [status, setStatus] = useState<ResultState>(
+  const [status, setStatus] = useState<ResultState | "waking">(
     ranking
       ? ranking.state === "available"
         ? "success"
@@ -68,7 +69,16 @@ function useHotelRequest() {
     requestedLocation.current = requestKey;
     setStatus("loading");
     dataClient
-      .rankHotels(hotelLocation, previewMode ? { mode } : {})
+      .rankHotels(
+        hotelLocation,
+        previewMode
+          ? { mode }
+          : {
+              onColdStartRetry: () => {
+                if (requestVersion.current === version) setStatus("waking");
+              },
+            }
+      )
       .then((value) => {
         if (requestVersion.current !== version) return;
         const withPercentiles = value.ranking
@@ -292,6 +302,7 @@ export function HotelRankingScreen() {
         </p>
       </div>
       {status === "loading" && <ResultSkeleton rows={5} />}
+      {status === "waking" && <WakingNotice />}
       {(status === "empty" || status === "error") && (
         <ResultProblem kind={status} onRetry={load} />
       )}

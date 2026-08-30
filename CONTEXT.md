@@ -59,6 +59,18 @@ directly.
   provider-shape JSON, offline), `live` (authenticated provider call through
   the live adapter), or `cache` (replayed earlier result). One of the three is
   always explicit in `Provenance.source`; never empty-success.
+- **Optional enrichment** — An explicit, bounded drill-down on an already
+  narrowed hotel or route result. Environmental parameters, satellite canopy,
+  and street-view metadata add context but never alter core heat, ranking,
+  shade, or route decisions; failure preserves the base result with an
+  item-level unavailable state.
+- **Result-set token** — A short-lived, server-signed reference to trusted base
+  result IDs and geometry used to authorize optional enrichment without
+  recomputing the base result or trusting caller-supplied coordinates.
+- **Enrichment call budget** — A separate UTC calendar-day limit on submitted
+  live enrichment activities. One submission consumes one unit even if the
+  activity later fails; cache hits and fixture replay consume none. Configured
+  per-kind credit values are estimates, not actual attributed credit usage.
 - **Deployment profile** — The server-declared operating boundary for an
   application instance: `local`, `public-fixture`, or `protected-live`. It is
   distinct from execution mode because it governs startup guarantees and who
@@ -75,6 +87,11 @@ directly.
   (`fixture`/`provider`/`cache`), `retrieved_at`, `data_date`, `stale`,
   `forecast`, optional `activity_id`, sanitized `raw_payload`, and
   `transformations`.
+- **Trip product snapshot** — A generated, validated product-level response
+  using `trip-contract-v2`. It is generated offline from normalized lower-level
+  acquisitions, never hand-authored, and linked to those inputs by its sidecar
+  `derived_from` references. The same strict encoder/decoder is used for live,
+  fixture, and HTTP product responses; v1 compatibility is not provided.
 - **Transformation** — A named, versioned inference or reshaping step applied
   on the live path (e.g. `tcm_unit_celsius`, `valid_time_from_request`,
   `point_to_aoi_expansion`, `live_envelope_unwrapped`). Recorded in
@@ -129,6 +146,12 @@ directly.
   single authoritative fixture match identity (ADR 0004). Synthesized
   fixtures carry `null` activity IDs and retrieval times, never fabricated
   ones.
+- **Acquisition provider identity** — The `provider` field distinguishes the
+  source system from the generic `source` classification. A provider record is
+  an observed acquisition with retrieval metadata; a synthesized record is a
+  computed/demo or injected state and must not claim provider retrieval. Product
+  snapshots use content-addressed `derived_from` links to their lower-level
+  acquisitions.
 - **Provider configuration version** — The explicit constant
   (`fortyguard-config-v1`) naming the provider/request-construction semantics
   a response was produced under. Fourth component of cache identity alongside
@@ -189,6 +212,15 @@ directly.
   building-shade evidence is weak or uncomputable. All returned alternatives
   and available metrics remain visible, but the product makes no route
   recommendation; the traveler compares the trade-offs.
+- **Declared hotel temporal metadata** — The canonical hotel components declare
+  `00:00-05:00` night and `10:00-17:00` day windows in `America/Chicago`, but
+  the acquired TCM is date-level evidence. Those windows are metadata, not
+  interval maxima; the `date_level_not_interval_maximum` caveat remains part of
+  the result.
+- **Trip fixture selection** — A fixture adapter matches the exact sidecar
+  request configuration from an explicit path collection. No match returns
+  `scenario_unavailable`; duplicate matches are a hard error. Filenames and
+  embedded descriptive fields are not matching identity.
 - **No suitable returned route** — The explicit state when the routing provider
   returns no valid pedestrian routes, or when every returned route lacks enough
   evidence for a recommendation. A single valid route is instead shown as the
@@ -213,7 +245,16 @@ directly.
   that keeps enrichment out of core heat, ranking, shade, and route decisions.
 - ADR 0009 — separated public fixture/protected live deployments, explicit
   deployment profiles, authentication, and persistent budget enforcement.
+- ADR 0010 — `trip-contract-v2` product snapshots built from normalized
+  acquisitions: the strict shared codec, the four-scenario offline matrix, and
+  the regeneration policy.
+- `docs/research/issue-23-fixture-schema.md` — issue #23 snapshot and acquisition
+  outcomes, hashes, and network-blocked coverage.
+- `docs/research/issue-23-alternate-scenarios.md` — issue #23 place identities
+  and the route/height evidence each scenario actually returned.
 - `docs/design/fortyguard-extraction.md` — extraction contract from issue #6.
+- `docs/README.md` — the Diataxis documentation map: tutorials, how-to
+  guides, reference, and explanation, plus the demo script.
 - Layout: `app/domain/` (pure contracts), `app/services/` (cache, execution,
   acquisition, sidecars, ledger store), `app/integrations/fortyguard/`
   (provider client stack + live adapter), `app/api.py` + `app/main.py` +

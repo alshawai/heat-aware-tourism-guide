@@ -77,7 +77,9 @@ export function isCanonicalTrip(
 const DEFAULT_TRIP_SETUP: TripSetup = {
   origin: CANONICAL_ORIGIN,
   destination: CANONICAL_DESTINATION,
-  date: "2026-08-23",
+  // The date and window the canonical walk was acquired with, so a fixture run
+  // matches the committed scenario without the traveler having to know it.
+  date: "2024-07-15",
   startHour: 8,
   endHour: 20,
   cautious: false,
@@ -137,7 +139,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const refreshHealth = useCallback(async (signal?: AbortSignal) => {
     setState((current) => ({ ...current, health: { status: "checking" } }));
     try {
-      const value = await dataClient.getHealth(signal);
+      const value = await dataClient.getHealth({ signal });
       setState((current) => ({
         ...current,
         health: {

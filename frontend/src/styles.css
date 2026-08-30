@@ -454,6 +454,28 @@ dd {
     background-position: -200% 0;
   }
 }
+.waking-state {
+  display: grid;
+  place-items: center;
+  text-align: center;
+  gap: 10px;
+  padding: 55px 20px;
+  margin-bottom: 22px;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.waking-state p {
+  max-width: 480px;
+  margin: 0;
+}
+.spin {
+  animation: spin 1s linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
 .route-map {
   position: relative;
   min-height: 500px;

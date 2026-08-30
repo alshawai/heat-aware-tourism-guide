@@ -1,0 +1,49 @@
+{
+  "activity_id": null,
+  "data_date": "2026-08-30",
+  "derived_from": [],
+  "endpoint": "https://routing.openstreetmap.de/routed-foot/route/v1",
+  "provider": "fossgis-osrm",
+  "provider_config_version": "osrm-config-v1",
+  "request_configuration": {
+    "alternatives": true,
+    "destination": {
+      "latitude": 29.4254009,
+      "longitude": -98.4994785
+    },
+    "geometries": "geojson",
+    "origin": {
+      "latitude": 29.4245773,
+      "longitude": -98.4935063
+    },
+    "overview": "full",
+    "profile": "foot",
+    "provider_instance": "fossgis-routed-foot",
+    "request_version": "v1",
+    "steps": false
+  },
+  "response_metadata": {
+    "distance_unit": "m",
+    "duration_unit": "s",
+    "route_count": 1,
+    "waypoint_snaps": [
+      {
+        "distance": 30.43824485,
+        "hint": "wGQyhj1ngZBOAAAAeAEAAAAAAAAAAAAApggXQdL3M0IAAAAAAAAAAEsAAABoAQAAAAAAAAAAAAATAAAAhRoh-tP7wAG-GyH6wfvAAQAAfwsAAAAA",
+        "location": [-98.493819, 29.424595],
+        "name": ""
+      },
+      {
+        "distance": 20.26653002,
+        "hint": "DABnkIMAZ5ADAQAAwgEAACcBAAADAgAA5Xv5QZOSV0L3wQ1CBLh2QvkAAACwAQAAHAEAAO4BAAATAAAAfQQh-q__wAFpBCH6-f7AAQoA_wUAAAAA",
+        "location": [-98.499459, 29.425583],
+        "name": ""
+      }
+    ]
+  },
+  "retrieved_at": "2026-08-30T14:25:30.796810+00:00",
+  "schema_version": "v1",
+  "source": "provider",
+  "status": "ok",
+  "transformations": []
+}

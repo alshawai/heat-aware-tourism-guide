@@ -36,6 +36,7 @@ from app.domain.hotel_heat_score import COMPONENTS, NeighbourhoodHeatScorer
 from app.domain.hotels import BoundingBox
 from app.integrations.fortyguard.contracts import AnalyticType, EnvParamsRequest, HeatmapRequest
 from app.integrations.fortyguard.errors import ProviderError
+from app.places import search_places
 from app.services.execution import EnvParamsExecution, HeatmapExecution, UnavailableError
 from app.services.hotel_heat_score import (
     HotelHeatAnalysisOutcome,
@@ -43,6 +44,7 @@ from app.services.hotel_heat_score import (
     build_fixture_hotel_heat_analysis_service,
 )
 from app.services.enrichment import EnrichmentService
+from app.services.trip_contract_v2 import encode_trip_analysis_v2
 
 
 def _result_json(result: Any) -> dict[str, object]:
@@ -67,9 +69,9 @@ def _error_kind(error: BaseException) -> str | None:
     if isinstance(error, BudgetExceededError):
         return "budget_exceeded"
     if isinstance(error, ProviderError):
-        return error.kind.value
+        return str(error.kind.value)
     if isinstance(error, UnavailableError):
-        return error.error_kind
+        return str(error.error_kind) if error.error_kind is not None else None
     return None
 
 
@@ -114,30 +116,8 @@ def create_fixture_server(
                     "error": "search query must contain at least 2 characters",
                 }
             else:
-                places: list[dict[str, object]] = [
-                    {
-                        "id": "menger-hotel",
-                        "name": "Menger Hotel",
-                        "context": "San Antonio, TX",
-                        "latitude": 29.4245914,
-                        "longitude": -98.4864288,
-                    },
-                    {
-                        "id": "the-alamo",
-                        "name": "The Alamo",
-                        "context": "San Antonio, TX",
-                        "latitude": 29.425833,
-                        "longitude": -98.485833,
-                    },
-                ]
                 status = 200
-                payload = {
-                    "places": [
-                        place
-                        for place in places
-                        if query.casefold() in str(place["name"]).casefold()
-                    ]
-                }
+                payload = {"places": search_places(query)}
             response = json.dumps(payload).encode()
             self.send_response(status)
             self.send_header("Content-Type", "application/json")
@@ -303,27 +283,7 @@ def create_app(
                     "error": "search query must contain at least 2 characters",
                 },
             )
-        places: list[dict[str, object]] = [
-            {
-                "id": "menger-hotel",
-                "name": "Menger Hotel",
-                "context": "San Antonio, TX",
-                "latitude": 29.4245914,
-                "longitude": -98.4864288,
-            },
-            {
-                "id": "the-alamo",
-                "name": "The Alamo",
-                "context": "San Antonio, TX",
-                "latitude": 29.425833,
-                "longitude": -98.485833,
-            },
-        ]
-        return {
-            "places": [
-                place for place in places if query.casefold() in str(place["name"]).casefold()
-            ]
-        }
+        return {"places": search_places(query)}
 
     @app.post("/api/heatmap")
     def heatmap(body: dict[str, object]) -> dict[str, object]:
@@ -367,6 +327,7 @@ def create_app(
                         else None
                     ),
                     "data_date": outcome.data_date,
+                    "response_metadata": outcome.response_metadata,
                     "transformations": [
                         {"name": t.name, "version": t.version} for t in outcome.transformations
                     ],
@@ -715,7 +676,7 @@ def _trip_result(
     request = _parse_trip_request(body)
     _validate_trip_mode(request)
     if execution_mode is ExecutionMode.LIVE and not _supported_live_geography(request):
-        return asdict(
+        return encode_trip_analysis_v2(
             TripAnalysisResponse(
                 request_identity=f"{request.mode.value}:{request.date}:{request.start_hour}-{request.end_hour}",
                 mode=request.mode,
@@ -727,7 +688,8 @@ def _trip_result(
                     "unsupported_geography",
                     "choose_us_endpoints",
                 ),
-            )
+            ),
+            envelope="api",
         )
     if trip_adapter is None:
         raise ValueError("trip analysis adapter is not configured")
@@ -736,7 +698,7 @@ def _trip_result(
         raise ValueError("trip adapter returned an invalid response")
     if response.execution_mode is not execution_mode:
         raise ValueError("trip adapter returned the wrong execution mode")
-    result = asdict(response)
+    result = encode_trip_analysis_v2(response, envelope="api")
     if response.state.value in {"success", "degraded"} and result_token_secret:
         routes = result.get("routes") or {}
         alternatives = routes.get("alternatives", []) if isinstance(routes, dict) else []

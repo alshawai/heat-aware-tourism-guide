@@ -1,38 +1,89 @@
 # Heat-Aware Tourism Guide
 
-Heat-aware trip planning for visitors to hot US cities. The application
-combines landmark timing, outdoor neighborhood heat, and walking-route
-comparison in one web experience.
+A San Antonio tourism guide that helps a traveler make three connected
+decisions in hot weather: when to visit a landmark, which hotel
+neighborhoods have lower outdoor heat exposure, and which returned walking
+route has the lower modeled heat and shade burden. It combines FortyGuard
+urban-heat data, OSRM walking routes, and OpenStreetMap buildings behind one
+FastAPI service with a React/Vite map UI.
+
+**Status:** built for the FortyGuard '26 Hackathon. The core flows, fixture
+set, quality gates, and deployment are complete; final validation and the
+submission recording are the remaining work.
 
 **Public demo:** <https://heat-aware-tourism-guide-demo.onrender.com/>
 
-The free Render service sleeps after 15 minutes without traffic, so allow about
-one minute for the first load during judging.
+The demo runs on Render's free tier in fixture mode: it replays committed,
+provenance-labelled provider data (canonical date `2024-07-15`) and makes no
+live provider calls. It sleeps after 15 minutes without traffic, so allow
+about one minute for the first load. Local setup takes about fifteen minutes
+in the [tutorial](docs/tutorials/first-run.md).
 
-## Project Shape
+## Architecture
 
-- React/Vite responsive UI with Leaflet map.
-- FastAPI orchestration and provider integrations.
-- FortyGuard heat data, OSRM walking alternatives, and OpenStreetMap data.
-- Fixture mode for public deployment, CI, and offline review.
-- San Antonio, Texas as the primary validated scenario; Austin as fallback.
+```text
+React/Vite build ──> FastAPI static assets and API
+                            │
+                            ├─ fixture/live execution ─── provenance, cache, degradation
+                            ├─ FortyGuard client ─────── submit-and-poll, bounded polling
+                            ├─ OSRM client ───────────── one request, returned alternatives
+                            ├─ Overpass acquisition ──── hotels, buildings
+                            └─ local decisions ───────── heat policy, hotel ranking, shade
+```
 
-The implementation decisions and constraints are in
-[`docs/design/design-doc.md`](docs/design/design-doc.md). External fact checks
-are collected in [`docs/research/`](docs/research/).
+The server owns all provider credentials and external calls; the frontend
+never calls a provider directly. Fixture and live execution share one domain
+schema, and every result carries its execution mode and provenance. See
+[Architecture](docs/explanation/architecture.md) and the ADR index.
+
+## Prerequisites
+
+- Git, Python 3.12, and Node.js 22.
+- No API keys for fixture mode, CI, or the public demo. Live provider
+  execution is a maintainer capability.
 
 ## Documentation
 
-Detailed contributor setup, live-mode acquisition, deployment, API reference,
-and demo instructions are organized under the Diataxis structure:
+Documentation is organized under the Diátaxis structure:
 
-- [Design explanation](docs/design/design-doc.md)
-- [Deployment guide](docs/deployment.md)
-- [Deployment decision](docs/adr/0009-separated-public-fixture-and-protected-live-deployments.md)
-- [Fixture demo script](docs/demo-script.md)
-- [Provider and coordinate research](docs/research/)
+- **Tutorial:** [clone to first fixture-backed run](docs/tutorials/first-run.md)
+- **How-to guides:** [configure live mode](docs/how-to/configure-live-mode.md),
+  [acquire fixtures](docs/how-to/acquire-fixtures.md),
+  [deploy](docs/how-to/deploy.md),
+  [record the demo](docs/how-to/record-the-demo.md)
+- **Reference:** [environment variables](docs/reference/environment-variables.md),
+  [HTTP API](docs/reference/api.md),
+  [domain schemas](docs/reference/domain-schemas.md),
+  [commands](docs/reference/commands.md),
+  [configuration](docs/reference/configuration.md)
+- **Explanation:** [architecture](docs/explanation/architecture.md),
+  [cost model](docs/explanation/cost-model.md),
+  [heat metrics](docs/explanation/heat-metrics.md),
+  [hotel weights](docs/explanation/hotel-weights.md),
+  [shade assumptions](docs/explanation/shade-assumptions.md),
+  [limitations](docs/explanation/limitations.md)
+- **Design and research:** [design document](docs/design/design-doc.md),
+  [research notes](docs/research/), [demo script](docs/demo-script.md)
 
-## Running the Application
+## Quick start
+
+```bash
+python3 -m venv .venv
+.venv/bin/python -m pip install -e '.[dev]'
+npm ci
+npm ci --prefix frontend
+ALLOW_LIVE=false .venv/bin/uvicorn app.main:app --reload   # backend on :8000
+npm run frontend:dev                                       # frontend on :5173
+```
+
+Open `http://127.0.0.1:5173` and analyze the prefilled Menger Hotel to The
+Alamo trip. In fixture mode the date and window are the acquired scenario's own,
+so they are submitted for you; moving both pins to another acquired pair swaps in
+that scenario's window. The full walkthrough, including
+alternate scenarios and the unavailable state, is in the
+[tutorial](docs/tutorials/first-run.md).
+
+## Running Live
 
 A local run reads `.env`, which is gitignored. Set `ALLOW_LIVE=true` there with a
 `FORTYGUARD_API_KEY` and the server declares `mode: live` on `/health`; the
@@ -45,28 +96,17 @@ npm run frontend:dev   # Vite dev server, proxied to the API above
 curl -s http://127.0.0.1:8000/health
 ```
 
-`ALLOW_LIVE=true` without a key fails fast at startup. Every live trip analysis
-spends billable FortyGuard activities, and a custom hour override spends another
-set, so set `FORTYGUARD_CALL_BUDGET` to cap the account-lifetime call count
-before a long session. To review the flow without spending credits, force
-fixtures for one run:
+`ALLOW_LIVE=true` without a key fails fast at startup. A live trip analysis now
+spends one heatmap activity per hour in the window plus the environmental,
+route-heat, and framing calls, and a custom hour override spends another set, so
+set `FORTYGUARD_CALL_BUDGET` to cap the account-lifetime call count before a long
+session. To review the flow without spending credits, force fixtures for one run:
 
 ```bash
 ALLOW_LIVE=false npm run backend:dev
 ```
 
-## Contributor Quality Gates
-
-Install the Python dependencies into the repository virtual environment, then install the Node tooling:
-
-```bash
-python3 -m venv .venv
-.venv/bin/python -m pip install -e '.[dev]'
-npm ci
-npm ci --prefix frontend
-```
-
-Run the local quality gates:
+## Quality gates
 
 ```bash
 npm run format:check
@@ -85,67 +125,24 @@ npm audit --audit-level=high
 npm audit --prefix frontend --audit-level=high
 ```
 
-For the browser-level fixture flow, install Chromium once and run Playwright:
+Browser-level fixture flow:
 
 ```bash
 npx --prefix frontend playwright install chromium
 npm run e2e
 ```
 
-`npm install` enables Husky. Each commit formats staged files with lint-staged,
-then runs the local Python and frontend type checks and unit tests. CI also runs
-the fixture-backed HTTP integration suite and browser flow.
+`npm install` enables Husky; each commit runs staged formatting plus local
+type checks and unit tests. CI additionally runs the fixture-backed HTTP
+integration suite, the Playwright flow, and dependency audits. All automated
+checks set `ALLOW_LIVE=false`, require no provider credentials, and make no
+FortyGuard, Overpass, or OSRM requests. The complete command catalog is in
+the [commands reference](docs/reference/commands.md).
 
-All automated checks set or retain `ALLOW_LIVE=false`. They require no provider
-credentials and make no FortyGuard, Overpass, OSRM, or other metered provider
-requests. Live acquisition remains an explicit maintainer operation through the
-scripts documented below.
+## Honesty boundaries
 
-## Live Credit Usage
-
-The salvaged quickstart account-usage endpoint is available as a credential-safe
-terminal command. Load `FORTYGUARD_API_KEY` into the process environment without
-printing it, then run:
-
-```bash
-python scripts/fortyguard_usage.py
-python scripts/fortyguard_usage.py --start 2026-08-01 --end 2026-08-24
-```
-
-The command reports the selected window, total credits, and provider activity
-breakdown. It never prints the API key. The source is the quickstart's
-`POST /v1/system/fetch-api-key-custom-usage` utility; the original
-`notebooks/00_setup.ipynb` remains the reference walkthrough.
-
-## Lidar Corridor Prototype
-
-The official USGS National Map coverage probe records classified lidar
-products intersecting the bounded Austin and San Antonio route corridors:
-
-```bash
-python scripts/lidar_corridor_probe.py
-```
-
-This writes local, gitignored metadata to `data/lidar-prototype/coverage.json`.
-It does not download point-cloud binaries. Review the tile metadata and source
-dates before adding an opt-in download/derivation workflow.
-
-The local research environment can inspect a downloaded LAZ tile with
-`laspy[lazrs]` (the package is not an application dependency):
-
-```bash
-python scripts/derive_lidar_corridor_stats.py \
-  data/lidar-prototype/laz/USGS_LPC_TX_Central_B2_2017_stratmap17_50cm_2998373a1_LAS_2019.laz
-```
-
-For the canonical San Antonio corridor, the bounded OpenStreetMap XML extract
-and classified LAZ tile can be compared at building-footprint level with:
-
-```bash
-python scripts/validate_building_lidar_heights.py \
-  /path/to/san-antonio.osm \
-  data/lidar-prototype/laz/USGS_LPC_TX_Central_B2_2017_stratmap17_50cm_2998373a1_LAS_2019.laz
-```
-
-Pass the saved OSRM response with `--route-json` to use the full walking route
-instead of the endpoint chord.
+Results are fixture replays or live observations with explicit provenance;
+routes are compared only among returned alternatives; shade is modeled from
+OSM building data, never measured; heat guidance is product policy, not
+medical advice. The full list is in
+[Limitations](docs/explanation/limitations.md).

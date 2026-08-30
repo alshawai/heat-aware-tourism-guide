@@ -1,0 +1,14 @@
+{
+  "best_time": null,
+  "degraded_reasons": null,
+  "hotels": null,
+  "routes": null,
+  "schema_version": "trip-contract-v2",
+  "state": "unavailable",
+  "unavailable": {
+    "action": "retry_or_edit_setup",
+    "code": "provider_data_missing",
+    "reason": "The initial TCM analysis failed and no exact cache or fixture fallback was available.",
+    "recoverable": true
+  }
+}

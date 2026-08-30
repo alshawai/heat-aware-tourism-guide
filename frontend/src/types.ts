@@ -109,6 +109,13 @@ export type RequestOptions = {
   scenario?: string;
   mode?: MockMode;
   signal?: AbortSignal;
+  /**
+   * Invoked when a network request is retried because the server looks like a
+   * cold-starting free-tier instance (a timeout, a transport failure, or a
+   * 502/503/504 response). Lets the UI show a distinct "waking up" state instead
+   * of a terminal error. `attempt` is the 1-based attempt that just failed.
+   */
+  onColdStartRetry?: (attempt: number) => void;
 };
 
 export type ExecutionMode = "fixture" | "live";
@@ -128,7 +135,7 @@ export type ApiProvenance = {
   source: string;
   data_date: string;
   confidence: "sufficient" | "insufficient";
-  retrieved_at: string;
+  retrieved_at: string | null;
   transformation_version: string;
   provider: string;
   response_status: string;
@@ -137,6 +144,7 @@ export type ApiProvenance = {
   coverage: number | null;
   note: string | null;
   activity_id: string | null;
+  response_metadata?: Record<string, unknown>;
 };
 
 export type EnvironmentSeriesEntry = {
@@ -201,6 +209,46 @@ export type BestTimeResult = {
   recommendation_time: string | null;
   recommendation_timezone: string | null;
   temporal_evidence: TemporalEvidenceState;
+};
+
+export type RankedHotelResult = {
+  identity: string;
+  components: Record<HotelComponentName, number>;
+  score: number;
+  percentile: number;
+  tie_group: number;
+};
+
+export type OptionalEnrichment =
+  | { state: "available" | "not_requested"; code: null; reason: null }
+  | {
+      state: "unavailable";
+      code: "optional_provider_failure";
+      reason: string;
+    };
+
+export type HotelComponentTemporalMetadata = {
+  start: string;
+  end: string;
+  timezone: string;
+  interval: "[start,end)";
+  temporal_basis: string;
+  provider_window_validated: boolean;
+  caveat_code: string;
+};
+
+export type HotelRankingResult = {
+  ranked: RankedHotelResult[];
+  weights: Record<HotelComponentName, number>;
+  usable_count: number;
+  discovered_count: number;
+  provenance: ApiProvenance;
+  enrichment: OptionalEnrichment;
+  component_units: Record<HotelComponentName, "C" | "hours">;
+  component_temporal_metadata: Record<
+    "night" | "day",
+    HotelComponentTemporalMetadata
+  > | null;
 };
 
 export type TripAnalysisRequest = {
@@ -285,13 +333,14 @@ export type RouteComparisonResult = {
 };
 
 export type TripAnalysisResponse = {
+  schema_version?: "trip-contract-v2";
   request_identity: string;
   mode: "curated" | "exploratory";
   execution_mode: ExecutionMode;
   state: "series_ready" | "success" | "degraded" | "unavailable" | "error";
-  environment: EnvironmentSeriesResult | null;
+  environment?: EnvironmentSeriesResult | null;
   best_time: BestTimeResult | null;
-  hotels: Record<string, unknown> | null;
+  hotels: HotelRankingResult | null;
   routes: RouteComparisonResult | null;
   unavailable: {
     reason: string;

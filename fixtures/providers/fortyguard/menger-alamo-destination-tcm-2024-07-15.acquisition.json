@@ -1,0 +1,47 @@
+{
+  "activity_id": "eeaceeb0-d7c6-4cd3-b922-7054e1f26c07",
+  "data_date": "2024-07-15",
+  "derived_from": [],
+  "endpoint": "/v1/heatmap",
+  "provider": "fortyguard",
+  "provider_config_version": "fortyguard-config-v1",
+  "request_configuration": {
+    "analytic_type": "tcm",
+    "direction": null,
+    "end_hour": 20,
+    "forecast": false,
+    "granularity": 60,
+    "latitude": 29.425833,
+    "longitude": -98.485833,
+    "start_date": "2024-07-15",
+    "start_hour": 8,
+    "threshold_celsius": null
+  },
+  "response_metadata": {
+    "freshness_present": false,
+    "raw_units_present": [],
+    "terminal_status": null
+  },
+  "retrieved_at": "2026-08-30T14:45:41.925220+00:00",
+  "schema_version": "v1",
+  "source": "provider",
+  "status": "ok",
+  "transformations": [
+    {
+      "name": "live_envelope_unwrapped",
+      "version": 1
+    },
+    {
+      "name": "point_to_aoi_expansion",
+      "version": 1
+    },
+    {
+      "name": "valid_time_from_request",
+      "version": 2
+    },
+    {
+      "name": "tcm_unit_celsius",
+      "version": 1
+    }
+  ]
+}

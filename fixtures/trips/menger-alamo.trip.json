@@ -1,0 +1,562 @@
+{
+  "best_time": {
+    "environmental_concerns": [
+      {
+        "concerns": [
+          {
+            "available": true,
+            "concern_level": "high",
+            "parameter": "heat_index_celsius",
+            "threshold": 40.6,
+            "threshold_source": "noaa",
+            "unit": "C",
+            "value": 49.2
+          },
+          {
+            "available": true,
+            "concern_level": "elevated",
+            "parameter": "apparent_temperature_celsius",
+            "threshold": 30.0,
+            "threshold_source": "product",
+            "unit": "C",
+            "value": 31.6
+          },
+          {
+            "available": true,
+            "concern_level": "none",
+            "parameter": "wet_bulb_temperature_celsius",
+            "threshold": 28.0,
+            "threshold_source": "published_physiology",
+            "unit": "C",
+            "value": 24.2
+          },
+          {
+            "available": true,
+            "concern_level": "elevated",
+            "parameter": "relative_humidity_percent",
+            "threshold": 60.0,
+            "threshold_source": "product",
+            "unit": "%",
+            "value": 74.7
+          },
+          {
+            "available": true,
+            "concern_level": "none",
+            "parameter": "precipitation_mm",
+            "threshold": 0.1,
+            "threshold_source": "product",
+            "unit": "mm",
+            "value": 0.0
+          },
+          {
+            "available": true,
+            "concern_level": "none",
+            "parameter": "cloud_cover_octas",
+            "threshold": null,
+            "threshold_source": null,
+            "unit": "octas",
+            "value": 42.0
+          },
+          {
+            "available": false,
+            "concern_level": "not_reported",
+            "parameter": "elevation",
+            "threshold": null,
+            "threshold_source": null,
+            "unit": "m",
+            "value": null
+          },
+          {
+            "available": true,
+            "concern_level": "elevated",
+            "parameter": "air_quality:idx",
+            "threshold": 51.0,
+            "threshold_source": "epa_aqi",
+            "unit": "index",
+            "value": 60.9
+          },
+          {
+            "available": true,
+            "concern_level": "elevated",
+            "parameter": "air_quality_pm2p5:idx",
+            "threshold": 51.0,
+            "threshold_source": "epa_aqi",
+            "unit": "index",
+            "value": 60.9
+          },
+          {
+            "available": true,
+            "concern_level": "none",
+            "parameter": "air_quality_pm10:idx",
+            "threshold": 51.0,
+            "threshold_source": "epa_aqi",
+            "unit": "index",
+            "value": 24.7
+          },
+          {
+            "available": true,
+            "concern_level": "none",
+            "parameter": "air_quality_no2:idx",
+            "threshold": 51.0,
+            "threshold_source": "epa_aqi",
+            "unit": "index",
+            "value": 1.7
+          },
+          {
+            "available": true,
+            "concern_level": "none",
+            "parameter": "aqi_us_co",
+            "threshold": 51.0,
+            "threshold_source": "epa_aqi",
+            "unit": "index",
+            "value": 1.2
+          },
+          {
+            "available": true,
+            "concern_level": "none",
+            "parameter": "air_quality_o3:idx",
+            "threshold": 51.0,
+            "threshold_source": "epa_aqi",
+            "unit": "index",
+            "value": 12.0
+          },
+          {
+            "available": true,
+            "concern_level": "none",
+            "parameter": "air_quality_so2:idx",
+            "threshold": 51.0,
+            "threshold_source": "epa_aqi",
+            "unit": "index",
+            "value": 0.8
+          },
+          {
+            "available": false,
+            "concern_level": "not_reported",
+            "parameter": "methane_ppb",
+            "threshold": null,
+            "threshold_source": null,
+            "unit": "ppb",
+            "value": null
+          },
+          {
+            "available": false,
+            "concern_level": "not_reported",
+            "parameter": "co2_ppm",
+            "threshold": null,
+            "threshold_source": null,
+            "unit": "ppm",
+            "value": null
+          },
+          {
+            "available": false,
+            "concern_level": "not_reported",
+            "parameter": "solar_irradiance",
+            "threshold": null,
+            "threshold_source": null,
+            "unit": "W/m2",
+            "value": null
+          }
+        ],
+        "elevated_count": 4,
+        "high_count": 1,
+        "hour": 8,
+        "not_reported_count": 4,
+        "primary_thermal_metric": "heat_index_celsius",
+        "primary_thermal_value": 49.2
+      }
+    ],
+    "exceedance_hours": 6.8883,
+    "framing_direction": "above",
+    "framing_threshold_celsius": 35.0,
+    "heat_interpretation": {
+      "action_required": true,
+      "action_threshold_band": "extreme_caution",
+      "band": "danger",
+      "band_label": "Danger",
+      "guidance_policy": "standard",
+      "is_actual_heat_index": true,
+      "metric": "heat_index_celsius",
+      "noaa_heat_index_available": true,
+      "policy_applied": "standard_heat_guidance",
+      "value_celsius": 49.2
+    },
+    "hourly": [
+      {
+        "hour": 8,
+        "metric": {
+          "is_actual_heat_index": true,
+          "label": "noaa_heat_index",
+          "unit": "C",
+          "value": 49.2
+        }
+      }
+    ],
+    "hourly_coverage": 0.041666666666666664,
+    "metric_label": "noaa_heat_index",
+    "persistence_hours": 6.8883,
+    "provenance": {
+      "activity_id": "f579d84c-9c17-41d5-b42f-84f0e261e344",
+      "confidence": "sufficient",
+      "coverage": null,
+      "data_date": "2024-07-15",
+      "fresh": false,
+      "note": "Genuine FortyGuard TCM and recovered environment values; provider GMT-7 conflicts with America/Chicago, so no exact local timestamp is claimed.",
+      "provider": "fortyguard",
+      "request_configuration": {
+        "anchor_policy": "maximum_in_window_temperature_celsius",
+        "end_hour": 20,
+        "environment_parameter_count": 17,
+        "environment_source": "provider",
+        "environment_transformations": [
+          {
+            "name": "live_envelope_unwrapped",
+            "version": 1
+          },
+          {
+            "name": "max_normalized_tcm_in_requested_range",
+            "version": 1
+          }
+        ],
+        "exceedance_available": true,
+        "forecast": false,
+        "framing_direction": "above",
+        "framing_threshold_celsius": 35.0,
+        "heatmap_activity_id": "eeaceeb0-d7c6-4cd3-b922-7054e1f26c07",
+        "heatmap_source": "provider",
+        "heatmap_transformations": [
+          {
+            "name": "live_envelope_unwrapped",
+            "version": 1
+          },
+          {
+            "name": "point_to_aoi_expansion",
+            "version": 1
+          },
+          {
+            "name": "valid_time_from_request",
+            "version": 2
+          },
+          {
+            "name": "tcm_unit_celsius",
+            "version": 1
+          }
+        ],
+        "latitude": 29.425833,
+        "longitude": -98.485833,
+        "not_reported_parameter_observations": 4,
+        "persistence_available": true,
+        "reported_parameter_observations": 13,
+        "start_date": "2024-07-15",
+        "start_hour": 8,
+        "tcm_source": "provider",
+        "temperature_anchor_celsius": 34.0147
+      },
+      "response_status": "completed",
+      "retrieved_at": "2026-08-30T14:56:41.018766+00:00",
+      "source": "provider",
+      "transformation_version": "best-time-decision-v1"
+    },
+    "recommendation_hour": 8,
+    "recommendation_reason": "all periods show elevated conditions; 08:00 has the fewest concerns; hour-only recommendation because provider GMT-7 conflicts with America/Chicago",
+    "recommendation_time": null,
+    "recommendation_timezone": null,
+    "recommended_hour_tcm_celsius": 34.0147,
+    "temporal_evidence": "inconsistent"
+  },
+  "degraded_reasons": {
+    "best_time": "provider timezone GMT-7 conflicts with America/Chicago; recommendation is hour-only",
+    "routes": "only one pedestrian route was returned; comparison is limited"
+  },
+  "hotels": {
+    "component_temporal_metadata": {
+      "day": {
+        "caveat_code": "date_level_not_interval_maximum",
+        "end": "17:00",
+        "interval": "[start,end)",
+        "provider_window_validated": false,
+        "start": "10:00",
+        "temporal_basis": "date_level_tcm",
+        "timezone": "America/Chicago"
+      },
+      "night": {
+        "caveat_code": "date_level_not_interval_maximum",
+        "end": "05:00",
+        "interval": "[start,end)",
+        "provider_window_validated": false,
+        "start": "00:00",
+        "temporal_basis": "date_level_tcm",
+        "timezone": "America/Chicago"
+      }
+    },
+    "component_units": {
+      "day": "C",
+      "hot_hours": "hours",
+      "night": "C",
+      "persistence": "hours"
+    },
+    "discovered_count": 7,
+    "enrichment": {
+      "code": null,
+      "reason": null,
+      "state": "not_requested"
+    },
+    "provenance": {
+      "activity_id": "942d1fda-cc90-4a93-8cdc-30eeeadc0322",
+      "confidence": "sufficient",
+      "coverage": null,
+      "data_date": "2024-07-15",
+      "fresh": false,
+      "note": "Computed ranking from genuine district heat components and synthesized base hotel discovery. Night/day are the same date-level TCM anchor, not validated interval maxima.",
+      "provider": "heat-aware-tourism-guide",
+      "request_configuration": {
+        "component_evidence": "three genuine canonical district FortyGuard anchors",
+        "component_provider": "fortyguard",
+        "hotel_discovery_source": "committed synthesized base fixture",
+        "spatial_interpretation": "anchor values applied equally; no interval or per-hotel maxima invented"
+      },
+      "response_status": "completed",
+      "retrieved_at": "2026-08-30T15:06:53.453206+00:00",
+      "source": "computed",
+      "transformation_version": "hotel-ranking-v1"
+    },
+    "ranked": [
+      {
+        "components": {
+          "day": 31.7218,
+          "hot_hours": 6.8883,
+          "night": 31.7218,
+          "persistence": 6.8883
+        },
+        "identity": "Alamo Plaza Hotel",
+        "percentile": 100.0,
+        "score": 20.546725000000002,
+        "tie_group": 0
+      },
+      {
+        "components": {
+          "day": 31.7218,
+          "hot_hours": 6.8883,
+          "night": 31.7218,
+          "persistence": 6.8883
+        },
+        "identity": "Commerce Street Inn",
+        "percentile": 100.0,
+        "score": 20.546725000000002,
+        "tie_group": 0
+      },
+      {
+        "components": {
+          "day": 31.7218,
+          "hot_hours": 6.8883,
+          "night": 31.7218,
+          "persistence": 6.8883
+        },
+        "identity": "Hemisfair Hotel",
+        "percentile": 100.0,
+        "score": 20.546725000000002,
+        "tie_group": 0
+      },
+      {
+        "components": {
+          "day": 31.7218,
+          "hot_hours": 6.8883,
+          "night": 31.7218,
+          "persistence": 6.8883
+        },
+        "identity": "Market Square Lodge",
+        "percentile": 100.0,
+        "score": 20.546725000000002,
+        "tie_group": 0
+      },
+      {
+        "components": {
+          "day": 31.7218,
+          "hot_hours": 6.8883,
+          "night": 31.7218,
+          "persistence": 6.8883
+        },
+        "identity": "Mission Courtyard Hotel",
+        "percentile": 100.0,
+        "score": 20.546725000000002,
+        "tie_group": 0
+      },
+      {
+        "components": {
+          "day": 31.7218,
+          "hot_hours": 6.8883,
+          "night": 31.7218,
+          "persistence": 6.8883
+        },
+        "identity": "River Walk House",
+        "percentile": 100.0,
+        "score": 20.546725000000002,
+        "tie_group": 0
+      }
+    ],
+    "usable_count": 6,
+    "weights": {
+      "day": 0.2,
+      "hot_hours": 0.25,
+      "night": 0.35,
+      "persistence": 0.2
+    }
+  },
+  "routes": {
+    "alternatives": [
+      {
+        "building_coverage": 0.0,
+        "building_explicit_count": 0,
+        "building_explicit_fraction": 0.0,
+        "building_inferred_levels_count": 0,
+        "building_inferred_levels_fraction": 0.0,
+        "building_unknown_count": 0,
+        "building_unknown_fraction": 0.0,
+        "distance_m": 193.1,
+        "dropped_building_geometry_count": 0,
+        "duration_s": 154.7,
+        "geometry": [
+          [-98.486612, 29.424642],
+          [-98.486437, 29.425119],
+          [-98.486357, 29.425109],
+          [-98.486338, 29.425197],
+          [-98.486331, 29.425232],
+          [-98.486258, 29.425612],
+          [-98.48623, 29.425607],
+          [-98.486226, 29.425606],
+          [-98.485903, 29.425549],
+          [-98.485864, 29.425543],
+          [-98.485812, 29.425739],
+          [-98.485811, 29.425744],
+          [-98.485808, 29.425751],
+          [-98.485806, 29.425757],
+          [-98.485806, 29.425763],
+          [-98.485808, 29.425767],
+          [-98.48581, 29.425771],
+          [-98.485815, 29.425775],
+          [-98.485833, 29.425784],
+          [-98.485836, 29.425786],
+          [-98.485824, 29.425831]
+        ],
+        "heat_coverage": 1.0,
+        "heat_interpretation": {
+          "action_required": false,
+          "action_threshold_band": "provider_higher",
+          "band": "provider_moderate",
+          "band_label": "Moderate provider temperature",
+          "guidance_policy": "standard",
+          "is_actual_heat_index": false,
+          "metric": "tcm",
+          "noaa_heat_index_available": false,
+          "policy_applied": "standard_heat_guidance",
+          "value_celsius": 34.0147
+        },
+        "heat_metric": "tcm",
+        "heat_source": "landmark_reuse",
+        "heat_status": "not_elevated",
+        "heat_unit": "C",
+        "heat_value": 34.0147,
+        "identity": "route-1",
+        "modeled_shade_percent": null,
+        "recommendation_reason": "shortest returned route under mild heat",
+        "recommended": true,
+        "shade_confidence": null,
+        "shade_limitations": [],
+        "shade_model_label": null
+      }
+    ],
+    "building_provenance": null,
+    "comparison_scope": "returned alternatives",
+    "confidence": "sufficient",
+    "corridor_heat_value": 34.0147,
+    "coverage": 1.0,
+    "decision_state": "mild_shortest_recommended",
+    "fallback_reason": null,
+    "heat_interpretation": {
+      "action_required": false,
+      "action_threshold_band": "provider_higher",
+      "band": "provider_moderate",
+      "band_label": "Moderate provider temperature",
+      "guidance_policy": "standard",
+      "is_actual_heat_index": false,
+      "metric": "tcm",
+      "noaa_heat_index_available": false,
+      "policy_applied": "standard_heat_guidance",
+      "value_celsius": 34.0147
+    },
+    "heat_metric": "tcm",
+    "heat_provenance": {
+      "activity_id": null,
+      "confidence": "sufficient",
+      "coverage": null,
+      "data_date": "2024-07-15",
+      "fresh": false,
+      "note": "Route heat reuses destination TCM; no corridor heat acquisition was made.",
+      "provider": "fortyguard",
+      "request_configuration": {
+        "evidence_class": "provider",
+        "route_heat_source": "landmark_reuse"
+      },
+      "response_status": "completed",
+      "retrieved_at": "2026-08-30T14:56:41.018766+00:00",
+      "source": "provider",
+      "transformation_version": "route-landmark-heat-reuse-v1"
+    },
+    "heat_status": "not_elevated",
+    "heat_unit": "C",
+    "lowest_heat_route_id": "route-1",
+    "provenance": {
+      "activity_id": null,
+      "confidence": "sufficient",
+      "coverage": null,
+      "data_date": "2024-07-15",
+      "fresh": false,
+      "note": null,
+      "provider": "heat-aware-tourism-guide",
+      "request_configuration": {
+        "heat_provider": "fortyguard",
+        "routing_provider": "fossgis-osrm"
+      },
+      "response_status": "completed",
+      "retrieved_at": "2026-08-30T16:00:00+00:00",
+      "source": "computed",
+      "transformation_version": "route-heat-gate-v1"
+    },
+    "reason": "heat is mild across the comparable returned routes; the shortest route is recommended",
+    "recommended_id": "route-1",
+    "route_set_state": "single_route",
+    "routing_provenance": {
+      "activity_id": null,
+      "confidence": "sufficient",
+      "coverage": null,
+      "data_date": "2026-08-30",
+      "fresh": false,
+      "note": "Genuine OSRM response retrieved 2026-08-30T14:25:20.600836+00:00.",
+      "provider": "fossgis-osrm",
+      "request_configuration": {
+        "alternatives": true,
+        "destination": {
+          "latitude": 29.425833,
+          "longitude": -98.485833
+        },
+        "geometries": "geojson",
+        "origin": {
+          "latitude": 29.4245914,
+          "longitude": -98.4864288
+        },
+        "overview": "full",
+        "profile": "foot",
+        "provider_instance": "fossgis-routed-foot",
+        "request_version": "v1",
+        "steps": false
+      },
+      "response_status": "completed",
+      "retrieved_at": "2026-08-30T14:25:20.600836+00:00",
+      "source": "fixture",
+      "transformation_version": "osrm-route-normalization-v1"
+    },
+    "solar_provenance": null
+  },
+  "schema_version": "trip-contract-v2",
+  "state": "degraded",
+  "unavailable": null
+}

@@ -11,7 +11,7 @@ import { App } from "../../app/App";
 import { resetTripAnalysisCache } from "./useTripAnalysis";
 
 const successResponse = {
-  request_identity: "curated:2026-08-23:8-20",
+  request_identity: "curated:2024-07-15:8-20",
   mode: "curated",
   execution_mode: "fixture",
   state: "success",
@@ -33,7 +33,7 @@ const successResponse = {
     environmental_concerns: [],
     provenance: {
       source: "fixture",
-      data_date: "2026-08-23",
+      data_date: "2024-07-15",
       confidence: "sufficient",
       retrieved_at: "2026-08-24T00:00:00Z",
       transformation_version: "best-time-decision-v1",
@@ -82,7 +82,7 @@ const successResponse = {
 
 const routesProvenance = {
   source: "fixture",
-  data_date: "2026-08-23",
+  data_date: "2024-07-15",
   confidence: "sufficient",
   retrieved_at: "2026-08-24T00:00:00Z",
   transformation_version: "osrm-route-normalization-v1",
@@ -97,7 +97,7 @@ const routesProvenance = {
 
 const solarProvenance = {
   source: "astral",
-  data_date: "2026-08-23",
+  data_date: "2024-07-15",
   confidence: "sufficient",
   retrieved_at: "2026-08-24T00:00:00Z",
   transformation_version: "solar-position-v1",
@@ -341,7 +341,7 @@ const seriesResponse = {
 /** The same trip re-analyzed for 14:00 only. */
 const overrideResponse = {
   ...seriesResponse,
-  request_identity: "curated:2026-08-23:14-15",
+  request_identity: "curated:2024-07-15:14-15",
   best_time: {
     ...seriesResponse.best_time,
     hourly: [hourlySeries[6]],
@@ -383,7 +383,7 @@ const overrideResponse = {
  * legitimately reports a single hour as unavailable rather than analyzing it.
  */
 const refusedOverrideResponse = {
-  request_identity: "curated:2026-08-23:14-15",
+  request_identity: "curated:2024-07-15:14-15",
   mode: "curated",
   execution_mode: "fixture",
   state: "unavailable",
@@ -468,7 +468,7 @@ describe("trip setup", () => {
     expect(
       screen.queryByRole("button", { name: "Explore another trip" })
     ).toBeNull();
-    expect(screen.getByLabelText("Date")).toHaveValue("2026-08-23");
+    expect(screen.getByLabelText("Date")).toHaveValue("2024-07-15");
     expect(screen.getByLabelText("Start time")).toHaveValue("8");
     expect(screen.getByLabelText("End time")).toHaveValue("20");
     expect(screen.getByLabelText(/Cautious guidance/)).not.toBeChecked();
@@ -513,7 +513,7 @@ describe("trip setup", () => {
           destination_longitude: -98.485833,
           landmark_name: "The Alamo",
           district_name: "Downtown San Antonio",
-          date: "2026-08-23",
+          date: "2024-07-15",
           start_hour: 8,
           end_hour: 20,
           cautious: false,
@@ -547,7 +547,7 @@ describe("trip setup", () => {
       // exploratory answer.
       return jsonResponse({
         ...successResponse,
-        request_identity: "exploratory:2026-08-23:8-20",
+        request_identity: "exploratory:2024-07-15:8-20",
         mode: "exploratory",
       });
     });
@@ -622,7 +622,9 @@ describe("trip setup", () => {
     expect(screen.getByText("Fixture replay")).toBeInTheDocument();
     expect(screen.getByText("public-fixture")).toBeInTheDocument();
     expect(
-      screen.getByText(/fixed to August 23, 2026, from 08:00 to 20:00/)
+      screen.getByText(
+        /fixed to the committed scenario: 2024-07-15, 08:00 to 19:00/
+      )
     ).toBeInTheDocument();
     expect(screen.getByLabelText("Date")).toBeDisabled();
     expect(screen.getByLabelText("Start time")).toBeDisabled();
@@ -637,7 +639,7 @@ describe("trip setup", () => {
       "/api/trip/analyze",
       expect.objectContaining({
         body: expect.stringContaining(
-          '"date":"2026-08-23","start_hour":8,"end_hour":20,"cautious":true,"execution_mode":"fixture"'
+          '"date":"2024-07-15","start_hour":8,"end_hour":20,"cautious":true,"execution_mode":"fixture"'
         ),
       })
     );
@@ -723,7 +725,7 @@ describe("trip setup", () => {
       "mismatched request identity",
       jsonResponse({
         ...successResponse,
-        request_identity: "curated:2026-08-23:9-20",
+        request_identity: "curated:2024-07-15:9-20",
       }),
     ],
     [
@@ -803,7 +805,7 @@ describe("trip results", () => {
           warning: "fixed temperature anchor; not a real 24-hour forecast",
           provenance: {
             source: "fixture",
-            data_date: "2026-08-23",
+            data_date: "2024-07-15",
             confidence: "sufficient",
             retrieved_at: "2026-08-24T00:00:00Z",
             transformation_version: "environment-series-v1",
@@ -1061,7 +1063,12 @@ describe("trip results", () => {
     const analyze = await openSetup(user);
     await user.click(analyze);
 
-    const notice = await screen.findByRole("note");
+    // Fixture replay puts a note on the setup screen too, so the results have
+    // to be on screen before the notice can be read unambiguously.
+    const comparison = await screen.findByRole("region", {
+      name: "Walking routes",
+    });
+    const notice = screen.getByRole("note");
     expect(
       within(notice).getByText(/could not reach the building data/)
     ).toBeInTheDocument();
@@ -1076,7 +1083,6 @@ describe("trip results", () => {
       within(notice).queryByText(/do not publish enough height data/)
     ).not.toBeInTheDocument();
     // The routes themselves stay listed, just unranked.
-    const comparison = screen.getByRole("region", { name: "Walking routes" });
     expect(
       within(comparison).queryByText("Recommended route")
     ).not.toBeInTheDocument();
@@ -1126,7 +1132,7 @@ describe("custom hour override", () => {
       "/api/trip/analyze",
       expect.objectContaining({
         body: expect.stringContaining(
-          '"date":"2026-08-23","start_hour":14,"end_hour":15,"cautious":false,"execution_mode":"fixture"'
+          '"date":"2024-07-15","start_hour":14,"end_hour":15,"cautious":false,"execution_mode":"fixture"'
         ),
       })
     );
