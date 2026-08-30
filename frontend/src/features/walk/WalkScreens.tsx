@@ -19,6 +19,11 @@ import {
 } from "../../components/Shared";
 import { dataClient } from "../../services/dataClient";
 import type { ResultState } from "../../types";
+import type {
+  ApiProvenance,
+  RouteComparisonResult,
+  RouteOptionResult,
+} from "../../types";
 
 export function WalkLocationScreen() {
   const navigate = useNavigate();
@@ -98,7 +103,7 @@ function useTripRequest() {
 }
 
 export function BestTimeScreen() {
-  const { walkLocation, walkDate } = useAppState();
+  const { walkLocation, walkDate, tripAnalysis } = useAppState();
   const { status, trip, load } = useTripRequest();
   if (!walkLocation || !walkDate)
     return <Navigate to="/walk/location" replace />;
@@ -167,44 +172,69 @@ export function BestTimeScreen() {
           <ProvenanceFooter value={trip.provenance.bestTime} />
         </>
       )}
+      {tripAnalysis?.state === "success" && tripAnalysis.routes && (
+        <div className="result-actions">
+          <Link className="button-link" to="/walk/routes">
+            Compare returned routes <Route size={18} />
+          </Link>
+        </div>
+      )}
     </section>
   );
 }
 
 export function RouteComparisonScreen() {
-  const { trip, mode } = useAppState();
-  const [selected, setSelected] = useState(trip?.routes[0]?.id ?? "");
-  if (!trip) return <Navigate to="/walk/result" replace />;
-  const degraded =
-    mode === "degraded" ||
-    trip.routes.length < 2 ||
-    trip.provenance.routes.confidence === "Low";
+  const { tripAnalysis } = useAppState();
+  const routes = tripAnalysis?.routes;
+  const [selected, setSelected] = useState(
+    routes?.alternatives[0]?.identity ?? ""
+  );
+  if (!tripAnalysis || !routes) return <Navigate to="/" replace />;
+  if (routes.alternatives.length === 0) {
+    return <RouteUnavailable result={routes} />;
+  }
   const active =
-    trip.routes.find((route) => route.id === selected) ?? trip.routes[0];
+    routes.alternatives.find((route) => route.identity === selected) ??
+    routes.alternatives[0];
+  const limited =
+    routes.route_set_state === "single_route" ||
+    routes.confidence === "insufficient";
   return (
     <section className="screen result-screen">
       <div className="screen-heading compact">
         <span className="step-label">Route comparison</span>
         <h1>Compare returned alternatives</h1>
         <p>
-          The recommendation applies only to the routes returned for this
-          request.
+          {routes.reason} We compare only the routes returned for this request,
+          never every possible walking route.
         </p>
       </div>
-      {degraded && (
+      {limited && (
         <DegradedNotice>
-          {trip.routes.length < 2
-            ? "Only one route alternative was returned, so a comparison is not available."
-            : "Building-height coverage lowers confidence in the modeled shade estimates."}
+          {routes.route_set_state === "single_route"
+            ? "One returned route is usable, but there are no alternatives to compare."
+            : "Coverage is limited, so this result should not be treated as a definitive ranking."}
+        </DegradedNotice>
+      )}
+      {routes.alternatives.length > 1 && (
+        <div className="decision-banner" role="status">
+          {routes.decision_state === "shade_required" &&
+            "Elevated heat was found. "}
+          The recommendation is{" "}
+          <strong>best among returned alternatives</strong>, not globally
+          optimal. Shade is modeled from building data.
+        </div>
+      )}
+      {routes.decision_state === "heat_unavailable" && (
+        <DegradedNotice>
+          Route heat is unavailable. Distances and durations are shown, but no
+          route recommendation is made.
         </DegradedNotice>
       )}
       <div className="route-layout">
         <div className="route-map">
           <MapContainer
-            center={[
-              trip.location.latitude + 0.002,
-              trip.location.longitude + 0.003,
-            ]}
+            center={leafletPoint(active.geometry?.[0] ?? [0, 0])}
             zoom={14}
             scrollWheelZoom
             className="map"
@@ -213,41 +243,49 @@ export function RouteComparisonScreen() {
               attribution="&copy; OpenStreetMap contributors"
               url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
             />
-            {trip.routes.map((route, index) => (
+            {routes.alternatives.map((route, index) => (
               <Polyline
-                key={route.id}
-                positions={route.geometry}
+                key={route.identity}
+                positions={(route.geometry ?? []).map(leafletPoint)}
                 pathOptions={{
                   color:
-                    route.id === active.id
+                    route.identity === active.identity
                       ? "#b9472f"
                       : ["#237064", "#cf922d", "#67727a"][index],
-                  weight: route.id === active.id ? 7 : 4,
-                  opacity: route.id === active.id ? 1 : 0.72,
+                  weight: route.identity === active.identity ? 7 : 4,
+                  opacity: route.identity === active.identity ? 1 : 0.72,
                 }}
-                eventHandlers={{ click: () => setSelected(route.id) }}
+                eventHandlers={{ click: () => setSelected(route.identity) }}
               />
             ))}
           </MapContainer>
         </div>
         <div className="route-list">
-          {trip.routes.map((route, index) => (
+          {routes.alternatives.map((route, index) => (
             <button
               type="button"
-              key={route.id}
-              className={`route-card ${route.id === active.id ? "active" : ""}`}
-              onClick={() => setSelected(route.id)}
+              key={route.identity}
+              className={`route-card ${route.identity === active.identity ? "active" : ""}`}
+              onClick={() => setSelected(route.identity)}
             >
               <span className="route-index">{index + 1}</span>
               <span>
-                <strong>{route.name}</strong>
+                <strong>{route.identity}</strong>
                 <small>
-                  {(route.distanceMeters / 1000).toFixed(1)} km ·{" "}
-                  {route.durationMinutes} min
+                  {(route.distance_m / 1000).toFixed(2)} km ·{" "}
+                  {Math.round(route.duration_s / 60)} min
                 </small>
-                <small>{route.heatStatus}</small>
+                <small>{heatLabel(route)}</small>
+                <small>
+                  {route.modeled_shade_percent === null
+                    ? "Modeled shade unavailable"
+                    : `${route.modeled_shade_percent}% modeled shade`}
+                </small>
+                <small>{coverageLabel(route, routes)}</small>
               </span>
-              {route.id === active.id && <Check size={18} />}
+              {route.identity === active.identity && (
+                <Check size={18} aria-label="Selected" />
+              )}
             </button>
           ))}
         </div>
@@ -255,65 +293,119 @@ export function RouteComparisonScreen() {
       <article className="route-detail">
         <div>
           <span>Modeled shade estimate</span>
-          <strong>{active.shadePercent}%</strong>
+          <strong>
+            {active.modeled_shade_percent === null
+              ? "Unavailable"
+              : `${active.modeled_shade_percent}%`}
+          </strong>
           <small>
-            Estimate based on building data, not measured real-world shade.
+            Modeled estimate based on building data, not measured real-world
+            shade.
           </small>
         </div>
         <div>
-          <span>Recommendation</span>
+          <span>Route evidence</span>
           <strong>
-            {active.id === "route-2"
-              ? "Best among returned alternatives"
-              : "Selected route"}
+            {active.recommended
+              ? "Recommended"
+              : active.heat_status === "elevated"
+                ? "Elevated heat"
+                : "Returned alternative"}
           </strong>
-          <small>{active.heatStatus}</small>
+          <small>{active.recommendation_reason ?? routes.reason}</small>
         </div>
-        <Link className="button-link" to={`/walk/routes/${active.id}`}>
-          View directions <ArrowRight size={17} />
+        <Link className="button-link" to={`/walk/routes/${active.identity}`}>
+          View route details <ArrowRight size={17} />
         </Link>
       </article>
-      <ProvenanceFooter value={trip.provenance.routes} />
+      <ProvenanceFooter value={toProvenance(routes.provenance, routes)} />
     </section>
   );
 }
 
 export function SelectedRouteScreen() {
-  const { trip } = useAppState();
+  const { tripAnalysis } = useAppState();
   const { routeId } = useParams();
-  if (!trip) return <Navigate to="/walk/result" replace />;
-  const route = trip.routes.find((candidate) => candidate.id === routeId);
+  const route = tripAnalysis?.routes?.alternatives.find(
+    (candidate) => candidate.identity === routeId
+  );
   if (!route) return <Navigate to="/walk/routes" replace />;
   return (
     <section className="screen narrow-screen">
       <div className="screen-heading">
         <span className="step-label">Selected route</span>
-        <h1>{route.name}</h1>
+        <h1>{route.identity}</h1>
         <p>
-          {(route.distanceMeters / 1000).toFixed(1)} km · about{" "}
-          {route.durationMinutes} minutes
+          {(route.distance_m / 1000).toFixed(2)} km · about{" "}
+          {Math.round(route.duration_s / 60)} minutes
         </p>
       </div>
       <div className="route-summary">
         <Footprints size={26} />
         <div>
-          <strong>{route.shadePercent}% modeled shade estimate</strong>
+          <strong>
+            {route.modeled_shade_percent === null
+              ? "Modeled shade unavailable"
+              : `${route.modeled_shade_percent}% modeled shade estimate`}
+          </strong>
           <p>
             Based on building data and limited to the returned route
             alternatives.
           </p>
         </div>
       </div>
-      <ol className="directions">
-        {route.steps.map((step, index) => (
-          <li key={step}>
-            <span>{index + 1}</span>
-            <p>{step}</p>
-          </li>
-        ))}
-      </ol>
+      <p className="route-geometry-note">
+        Turn-by-turn directions are not included in this analysis response. The
+        full returned route geometry is shown on the comparison map.
+      </p>
       <Link className="text-link" to="/walk/routes">
         Return to route comparison
+      </Link>
+    </section>
+  );
+}
+
+function leafletPoint(point: [number, number]): [number, number] {
+  return [point[1], point[0]];
+}
+
+function heatLabel(route: RouteOptionResult) {
+  if (route.heat_value === null) return "Heat unavailable";
+  return `${route.heat_value.toFixed(1)} °C · ${route.heat_status === "elevated" ? "Elevated heat" : "Mild heat"}`;
+}
+
+function coverageLabel(
+  route: RouteOptionResult,
+  comparison: RouteComparisonResult
+) {
+  const coverage =
+    route.heat_coverage ?? route.building_coverage ?? comparison.coverage;
+  return `Coverage ${Math.round(coverage * 100)}% · ${comparison.confidence} confidence`;
+}
+
+function toProvenance(value: ApiProvenance, comparison: RouteComparisonResult) {
+  return {
+    source: value.source === "fixture" ? "fixture" : "provider",
+    dataDate: value.data_date,
+    confidence: comparison.confidence,
+    coverage: `${Math.round(comparison.coverage * 100)}% route coverage`,
+    note: "Comparison is limited to returned alternatives. Shade is modeled from building data.",
+  } as const;
+}
+
+function RouteUnavailable({ result }: { result: RouteComparisonResult }) {
+  return (
+    <section className="screen result-screen">
+      <div className="screen-heading compact">
+        <span className="step-label">Route comparison</span>
+        <h1>No suitable returned route</h1>
+        <p>
+          {result.reason}. No route was fabricated and no global optimum is
+          implied.
+        </p>
+      </div>
+      <Link className="button-link" to="/">
+        Return to trip setup
       </Link>
     </section>
   );

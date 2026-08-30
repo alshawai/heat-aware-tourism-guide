@@ -28,6 +28,21 @@ test("analyzes the curated trip entirely from fixtures", async ({ page }) => {
     state: "success",
     execution_mode: "fixture",
     best_time: { provenance: { source: "fixture" } },
+    routes: {
+      alternatives: expect.arrayContaining([
+        expect.objectContaining({ geometry: expect.any(Array) }),
+      ]),
+    },
   });
   await expect(page.getByText("Trip analysis ready")).toBeVisible();
+  await page.getByRole("link", { name: "Compare returned routes" }).click();
+  await expect(
+    page.getByRole("heading", { name: "Compare returned alternatives" })
+  ).toBeVisible();
+  await expect(page.getByText("short")).toBeVisible();
+  await expect(page.getByText("shady")).toBeVisible();
+  await expect(page.getByText("80% modeled shade")).toBeVisible();
+  await expect(
+    page.getByText(/best among returned alternatives/i)
+  ).toBeVisible();
 });

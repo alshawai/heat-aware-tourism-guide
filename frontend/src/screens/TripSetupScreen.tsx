@@ -7,6 +7,7 @@ import {
   Sun,
 } from "lucide-react";
 import { useEffect, useRef, useState, type FormEvent } from "react";
+import { Link } from "react-router-dom";
 import { useAppState } from "../app/AppState";
 import { dataClient } from "../services/dataClient";
 import type {
@@ -715,7 +716,12 @@ export function TripSetupScreen() {
             {(tripAnalysis.state === "success" ||
               tripAnalysis.state === "degraded") &&
               tripAnalysis.routes && (
-                <RouteComparison result={tripAnalysis.routes} />
+                <>
+                  <RouteComparison result={tripAnalysis.routes} />
+                  <Link className="button-link" to="/walk/routes">
+                    Compare returned routes
+                  </Link>
+                </>
               )}
             <button
               type="button"

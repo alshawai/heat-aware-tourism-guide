@@ -11,7 +11,7 @@ export type LocationSelection = {
 };
 
 export type Provenance = {
-  source: "mock" | "fixture";
+  source: "mock" | "fixture" | "provider" | "cache";
   dataDate: string;
   confidence?: string;
   coverage?: string;
