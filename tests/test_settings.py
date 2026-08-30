@@ -7,6 +7,7 @@ from app.settings import (
     FortyGuardAreaSettings,
     FortyGuardPollingSettings,
     OverpassSettings,
+    ShadeSettings,
     SettingsError,
     load_settings,
 )
@@ -196,6 +197,31 @@ def test_invalid_overpass_policy_or_district_bounds_are_rejected() -> None:
         load_settings(environ={"OVERPASS_RETRY_DELAY_SECONDS": "inf"})
     with pytest.raises(SettingsError, match="HOTEL_DISTRICT_BBOX"):
         load_settings(environ={"HOTEL_DISTRICT_BBOX": "29.5,-98.5,29.4,-98.4"})
+
+
+def test_shade_policy_defaults_and_overrides_are_validated() -> None:
+    assert load_settings(environ={}).shade == ShadeSettings()
+    settings = load_settings(
+        environ={
+            "SHADE_BUILDING_SEARCH_DISTANCE_M": "300",
+            "SHADE_MINIMUM_BUILDING_HEIGHT_COVERAGE": "0.75",
+            "SHADE_METRES_PER_LEVEL": "3.2",
+            "TRIP_CANONICAL_TIMEZONE": "America/New_York",
+        }
+    ).shade
+    assert settings.building_search_distance_m == 300.0
+    assert settings.minimum_building_height_coverage == 0.75
+    assert settings.metres_per_level == 3.2
+    assert settings.canonical_timezone == "America/New_York"
+
+
+def test_invalid_shade_policy_is_rejected() -> None:
+    with pytest.raises(SettingsError, match="SHADE_BUILDING_SEARCH_DISTANCE_M"):
+        load_settings(environ={"SHADE_BUILDING_SEARCH_DISTANCE_M": "0"})
+    with pytest.raises(SettingsError, match="SHADE_MINIMUM_BUILDING_HEIGHT_COVERAGE"):
+        load_settings(environ={"SHADE_MINIMUM_BUILDING_HEIGHT_COVERAGE": "1.1"})
+    with pytest.raises(SettingsError, match="TRIP_CANONICAL_TIMEZONE"):
+        load_settings(environ={"TRIP_CANONICAL_TIMEZONE": "Not/AZone"})
 
 
 def test_call_budget_defaults_to_record_only_and_is_overridable() -> None:

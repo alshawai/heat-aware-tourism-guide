@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime
 import math
 from typing import Callable, Mapping
 from urllib.parse import urlsplit, urlunsplit
@@ -16,6 +16,7 @@ from app.domain.hotels import (
     OsmIdentity,
 )
 from app.domain.provenance import CacheKey
+from app.integrations.overpass.buildings import osm_source_timestamp as _source_timestamp
 from app.integrations.overpass.client import OverpassClient
 from app.integrations.overpass.errors import OverpassError
 from app.services.cache import CacheService
@@ -127,20 +128,6 @@ class HotelDiscoveryService:
             stale,
             None if state is DiscoveryState.AVAILABLE else "insufficient_usable_hotels",
         )
-
-
-def _source_timestamp(response: Mapping[str, object]) -> datetime:
-    osm3s = response.get("osm3s")
-    raw = osm3s.get("timestamp_osm_base") if isinstance(osm3s, Mapping) else None
-    if not isinstance(raw, str) or not raw.strip():
-        raise OverpassError("Overpass response is missing its OSM source timestamp")
-    try:
-        timestamp = datetime.fromisoformat(raw.replace("Z", "+00:00"))
-    except ValueError:
-        raise OverpassError("Overpass OSM source timestamp is invalid") from None
-    if timestamp.tzinfo is None:
-        timestamp = timestamp.replace(tzinfo=timezone.utc)
-    return timestamp
 
 
 def _normalize(response: Mapping[str, object]) -> tuple[list[_HotelObject], int]:

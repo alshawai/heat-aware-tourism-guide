@@ -46,12 +46,14 @@ from app.integrations.overpass.client import OverpassClient
 from app.integrations.overpass.errors import OverpassError
 from app.integrations.overpass.transport import HttpOverpassTransport
 from app.services.cache import CacheService
+from app.services.building_execution import BuildingExecution
 from app.services.hotel_discovery import HotelDiscoveryService
 from app.services.hotel_heat_score import HotelHeatAnalysisService
 from app.services.hotel_heat_score import build_fixture_hotel_heat_analysis_service
 from app.services.execution import EnvParamsExecution, HeatmapExecution
 from app.services.ledger_store import JsonlLedgerStore
 from app.services.route_analysis import RouteAnalysisService
+from app.services.route_shade import RouteShadeService
 from app.services.routing import RouteExecution
 from app.services.trip_adapters import (
     FixtureTripAnalysisAdapter,
@@ -414,6 +416,7 @@ def build_live_route_analysis_service(
     client: FortyGuardClient,
     cache: CacheService | None = None,
     fixture_path: Path,
+    building_fixture_path: Path | None = None,
 ) -> RouteAnalysisService:
     """Compose one OSRM execution and one optional shared corridor activity."""
     osrm = settings.osrm
@@ -435,6 +438,33 @@ def build_live_route_analysis_service(
         client,
         polling=settings.polling,
     )
+    overpass = settings.overpass
+    shade = settings.shade
+    overpass_client = OverpassClient(
+        HttpOverpassTransport(
+            overpass.endpoint,
+            user_agent=overpass.user_agent,
+            timeout_seconds=overpass.timeout_seconds,
+        ),
+        max_attempts=overpass.max_attempts,
+        retry_delay_seconds=overpass.retry_delay_seconds,
+    )
+    building_execution = BuildingExecution(
+        live_loader=overpass_client.query_buildings,
+        cache=cache if cache is not None else CacheService(),
+        fixture_path=building_fixture_path,
+        endpoint=overpass.endpoint,
+        schema_version=shade.schema_version,
+        provider_config_version=shade.provider_config_version,
+        model_version=shade.model_version,
+        search_distance_m=shade.building_search_distance_m,
+    )
+    shade_service = RouteShadeService(
+        building_execution,
+        corridor_buffer_m=shade.building_search_distance_m,
+        minimum_building_coverage=shade.minimum_building_height_coverage,
+        metres_per_level=shade.metres_per_level,
+    )
     return RouteAnalysisService(
         route_execution,
         profile=osrm.profile,
@@ -449,6 +479,7 @@ def build_live_route_analysis_service(
         corridor_buffer_m=settings.area.buffer_m,
         corridor_granularity=settings.area.granularity,
         shared_heat_loader=shared_heat.load,
+        shade_evidence_loader=shade_service.load,
     )
 
 
@@ -517,6 +548,9 @@ def create_production_app(
             client=client,
             cache=cache,
             fixture_path=heatmap_fixture.parent / "osrm-route.json",
+            building_fixture_path=(
+                heatmap_fixture.parent / "acquired" / "overpass-buildings-canonical.json"
+            ),
         )
     if trip_adapter is None:
         fixture_trip_adapter = FixtureTripAnalysisAdapter(

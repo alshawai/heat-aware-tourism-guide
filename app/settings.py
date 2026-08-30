@@ -7,6 +7,7 @@ import math
 import os
 from pathlib import Path
 from typing import Mapping
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from app.domain.hotels import BoundingBox
 
@@ -77,6 +78,19 @@ class OverpassSettings:
 
 
 @dataclass(frozen=True)
+class ShadeSettings:
+    """Product and model policy for exact-time OSM building shade."""
+
+    building_search_distance_m: float = 250.0
+    minimum_building_height_coverage: float = 0.70
+    metres_per_level: float = 3.0
+    canonical_timezone: str = "America/Chicago"
+    schema_version: str = "building-v1"
+    provider_config_version: str = "overpass-building-config-v1"
+    model_version: str = "route-shade-v1"
+
+
+@dataclass(frozen=True)
 class AppSettings:
     allow_live: bool
     fortyguard_api_key: str | None
@@ -85,6 +99,7 @@ class AppSettings:
     area: FortyGuardAreaSettings = FortyGuardAreaSettings()
     overpass: OverpassSettings = OverpassSettings()
     osrm: OsrmSettings = OsrmSettings()
+    shade: ShadeSettings = ShadeSettings()
     call_budget: int | None = None
     ledger_path: Path | None = DEFAULT_LEDGER_PATH
 
@@ -217,6 +232,7 @@ def load_settings(
         area=area or _area_from_env(merged),
         overpass=_overpass_from_env(merged),
         osrm=_osrm_from_env(merged),
+        shade=_shade_from_env(merged),
         call_budget=_call_budget_from_env(merged),
         ledger_path=_ledger_path_from_env(process_env, file_values),
     )
@@ -293,6 +309,40 @@ def _overpass_from_env(merged: Mapping[str, str]) -> OverpassSettings:
         max_attempts=positive_int("OVERPASS_MAX_ATTEMPTS", 2),
         retry_delay_seconds=float_value("OVERPASS_RETRY_DELAY_SECONDS", 30.0, allow_zero=True),
         district_aoi=district_aoi,
+    )
+
+
+def _shade_from_env(merged: Mapping[str, str]) -> ShadeSettings:
+    def positive_float(name: str, default: float) -> float:
+        raw = merged.get(name, "").strip()
+        if not raw:
+            return default
+        try:
+            value = float(raw)
+        except ValueError:
+            raise SettingsError(f"{name} must be a number") from None
+        if not math.isfinite(value) or value <= 0:
+            raise SettingsError(f"{name} must be positive")
+        return value
+
+    coverage = positive_float("SHADE_MINIMUM_BUILDING_HEIGHT_COVERAGE", 0.70)
+    if coverage > 1:
+        raise SettingsError("SHADE_MINIMUM_BUILDING_HEIGHT_COVERAGE must be at most 1")
+    timezone_name = merged.get("TRIP_CANONICAL_TIMEZONE", "").strip() or "America/Chicago"
+    try:
+        ZoneInfo(timezone_name)
+    except ZoneInfoNotFoundError:
+        raise SettingsError("TRIP_CANONICAL_TIMEZONE must be a valid IANA timezone") from None
+    return ShadeSettings(
+        building_search_distance_m=positive_float("SHADE_BUILDING_SEARCH_DISTANCE_M", 250.0),
+        minimum_building_height_coverage=coverage,
+        metres_per_level=positive_float("SHADE_METRES_PER_LEVEL", 3.0),
+        canonical_timezone=timezone_name,
+        schema_version=merged.get("SHADE_BUILDING_SCHEMA_VERSION", "").strip() or "building-v1",
+        provider_config_version=(
+            merged.get("SHADE_PROVIDER_CONFIG_VERSION", "").strip() or "overpass-building-config-v1"
+        ),
+        model_version=merged.get("SHADE_MODEL_VERSION", "").strip() or "route-shade-v1",
     )
 
 

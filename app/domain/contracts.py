@@ -14,6 +14,7 @@ from datetime import date as calendar_date, datetime
 from typing import TYPE_CHECKING, Mapping, Protocol
 
 from app.domain.environment import TimeWindow
+from app.domain.route_shade import ShadeConfidence
 
 if TYPE_CHECKING:
     from app.domain.best_time import HourlyConcernProfile
@@ -56,8 +57,18 @@ class RouteSetState(str, Enum):
 class RouteDecisionState(str, Enum):
     MILD_SHORTEST_RECOMMENDED = "mild_shortest_recommended"
     SHADE_REQUIRED = "shade_required"
+    SHADE_SHADIEST_RECOMMENDED = "shade_shadiest_recommended"
+    SHADE_ONLY_ROUTE_RECOMMENDED = "shade_only_route_recommended"
+    NIGHTTIME_COOLEST_RECOMMENDED = "nighttime_coolest_recommended"
+    INSUFFICIENT_SHADE_COMPARISON_REQUIRED = "insufficient_shade_comparison_required"
     HEAT_UNAVAILABLE = "heat_unavailable"
     NO_SUITABLE_RETURNED_ROUTE = "no_suitable_returned_route"
+
+
+class TemporalEvidenceState(str, Enum):
+    EXACT = "exact"
+    INCONSISTENT = "inconsistent"
+    UNAVAILABLE = "unavailable"
 
 
 class RouteHeatSource(str, Enum):
@@ -559,6 +570,9 @@ class BestTimeResult:
     persistence_hours: float | None = None
     framing_threshold_celsius: float | None = None
     framing_direction: str | None = None
+    recommendation_time: datetime | None = None
+    recommendation_timezone: str | None = None
+    temporal_evidence: TemporalEvidenceState = TemporalEvidenceState.UNAVAILABLE
 
     def __post_init__(self) -> None:
         if not isinstance(self.metric_label, MetricLabel):
@@ -608,6 +622,18 @@ class BestTimeResult:
             self.framing_threshold_celsius
         ):
             raise ValueError("framing_threshold_celsius must be finite")
+        if not isinstance(self.temporal_evidence, TemporalEvidenceState):
+            raise ValueError("temporal_evidence must be a TemporalEvidenceState value")
+        if self.recommendation_time is not None and (
+            self.recommendation_time.tzinfo is None or self.recommendation_time.utcoffset() is None
+        ):
+            raise ValueError("recommendation_time must include a timezone")
+        if self.temporal_evidence is TemporalEvidenceState.EXACT:
+            if self.recommendation_time is None or not self.recommendation_timezone:
+                raise ValueError("exact temporal evidence requires time and timezone")
+        else:
+            if self.recommendation_time is not None or self.recommendation_timezone is not None:
+                raise ValueError("non-exact temporal evidence must not carry a recommendation time")
         if self.framing_direction not in (None, "above", "below"):
             raise ValueError("framing_direction must be above or below")
         if framing_present and self.framing_direction is None:
@@ -741,7 +767,7 @@ class RouteOption:
     heat_metric: HeatMetricName
     heat_status: HeatStatus | None
     modeled_shade_percent: float | None
-    shade_confidence: Confidence | None
+    shade_confidence: ShadeConfidence | None
     building_coverage: float
     recommended: bool
     recommendation_reason: str | None
@@ -750,14 +776,24 @@ class RouteOption:
     geometry: tuple[tuple[float, float], ...] | None = None
     heat_coverage: float | None = None
     heat_source: RouteHeatSource | None = None
+    building_explicit_fraction: float = 0.0
+    building_inferred_levels_fraction: float = 0.0
+    building_unknown_fraction: float = 0.0
+    building_explicit_count: int = 0
+    building_inferred_levels_count: int = 0
+    building_unknown_count: int = 0
+    dropped_building_geometry_count: int = 0
+    shade_limitations: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if not isinstance(self.heat_metric, HeatMetricName):
             raise ValueError("heat_metric must be a HeatMetricName value")
         if self.heat_status is not None and not isinstance(self.heat_status, HeatStatus):
             raise ValueError("heat_status must be a HeatStatus value or None")
-        if self.shade_confidence is not None and not isinstance(self.shade_confidence, Confidence):
-            raise ValueError("shade_confidence must be a Confidence value")
+        if self.shade_confidence is not None and not isinstance(
+            self.shade_confidence, ShadeConfidence
+        ):
+            raise ValueError("shade_confidence must be a ShadeConfidence value")
         if not isinstance(self.recommended, bool):
             raise ValueError("recommended must be a boolean")
         if not self.identity:
@@ -777,6 +813,28 @@ class RouteOption:
             raise ValueError("temperature route metrics must use C")
         if not 0 <= self.building_coverage <= 1:
             raise ValueError("building_coverage must be between 0 and 1")
+        quality_fractions = (
+            self.building_explicit_fraction,
+            self.building_inferred_levels_fraction,
+            self.building_unknown_fraction,
+        )
+        if any(not math.isfinite(value) or not 0 <= value <= 1 for value in quality_fractions):
+            raise ValueError("building quality fractions must be between 0 and 1")
+        if any(quality_fractions) and not math.isclose(sum(quality_fractions), 1.0, abs_tol=1e-6):
+            raise ValueError("nonzero building quality fractions must sum to 1")
+        quality_counts = (
+            self.building_explicit_count,
+            self.building_inferred_levels_count,
+            self.building_unknown_count,
+            self.dropped_building_geometry_count,
+        )
+        if any(
+            isinstance(value, bool) or not isinstance(value, int) or value < 0
+            for value in quality_counts
+        ):
+            raise ValueError("building quality counts must be non-negative integers")
+        if any(not limitation.strip() for limitation in self.shade_limitations):
+            raise ValueError("shade limitations must be non-empty strings")
         if self.heat_coverage is not None and not 0 <= self.heat_coverage <= 1:
             raise ValueError("route heat coverage must be between 0 and 1")
         if self.heat_source is not None and not isinstance(self.heat_source, RouteHeatSource):
@@ -823,6 +881,8 @@ class RouteComparisonResult:
     lowest_heat_route_id: str | None = None
     routing_provenance: Provenance | None = None
     heat_provenance: Provenance | None = None
+    building_provenance: Provenance | None = None
+    solar_provenance: Provenance | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.heat_metric, HeatMetricName):
@@ -855,6 +915,8 @@ class RouteComparisonResult:
             or self.heat_interpretation.value_celsius != self.corridor_heat_value
         ):
             raise ValueError("route comparison heat interpretation must match its metric and value")
+        if self.building_provenance is not None and self.solar_provenance is None:
+            raise ValueError("building provenance requires the solar position it was modeled at")
         if self.route_set_state is None and self.decision_state is None:
             self._validate_legacy_recommendation()
             return
@@ -915,6 +977,19 @@ class RouteComparisonResult:
                 raise ValueError("mild heat must recommend the shortest returned route")
             if len(recommended) != 1 or recommended[0].identity != self.recommended_id:
                 raise ValueError("exactly one recommended route must match recommended_id")
+            if recommended[0].recommendation_reason is None:
+                raise ValueError("recommended route requires recommendation_reason")
+        elif self.decision_state in {
+            RouteDecisionState.SHADE_SHADIEST_RECOMMENDED,
+            RouteDecisionState.SHADE_ONLY_ROUTE_RECOMMENDED,
+            RouteDecisionState.NIGHTTIME_COOLEST_RECOMMENDED,
+        }:
+            if (
+                self.recommended_id is None
+                or len(recommended) != 1
+                or recommended[0].identity != self.recommended_id
+            ):
+                raise ValueError("final route decisions require exactly one recommendation")
             if recommended[0].recommendation_reason is None:
                 raise ValueError("recommended route requires recommendation_reason")
         else:
@@ -1070,6 +1145,10 @@ class TripAnalysisResponse:
                     or self.routes.decision_state
                     in {
                         RouteDecisionState.SHADE_REQUIRED,
+                        RouteDecisionState.SHADE_SHADIEST_RECOMMENDED,
+                        RouteDecisionState.SHADE_ONLY_ROUTE_RECOMMENDED,
+                        RouteDecisionState.NIGHTTIME_COOLEST_RECOMMENDED,
+                        RouteDecisionState.INSUFFICIENT_SHADE_COMPARISON_REQUIRED,
                         RouteDecisionState.HEAT_UNAVAILABLE,
                         RouteDecisionState.NO_SUITABLE_RETURNED_ROUTE,
                     }

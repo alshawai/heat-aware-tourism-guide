@@ -179,6 +179,19 @@ function validHeatInterpretation(value: unknown) {
   );
 }
 
+function isNonNegativeInteger(value: unknown) {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0;
+}
+
+function isUnitFraction(value: unknown) {
+  return (
+    typeof value === "number" &&
+    Number.isFinite(value) &&
+    value >= 0 &&
+    value <= 1
+  );
+}
+
 function validRouteGeometry(value: unknown) {
   return (
     Array.isArray(value) &&
@@ -199,6 +212,27 @@ function validRouteGeometry(value: unknown) {
   );
 }
 
+function validShadeProvenance(value: Record<string, unknown>) {
+  const building = value.building_provenance ?? null;
+  const solar = value.solar_provenance ?? null;
+  if (building !== null && !isObject(building)) return false;
+  if (solar !== null && !isObject(solar)) return false;
+  // Buildings are only ever acquired against a resolved solar position.
+  if (building !== null && solar === null) return false;
+  const modeledShadeStates = [
+    "shade_shadiest_recommended",
+    "shade_only_route_recommended",
+  ];
+  if (modeledShadeStates.includes(String(value.decision_state))) {
+    return building !== null;
+  }
+  // Night needs the sun's position to justify itself, and acquires no buildings.
+  if (value.decision_state === "nighttime_coolest_recommended") {
+    return solar !== null && building === null;
+  }
+  return true;
+}
+
 function validExplicitRoutes(value: Record<string, unknown>) {
   const routeSetStates = [
     "alternatives_returned",
@@ -208,6 +242,10 @@ function validExplicitRoutes(value: Record<string, unknown>) {
   const decisionStates = [
     "mild_shortest_recommended",
     "shade_required",
+    "shade_shadiest_recommended",
+    "shade_only_route_recommended",
+    "nighttime_coolest_recommended",
+    "insufficient_shade_comparison_required",
     "heat_unavailable",
     "no_suitable_returned_route",
   ];
@@ -215,7 +253,8 @@ function validExplicitRoutes(value: Record<string, unknown>) {
     !routeSetStates.includes(String(value.route_set_state)) ||
     !decisionStates.includes(String(value.decision_state)) ||
     !Array.isArray(value.alternatives) ||
-    !isObject(value.routing_provenance)
+    !isObject(value.routing_provenance) ||
+    !validShadeProvenance(value)
   ) {
     return false;
   }
@@ -242,6 +281,18 @@ function validExplicitRoutes(value: Record<string, unknown>) {
       typeof route.identity === "string" &&
       typeof route.distance_m === "number" &&
       typeof route.duration_s === "number" &&
+      isUnitFraction(route.building_coverage) &&
+      isUnitFraction(route.building_explicit_fraction) &&
+      isUnitFraction(route.building_inferred_levels_fraction) &&
+      isUnitFraction(route.building_unknown_fraction) &&
+      isNonNegativeInteger(route.building_explicit_count) &&
+      isNonNegativeInteger(route.building_inferred_levels_count) &&
+      isNonNegativeInteger(route.building_unknown_count) &&
+      isNonNegativeInteger(route.dropped_building_geometry_count) &&
+      Array.isArray(route.shade_limitations) &&
+      route.shade_limitations.every(
+        (limitation) => typeof limitation === "string" && limitation.length > 0
+      ) &&
       typeof route.recommended === "boolean" &&
       (heatUnavailable
         ? route.heat_value === null && route.heat_interpretation === null
@@ -254,11 +305,25 @@ function validExplicitRoutes(value: Record<string, unknown>) {
   const recommended = value.alternatives.filter(
     (route) => isObject(route) && route.recommended === true
   );
+  const finalDecisionStates = [
+    "shade_shadiest_recommended",
+    "shade_only_route_recommended",
+    "nighttime_coolest_recommended",
+  ];
+  const noRecommendationStates = [
+    "shade_required",
+    "insufficient_shade_comparison_required",
+    "heat_unavailable",
+    "no_suitable_returned_route",
+  ];
   return (
     alternativesValid &&
-    (value.decision_state === "mild_shortest_recommended"
+    (value.decision_state === "mild_shortest_recommended" ||
+    finalDecisionStates.includes(String(value.decision_state))
       ? typeof value.recommended_id === "string" && recommended.length === 1
-      : value.recommended_id === null && recommended.length === 0)
+      : noRecommendationStates.includes(String(value.decision_state))
+        ? value.recommended_id === null && recommended.length === 0
+        : false)
   );
 }
 
@@ -296,6 +361,19 @@ function validBestTime(value: unknown) {
     typeof value.hourly_coverage !== "number" ||
     typeof value.recommendation_hour !== "number" ||
     typeof value.recommendation_reason !== "string" ||
+    !["exact", "inconsistent", "unavailable"].includes(
+      String(value.temporal_evidence)
+    ) ||
+    !(
+      value.recommendation_time === null ||
+      (typeof value.recommendation_time === "string" &&
+        !Number.isNaN(Date.parse(value.recommendation_time)))
+    ) ||
+    !(
+      value.recommendation_timezone === null ||
+      (typeof value.recommendation_timezone === "string" &&
+        value.recommendation_timezone.length > 0)
+    ) ||
     !(
       value.recommended_hour_tcm_celsius === null ||
       typeof value.recommended_hour_tcm_celsius === "number"
@@ -379,6 +457,7 @@ function isTripAnalysisResponse(
       (value.routes.confidence === "insufficient" ||
         [
           "shade_required",
+          "insufficient_shade_comparison_required",
           "heat_unavailable",
           "no_suitable_returned_route",
         ].includes(String(value.routes.decision_state)) ||

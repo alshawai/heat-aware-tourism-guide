@@ -51,7 +51,7 @@ def test_route_comparator_fetches_routes_once_and_uses_shortest_when_heat_is_low
     assert result.shade_was_computed is False
 
 
-def test_route_comparator_uses_maximum_heat_and_weak_coverage_shortest_fallback() -> None:
+def test_route_comparator_uses_maximum_heat_and_weak_coverage_has_no_fallback() -> None:
     result = RouteComparator().compare(
         lambda: [RouteCandidate("short", 1000, 600), RouteCandidate("shady", 1200, 700)],
         heat_value=38,
@@ -61,8 +61,8 @@ def test_route_comparator_uses_maximum_heat_and_weak_coverage_shortest_fallback(
         building_coverage=0.5,
     )
     assert result.corridor_heat_value == 38
-    assert result.recommended_id == "short"
-    assert result.reason == "insufficient shade coverage"
+    assert result.recommended_id is None
+    assert result.reason == "insufficient shade coverage; traveler comparison required"
     assert result.shade_was_computed is True
 
 

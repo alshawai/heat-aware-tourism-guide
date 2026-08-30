@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import math
 from datetime import date, datetime
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from pathlib import Path
 from typing import Callable, Mapping
 
@@ -30,11 +31,13 @@ from app.domain.contracts import (
     RouteOption,
     RouteSetState,
     TripAnalysisAdapter,
+    TemporalEvidenceState,
     TripAnalysisRequest,
     TripAnalysisResponse,
     TripMode,
     UnavailableResult,
 )
+from app.domain.route_shade import ShadeConfidence
 from app.domain.environment import select_anchor_celsius
 from app.domain.best_time import HourlyConcernProfile, assess_hour, select_best_time
 from app.domain.heat_policy import classify_heat
@@ -240,6 +243,8 @@ class TemporalTripAnalysisAdapter:
 def _route_degradation_reason(routes: RouteComparisonResult) -> str | None:
     if routes.decision_state is RouteDecisionState.SHADE_REQUIRED:
         return "route heat is elevated; shade analysis is required before recommendation"
+    if routes.decision_state is RouteDecisionState.INSUFFICIENT_SHADE_COMPARISON_REQUIRED:
+        return "modeled building-shade evidence is insufficient for a recommendation"
     if routes.decision_state is RouteDecisionState.HEAT_UNAVAILABLE:
         return "shared corridor heat is unavailable"
     if routes.decision_state is RouteDecisionState.NO_SUITABLE_RETURNED_ROUTE:
@@ -319,6 +324,33 @@ def _best_time_result(
     reason = decision.reason
     if environment_failure is not None:
         reason = f"TCM-only fallback because environmental parameters are unavailable; {reason}"
+    selected_times = tuple(
+        {tile.valid_time for tile in heatmap.tiles if tile.valid_time.hour == decision.hour}
+    )
+    recommendation_time: datetime | None = None
+    recommendation_timezone: str | None = None
+    temporal_evidence = TemporalEvidenceState.UNAVAILABLE
+    if len(selected_times) == 1:
+        candidate = selected_times[0]
+        requested_zone = environment.timezone if environment is not None else "America/Chicago"
+        try:
+            zone = ZoneInfo(requested_zone)
+        except (ZoneInfoNotFoundError, ValueError):
+            requested_zone = "America/Chicago"
+            zone = ZoneInfo(requested_zone)
+        local = candidate.astimezone(zone)
+        if (
+            local.date() == date.fromisoformat(request.date)
+            and local.hour == decision.hour
+            and candidate.utcoffset() == local.utcoffset()
+        ):
+            recommendation_time = candidate
+            recommendation_timezone = requested_zone
+            temporal_evidence = TemporalEvidenceState.EXACT
+        else:
+            temporal_evidence = TemporalEvidenceState.INCONSISTENT
+    elif len(selected_times) > 1:
+        temporal_evidence = TemporalEvidenceState.INCONSISTENT
     selected_label = next(entry.metric.label for entry in hourly if entry.hour == decision.hour)
     return BestTimeResult(
         hourly=hourly,
@@ -338,6 +370,9 @@ def _best_time_result(
         persistence_hours=persistence_hours,
         framing_threshold_celsius=FRAMING_THRESHOLD_CELSIUS,
         framing_direction=FRAMING_DIRECTION,
+        recommendation_time=recommendation_time,
+        recommendation_timezone=recommendation_timezone,
+        temporal_evidence=temporal_evidence,
     )
 
 
@@ -647,6 +682,19 @@ def _best_time(
         cautious=cautious,
         noaa_heat_index_available=selected_heat_index is not None,
     )
+    temporal_evidence = TemporalEvidenceState(
+        _string(best_payload.get("temporal_evidence", "unavailable"), "temporal_evidence")
+    )
+    recommendation_time = (
+        datetime.fromisoformat(_string(best_payload["recommendation_time"], "recommendation_time"))
+        if best_payload.get("recommendation_time") is not None
+        else None
+    )
+    recommendation_timezone = (
+        _string(best_payload["recommendation_timezone"], "recommendation_timezone")
+        if best_payload.get("recommendation_timezone") is not None
+        else None
+    )
     recommendation_reason = _string(best_payload["recommendation_reason"], "recommendation_reason")
     if cautious:
         recommendation_reason = (
@@ -663,6 +711,9 @@ def _best_time(
         provenance=best_provenance,
         hourly_coverage=_number(best_payload["hourly_coverage"], "hourly_coverage"),
         heat_interpretation=interpretation,
+        recommendation_time=recommendation_time,
+        recommendation_timezone=recommendation_timezone,
+        temporal_evidence=temporal_evidence,
     )
 
 
@@ -797,7 +848,13 @@ def _route_option(
         modeled_shade_percent=_number(shade, "modeled_shade_percent")
         if shade is not None
         else None,
-        shade_confidence=confidence if shade is not None else None,
+        shade_confidence=(
+            ShadeConfidence.SUFFICIENT
+            if shade is not None and confidence is Confidence.SUFFICIENT
+            else ShadeConfidence.INSUFFICIENT
+            if shade is not None
+            else None
+        ),
         building_coverage=_number(item["building_coverage"], "building_coverage"),
         recommended=identity == recommended_id,
         recommendation_reason=_route_recommendation_reason(

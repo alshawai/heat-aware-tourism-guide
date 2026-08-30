@@ -6,6 +6,7 @@ unavailable/error states as required by Issue #9.
 
 import pytest
 
+from app.domain.route_shade import ShadeConfidence
 from app.domain.contracts import (
     Confidence,
     Coordinates,
@@ -61,7 +62,7 @@ def _valid_route_option(identity: str = "route-a", *, recommended: bool = False)
         heat_metric=HeatMetricName.TCM,
         heat_status=HeatStatus.ELEVATED,
         modeled_shade_percent=65 if recommended else None,
-        shade_confidence=Confidence.SUFFICIENT if recommended else None,
+        shade_confidence=ShadeConfidence.SUFFICIENT if recommended else None,
         building_coverage=0.9,
         recommended=recommended,
         recommendation_reason="highest modeled shade" if recommended else None,

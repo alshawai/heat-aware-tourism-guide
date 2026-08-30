@@ -1,4 +1,11 @@
-import { AlertTriangle, CheckCircle2, Database, Radio } from "lucide-react";
+import {
+  AlertTriangle,
+  CheckCircle2,
+  Database,
+  MapPinned,
+  Radio,
+  Sun,
+} from "lucide-react";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { useAppState } from "../app/AppState";
@@ -7,6 +14,7 @@ import type {
   BestTimeResult,
   ExecutionMode,
   HeatInterpretation,
+  RouteComparisonResult,
   TripAnalysisRequest,
 } from "../types";
 
@@ -144,6 +152,143 @@ function BestTimeSummary({ result }: { result: BestTimeResult }) {
           </table>
         </div>
       )}
+    </section>
+  );
+}
+
+function formatPercent(value: number) {
+  return `${Math.round(value * 100)}%`;
+}
+
+function routeDecisionHeading(result: RouteComparisonResult) {
+  switch (result.decision_state) {
+    case "shade_shadiest_recommended":
+      return "Shadiest route recommended";
+    case "shade_only_route_recommended":
+      return "Only route recommended";
+    case "nighttime_coolest_recommended":
+      return "Coolest nighttime route recommended";
+    case "mild_shortest_recommended":
+      return "Shortest route recommended";
+    case "insufficient_shade_comparison_required":
+      return "Compare route trade-offs";
+    case "shade_required":
+      return "Shade analysis required";
+    case "heat_unavailable":
+      return "Route heat unavailable";
+    default:
+      return "Walking routes";
+  }
+}
+
+function RouteComparison({ result }: { result: RouteComparisonResult }) {
+  if (result.route_set_state === "no_suitable_returned_route") {
+    return (
+      <section className="route-comparison" aria-label="Walking routes">
+        <h3>Walking routes unavailable</h3>
+        <p>{result.reason}</p>
+      </section>
+    );
+  }
+
+  return (
+    <section className="route-comparison" aria-label="Walking routes">
+      <header className="route-comparison-heading">
+        <MapPinned size={22} />
+        <div>
+          <h3>{routeDecisionHeading(result)}</h3>
+          <p>{result.reason}</p>
+        </div>
+      </header>
+      {result.decision_state === "insufficient_shade_comparison_required" && (
+        <div className="route-evidence-warning">
+          <AlertTriangle size={18} />
+          <span>
+            No route is recommended because shade evidence is incomplete.
+          </span>
+        </div>
+      )}
+      <p className="shade-model-notice">
+        <Sun size={17} />
+        Modeled OSM building shade, not measured real-world shade. Trees,
+        awnings, clouds, and temporary obstructions are excluded.
+      </p>
+      <div className="route-evidence-list">
+        {result.alternatives.map((route, index) => (
+          <article
+            className={`route-evidence-row${route.recommended ? " recommended" : ""}`}
+            key={route.identity}
+          >
+            <div className="route-evidence-title">
+              <span>Route {index + 1}</span>
+              <h4>
+                {route.recommended ? "Recommended route" : "Alternative route"}
+              </h4>
+              <small>
+                {(route.distance_m / 1000).toFixed(2)} km ·{" "}
+                {Math.round(route.duration_s / 60)} min
+              </small>
+            </div>
+            <dl className="route-evidence-metrics">
+              <div>
+                <dt>Modeled shade</dt>
+                <dd>
+                  {route.modeled_shade_percent === null
+                    ? "Unavailable"
+                    : `${route.modeled_shade_percent.toFixed(0)}%`}
+                </dd>
+              </div>
+              <div>
+                <dt>Building height coverage</dt>
+                <dd>{formatPercent(route.building_coverage)}</dd>
+              </div>
+              <div>
+                <dt>Shade confidence</dt>
+                <dd>
+                  {route.shade_confidence?.replaceAll("_", " ") ??
+                    "Unavailable"}
+                </dd>
+              </div>
+              <div>
+                <dt>Route heat</dt>
+                <dd>
+                  {route.heat_value === null
+                    ? "Unavailable"
+                    : `${route.heat_value.toFixed(1)} °C`}
+                </dd>
+              </div>
+            </dl>
+            <div
+              className="building-quality"
+              aria-label="Building height quality"
+            >
+              <span>
+                Explicit {formatPercent(route.building_explicit_fraction)}
+              </span>
+              <span>
+                Inferred{" "}
+                {formatPercent(route.building_inferred_levels_fraction)}
+              </span>
+              <span>
+                Unknown {formatPercent(route.building_unknown_fraction)}
+              </span>
+            </div>
+            {route.recommendation_reason && (
+              <p>{route.recommendation_reason}</p>
+            )}
+            {route.shade_limitations.length > 0 && (
+              <ul
+                className="route-limitations"
+                aria-label="Shade model limitations"
+              >
+                {route.shade_limitations.map((limitation) => (
+                  <li key={limitation}>{limitation}</li>
+                ))}
+              </ul>
+            )}
+          </article>
+        ))}
+      </div>
     </section>
   );
 }
@@ -571,9 +716,12 @@ export function TripSetupScreen() {
             {(tripAnalysis.state === "success" ||
               tripAnalysis.state === "degraded") &&
               tripAnalysis.routes && (
-                <Link className="button-link" to="/walk/routes">
-                  Compare returned routes
-                </Link>
+                <>
+                  <RouteComparison result={tripAnalysis.routes} />
+                  <Link className="button-link" to="/walk/routes">
+                    Compare returned routes
+                  </Link>
+                </>
               )}
             <button
               type="button"
