@@ -1,0 +1,16 @@
+.git
+.github
+.venv
+node_modules
+frontend/node_modules
+frontend/dist
+tests
+issue21
+data
+*.pyc
+__pycache__
+.env
+.env.*
+coverage
+playwright-report
+test-results

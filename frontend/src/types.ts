@@ -138,6 +138,17 @@ export type RequestOptions = {
 
 export type ExecutionMode = "fixture" | "live";
 
+export type DeploymentProfile = "local" | "public-fixture" | "protected-live";
+
+export type ExecutionCapability = "fixture-only" | "fixture-and-live";
+
+export type HealthResponse = {
+  status: "ok";
+  deployment_profile: DeploymentProfile;
+  mode: ExecutionMode;
+  execution_capability: ExecutionCapability;
+};
+
 export type ApiProvenance = {
   source: string;
   data_date: string;
@@ -218,13 +229,13 @@ export type BestTimeResult = {
 };
 
 export type TripAnalysisRequest = {
-  mode: "curated";
+  mode: "curated" | "exploratory";
   origin_latitude: number;
   origin_longitude: number;
   destination_latitude: number;
   destination_longitude: number;
-  landmark_name: "The Alamo";
-  district_name: "Downtown San Antonio";
+  landmark_name: string;
+  district_name: string;
   date: string;
   start_hour: number;
   end_hour: number;
@@ -300,14 +311,19 @@ export type RouteComparisonResult = {
 
 export type TripAnalysisResponse = {
   request_identity: string;
-  mode: "curated";
+  mode: "curated" | "exploratory";
   execution_mode: ExecutionMode;
   state: "series_ready" | "success" | "degraded" | "unavailable" | "error";
   environment: EnvironmentSeriesResult | null;
   best_time: BestTimeResult | null;
   hotels: Record<string, unknown> | null;
   routes: RouteComparisonResult | null;
-  unavailable: { reason: string; recoverable: boolean } | null;
+  unavailable: {
+    reason: string;
+    recoverable: boolean;
+    code?: string;
+    action?: string | null;
+  } | null;
   degraded_reasons: Record<string, string> | null;
   result_set_token?: string;
 };
@@ -342,3 +358,5 @@ export type CuratedTripSetup = {
   endHour: number;
   cautious: boolean;
 };
+
+export type PlaceSearchResponse = { places: LocationSelection[] };

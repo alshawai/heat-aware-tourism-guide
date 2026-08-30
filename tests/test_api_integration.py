@@ -79,6 +79,20 @@ def test_invalid_boolean_returns_client_error() -> None:
         thread.join(timeout=2)
 
 
+def test_place_search_returns_server_owned_places() -> None:
+    server = create_fixture_server(Path("fixtures/heatmap-historical.json"))
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        response = urlopen(f"http://127.0.0.1:{server.server_port}/api/places/search?q=alamo")
+        result = json.load(response)
+        assert [place["name"] for place in result["places"]] == ["The Alamo"]
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+
 def test_non_object_json_body_returns_client_error() -> None:
     server = create_fixture_server(Path("fixtures/heatmap-historical.json"))
     thread = Thread(target=server.serve_forever, daemon=True)

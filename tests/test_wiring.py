@@ -241,6 +241,170 @@ def test_create_production_app_enables_live_only_with_settings() -> None:
     assert live_client.get("/health").json()["mode"] == "live"
 
 
+def _built_frontend(path: Path) -> Path:
+    dist = path / "dist"
+    assets = dist / "assets"
+    assets.mkdir(parents=True)
+    (dist / "index.html").write_text("<html>fixture app</html>", encoding="utf-8")
+    (assets / "app.js").write_text("console.log('fixture app')", encoding="utf-8")
+    return dist
+
+
+def test_public_fixture_requires_deployable_frontend(tmp_path: Path) -> None:
+    settings = AppSettings(
+        allow_live=False,
+        fortyguard_api_key=None,
+        fortyguard_base_url="https://api.example.test",
+        app_profile="public-fixture",
+    )
+    with pytest.raises(SettingsError, match="built frontend index.html"):
+        create_production_app(settings, frontend_dist=tmp_path / "missing")
+
+    dist = tmp_path / "empty-assets"
+    (dist / "assets").mkdir(parents=True)
+    (dist / "index.html").write_text("<html></html>", encoding="utf-8")
+    with pytest.raises(SettingsError, match="built frontend assets"):
+        create_production_app(settings, frontend_dist=dist)
+
+
+def test_public_fixture_requires_complete_canonical_fixture_set(tmp_path: Path) -> None:
+    settings = AppSettings(
+        allow_live=False,
+        fortyguard_api_key=None,
+        fortyguard_base_url="https://api.example.test",
+        app_profile="public-fixture",
+    )
+    fixture = tmp_path / "fixtures" / "heatmap-historical.json"
+    fixture.parent.mkdir()
+    fixture.write_text('{"fixture": true}', encoding="utf-8")
+    with pytest.raises(SettingsError, match="canonical fixture"):
+        create_production_app(
+            settings,
+            fixture_path=fixture,
+            env_params_fixture_path=fixture.parent / "env-params.json",
+            frontend_dist=_built_frontend(tmp_path / "frontend"),
+        )
+
+
+def test_public_fixture_rejects_empty_or_invalid_canonical_fixture(tmp_path: Path) -> None:
+    settings = AppSettings(
+        allow_live=False,
+        fortyguard_api_key=None,
+        fortyguard_base_url="https://api.example.test",
+        app_profile="public-fixture",
+    )
+    fixture_dir = tmp_path / "fixtures"
+    fixture_dir.mkdir()
+    for name in (
+        "heatmap-historical",
+        "env-params",
+        "trip-analysis",
+        "hotel-heat-analysis",
+    ):
+        (fixture_dir / f"{name}.json").write_text("{}", encoding="utf-8")
+        (fixture_dir / f"{name}.acquisition.json").write_text("{}", encoding="utf-8")
+
+    with pytest.raises(SettingsError, match="must not be empty"):
+        create_production_app(
+            settings,
+            fixture_path=fixture_dir / "heatmap-historical.json",
+            env_params_fixture_path=fixture_dir / "env-params.json",
+            frontend_dist=_built_frontend(tmp_path / "frontend"),
+        )
+
+
+def test_public_fixture_starts_with_built_frontend_and_committed_fixtures(
+    tmp_path: Path,
+) -> None:
+    settings = AppSettings(
+        allow_live=False,
+        fortyguard_api_key=None,
+        fortyguard_base_url="https://api.example.test",
+        app_profile="public-fixture",
+    )
+    client = TestClient(create_production_app(settings, frontend_dist=_built_frontend(tmp_path)))
+    assert client.get("/").status_code == 200
+    assert client.get("/health").json() == {
+        "status": "ok",
+        "deployment_profile": "public-fixture",
+        "mode": "fixture",
+        "execution_capability": "fixture-only",
+    }
+
+
+def test_protected_live_authenticates_every_route_except_health(tmp_path: Path) -> None:
+    settings = AppSettings(
+        allow_live=True,
+        fortyguard_api_key="key-1",
+        fortyguard_base_url="https://api.example.test",
+        call_budget=10,
+        ledger_path=tmp_path / "durable" / "ledger.jsonl",
+        app_profile="protected-live",
+        live_auth_username="maintainer",
+        live_auth_password="secret",
+    )
+    client = TestClient(
+        create_production_app(settings, frontend_dist=_built_frontend(tmp_path / "frontend"))
+    )
+
+    health = client.get("/health")
+    assert health.status_code == 200
+    assert health.json()["deployment_profile"] == "protected-live"
+    assert health.json()["execution_capability"] == "fixture-and-live"
+
+    for path in ("/", "/api/heatmap", "/does-not-exist"):
+        response = client.get(path) if path != "/api/heatmap" else client.post(path, json={})
+        assert response.status_code == 401
+        assert response.headers["www-authenticate"].startswith("Basic ")
+
+    assert client.get("/", auth=("wrong", "secret")).status_code == 401
+    assert client.get("/", auth=("maintainer", "wrong")).status_code == 401
+    assert client.get("/", headers={"Authorization": "Basic !!!"}).status_code == 401
+    assert client.get("/", auth=("maintainer", "secret")).status_code == 200
+
+
+def test_protected_live_rejects_default_relative_ledger_path() -> None:
+    settings = AppSettings(
+        allow_live=True,
+        fortyguard_api_key="key-1",
+        fortyguard_base_url="https://api.example.test",
+        call_budget=10,
+        app_profile="protected-live",
+        live_auth_username="maintainer",
+        live_auth_password="secret",
+    )
+    with pytest.raises(SettingsError, match="absolute FORTYGUARD_LEDGER_PATH"):
+        create_production_app(settings)
+
+
+def test_protected_live_retains_explicit_fixture_requests(tmp_path: Path) -> None:
+    settings = AppSettings(
+        allow_live=True,
+        fortyguard_api_key="key-1",
+        fortyguard_base_url="https://api.example.test",
+        call_budget=10,
+        ledger_path=tmp_path / "ledger.jsonl",
+        app_profile="protected-live",
+        live_auth_username="maintainer",
+        live_auth_password="secret",
+    )
+    client = TestClient(create_production_app(settings))
+    response = client.post(
+        "/api/heatmap",
+        auth=("maintainer", "secret"),
+        json={
+            "analytic_type": "tcm",
+            "latitude": 29.4241,
+            "longitude": -98.4936,
+            "start_date": "2026-08-23",
+            "forecast": False,
+            "execution_mode": "fixture",
+        },
+    )
+    assert response.status_code == 200
+    assert response.json()["provenance"]["source"] == "fixture"
+
+
 def test_default_fixture_production_app_ranks_hotels_with_four_component_evidence() -> None:
     app = create_production_app(
         AppSettings(

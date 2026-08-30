@@ -77,8 +77,6 @@ class FixtureTripAnalysisAdapter:
             payload = json.load(fixture)
         if not isinstance(payload, Mapping):
             raise ValueError("trip fixture must contain an object")
-        if payload.get("unavailable") is not None:
-            return normalize_trip_analysis(payload, request, ExecutionMode.FIXTURE)
         scenario = _fixture_scenario(self.fixture_path, payload)
         if scenario is None or not _fixture_matches(scenario, request):
             return TripAnalysisResponse(
@@ -87,7 +85,14 @@ class FixtureTripAnalysisAdapter:
                 execution_mode=ExecutionMode.FIXTURE,
                 state=ResultState.UNAVAILABLE,
                 unavailable=UnavailableResult(
-                    "no matching fixture for the requested trip", recoverable=True
+                    (
+                        "no matching fixture for the requested exploratory trip"
+                        if request.mode is TripMode.EXPLORATORY
+                        else "no matching fixture for the requested trip"
+                    ),
+                    recoverable=True,
+                    code="scenario_unavailable",
+                    action="edit_setup_or_use_live_data",
                 ),
             )
         return normalize_trip_analysis(payload, request, ExecutionMode.FIXTURE)
@@ -143,12 +148,6 @@ class TemporalTripAnalysisAdapter:
     ) -> TripAnalysisResponse:
         if execution_mode is not ExecutionMode.LIVE:
             raise ValueError("temporal trip adapter only supports live execution")
-        if request.mode is not TripMode.CURATED:
-            return _unavailable_response(
-                request,
-                execution_mode,
-                "temporal data preparation is only available for curated trips",
-            )
         analysis_date = date.fromisoformat(request.date)
         heatmap_request = HeatmapRequest(
             analytic_type=AnalyticType.TCM,
@@ -515,13 +514,17 @@ def _unavailable_response(
     request: TripAnalysisRequest,
     execution_mode: ExecutionMode,
     reason: str,
+    *,
+    code: str = "provider_data_missing",
+    recoverable: bool = True,
+    action: str | None = "retry_or_edit_setup",
 ) -> TripAnalysisResponse:
     return TripAnalysisResponse(
         request_identity=_request_identity(request),
         mode=request.mode,
         execution_mode=execution_mode,
         state=ResultState.UNAVAILABLE,
-        unavailable=UnavailableResult(reason, recoverable=True),
+        unavailable=UnavailableResult(reason, recoverable, code, action),
     )
 
 
@@ -1040,7 +1043,9 @@ def _fixture_matches(scenario: Mapping[str, object], request: TripAnalysisReques
     origin = _mapping(scenario.get("origin"), "scenario origin")
     destination = _mapping(scenario.get("destination"), "scenario destination")
     return (
-        _string(scenario.get("landmark_name"), "scenario landmark_name") == request.landmark_name
+        scenario.get("mode", TripMode.CURATED.value) == request.mode.value
+        and _string(scenario.get("landmark_name"), "scenario landmark_name")
+        == request.landmark_name
         and _string(scenario.get("district_name"), "scenario district_name")
         == request.district_name
         and _string(scenario.get("date"), "scenario date") == request.date

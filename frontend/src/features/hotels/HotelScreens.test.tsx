@@ -34,15 +34,20 @@ describe("hotel ranking screens", () => {
     await vi.advanceTimersByTimeAsync(1400);
     const response = await pending;
     vi.useRealTimers();
-    const fetchMock = vi
-      .fn()
-      .mockImplementation((url: string) =>
-        Promise.resolve(
-          jsonResponse(
-            url === "/health" ? { status: "ok", mode: "fixture" } : response
-          )
+    const fetchMock = vi.fn().mockImplementation((url: string) =>
+      Promise.resolve(
+        jsonResponse(
+          url === "/health"
+            ? {
+                status: "ok",
+                deployment_profile: "local",
+                mode: "fixture",
+                execution_capability: "fixture-only",
+              }
+            : response
         )
-      );
+      )
+    );
     vi.stubGlobal("fetch", fetchMock);
     window.history.replaceState({}, "", "/hotels/results");
     const user = userEvent.setup();

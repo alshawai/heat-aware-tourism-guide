@@ -1039,10 +1039,14 @@ class UnavailableResult:
 
     reason: str
     recoverable: bool
+    code: str = "scenario_unavailable"
+    action: str | None = None
 
     def __post_init__(self) -> None:
         if not self.reason:
             raise ValueError("unavailability reason is required")
+        if not self.code:
+            raise ValueError("unavailability code is required")
 
 
 # ---------------------------------------------------------------------------

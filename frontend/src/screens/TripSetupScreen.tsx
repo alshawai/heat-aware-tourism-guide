@@ -8,22 +8,51 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
+import {
+  CircleMarker,
+  MapContainer,
+  TileLayer,
+  useMapEvents,
+} from "react-leaflet";
 import { useAppState } from "../app/AppState";
 import { dataClient } from "../services/dataClient";
 import type {
   BestTimeResult,
-  ExecutionMode,
+  HealthResponse,
   HeatInterpretation,
   RouteComparisonResult,
   TripAnalysisRequest,
+  LocationSelection,
 } from "../types";
 
 const HOURS = Array.from({ length: 24 }, (_, hour) => hour);
+const PUBLIC_FIXTURE_DATE = "2026-08-23";
+const PUBLIC_FIXTURE_START_HOUR = 8;
+const PUBLIC_FIXTURE_END_HOUR = 20;
 
 type HealthState =
   | { status: "checking" | "unavailable" }
-  | { status: "available"; mode: ExecutionMode };
+  | ({ status: "available" } & Omit<HealthResponse, "status">);
 type RequestState = "idle" | "submitting" | "failed";
+
+function EndpointMap({
+  onSelect,
+}: {
+  onSelect: (point: LocationSelection) => void;
+}) {
+  useMapEvents({
+    click(event) {
+      onSelect({
+        id: `map-${event.latlng.lat}-${event.latlng.lng}`,
+        name: "Map selection",
+        context: "Selected directly on the map",
+        latitude: event.latlng.lat,
+        longitude: event.latlng.lng,
+      });
+    },
+  });
+  return null;
+}
 
 function validDate(value: string) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
@@ -301,9 +330,35 @@ export function TripSetupScreen() {
     setTripAnalysis,
   } = useAppState();
   const { date, startHour, endHour, cautious } = curatedTripSetup;
+  const [tripMode, setTripMode] = useState<"curated" | "exploratory">(
+    "curated"
+  );
+  const [origin, setOrigin] = useState<LocationSelection>({
+    id: "menger",
+    name: "Menger Hotel",
+    context: "San Antonio, TX",
+    latitude: 29.4245914,
+    longitude: -98.4864288,
+  });
+  const [destination, setDestination] = useState<LocationSelection>({
+    id: "alamo",
+    name: "The Alamo",
+    context: "San Antonio, TX",
+    latitude: 29.425833,
+    longitude: -98.485833,
+  });
+  const [activeEndpoint, setActiveEndpoint] = useState<
+    "origin" | "destination"
+  >("origin");
+  const [search, setSearch] = useState("");
+  const [searchResults, setSearchResults] = useState<LocationSelection[]>([]);
+  const [searchState, setSearchState] = useState<"idle" | "loading" | "error">(
+    "idle"
+  );
   const [dateError, setDateError] = useState("");
   const [startError, setStartError] = useState("");
   const [endError, setEndError] = useState("");
+  const [endpointError, setEndpointError] = useState("");
   const [health, setHealth] = useState<HealthState>({ status: "checking" });
   const [requestState, setRequestState] = useState<RequestState>("idle");
   const dateRef = useRef<HTMLInputElement>(null);
@@ -313,8 +368,13 @@ export function TripSetupScreen() {
   async function checkHealth(signal?: AbortSignal) {
     setHealth({ status: "checking" });
     try {
-      const mode = await dataClient.getHealth(signal);
-      setHealth({ status: "available", mode });
+      const value = await dataClient.getHealth(signal);
+      setHealth({
+        status: "available",
+        deployment_profile: value.deployment_profile,
+        mode: value.mode,
+        execution_capability: value.execution_capability,
+      });
     } catch (error) {
       if (!(error instanceof DOMException && error.name === "AbortError")) {
         setHealth({ status: "unavailable" });
@@ -345,9 +405,23 @@ export function TripSetupScreen() {
 
   async function submit(event?: FormEvent) {
     event?.preventDefault();
-    const invalidDate = !validDate(date);
-    const invalidOrder = startHour >= endHour;
-    const invalidLength = !invalidOrder && endHour - startHour > 12;
+    const publicFixture =
+      health.status === "available" &&
+      health.deployment_profile === "public-fixture";
+    const requestMode = publicFixture ? "curated" : tripMode;
+    const requestDate = publicFixture ? PUBLIC_FIXTURE_DATE : date;
+    const requestStartHour = publicFixture
+      ? PUBLIC_FIXTURE_START_HOUR
+      : startHour;
+    const requestEndHour = publicFixture ? PUBLIC_FIXTURE_END_HOUR : endHour;
+    const invalidDate = !validDate(requestDate);
+    const invalidOrder = requestStartHour >= requestEndHour;
+    const invalidLength =
+      !invalidOrder && requestEndHour - requestStartHour > 12;
+    const invalidEndpoints =
+      requestMode === "exploratory" &&
+      origin.latitude === destination.latitude &&
+      origin.longitude === destination.longitude;
     setDateError(invalidDate ? "Enter a valid date." : "");
     setStartError(
       invalidOrder ? "Start time must be earlier than end time." : ""
@@ -359,32 +433,40 @@ export function TripSetupScreen() {
           ? "The time window cannot exceed 12 hours."
           : ""
     );
-    if (invalidDate || invalidOrder || invalidLength) {
+    setEndpointError(invalidEndpoints ? "Choose two different endpoints." : "");
+    if (invalidDate || invalidOrder || invalidLength || invalidEndpoints) {
       if (invalidDate) dateRef.current?.focus();
       else if (invalidOrder) startRef.current?.focus();
-      else endRef.current?.focus();
+      else if (invalidOrder || invalidLength) endRef.current?.focus();
+      else document.getElementById("endpoint-origin")?.focus();
       return;
     }
     if (health.status !== "available" || requestState === "submitting") return;
 
     const request: TripAnalysisRequest = {
-      mode: "curated",
-      origin_latitude: 29.4245914,
-      origin_longitude: -98.4864288,
-      destination_latitude: 29.425833,
-      destination_longitude: -98.485833,
-      landmark_name: "The Alamo",
-      district_name: "Downtown San Antonio",
-      date,
-      start_hour: startHour,
-      end_hour: endHour,
+      mode: requestMode,
+      origin_latitude: requestMode === "curated" ? 29.4245914 : origin.latitude,
+      origin_longitude:
+        requestMode === "curated" ? -98.4864288 : origin.longitude,
+      destination_latitude:
+        requestMode === "curated" ? 29.425833 : destination.latitude,
+      destination_longitude:
+        requestMode === "curated" ? -98.485833 : destination.longitude,
+      landmark_name: requestMode === "curated" ? "The Alamo" : destination.name,
+      district_name:
+        requestMode === "curated"
+          ? "Downtown San Antonio"
+          : destination.context,
+      date: requestDate,
+      start_hour: requestStartHour,
+      end_hour: requestEndHour,
       cautious,
       execution_mode: health.mode,
     };
     setTripAnalysis(null);
     setRequestState("submitting");
     try {
-      const response = await dataClient.analyzeCuratedTrip(request);
+      const response = await dataClient.analyzeTripAnalysis(request);
       if (response.state === "error") {
         setRequestState("failed");
       } else {
@@ -396,8 +478,30 @@ export function TripSetupScreen() {
     }
   }
 
+  async function searchPlaces(value: string) {
+    setSearch(value);
+    if (value.trim().length < 2) {
+      setSearchResults([]);
+      setSearchState("idle");
+      return;
+    }
+    setSearchState("loading");
+    try {
+      const result = await dataClient.searchPlaces(value);
+      setSearchResults(result.places);
+      setSearchState("idle");
+    } catch {
+      setSearchState("error");
+      setSearchResults([]);
+    }
+  }
+
   const busy = requestState === "submitting";
   const mode = health.status === "available" ? health.mode : null;
+  const publicFixture =
+    health.status === "available" &&
+    health.deployment_profile === "public-fixture";
+  const effectiveTripMode = publicFixture ? "curated" : tripMode;
 
   return (
     <section className="screen trip-setup">
@@ -405,8 +509,9 @@ export function TripSetupScreen() {
         <span className="step-label">Curated San Antonio trip</span>
         <h1>Trip Setup</h1>
         <p>
-          Select a date and time window for environmental conditions at The
-          Alamo.
+          {publicFixture
+            ? "Explore the fixed demonstration date and time window for environmental conditions at The Alamo."
+            : "Select a date and time window for environmental conditions at The Alamo."}
         </p>
       </header>
 
@@ -417,20 +522,131 @@ export function TripSetupScreen() {
           aria-busy={busy}
           noValidate
         >
-          <div className="curated-trip" aria-label="Curated trip places">
-            <div>
-              <span>Origin</span>
-              <strong>Menger Hotel</strong>
+          {!publicFixture && (
+            <div
+              className="setup-mode-toggle"
+              role="group"
+              aria-label="Trip mode"
+            >
+              <button
+                type="button"
+                className={tripMode === "curated" ? "active" : ""}
+                onClick={() => setTripMode("curated")}
+                disabled={busy}
+              >
+                Curated trip
+              </button>
+              <button
+                type="button"
+                className={tripMode === "exploratory" ? "active" : ""}
+                onClick={() => setTripMode("exploratory")}
+                disabled={busy}
+              >
+                Explore another trip
+              </button>
             </div>
-            <div>
-              <span>Destination</span>
-              <strong>The Alamo</strong>
+          )}
+          {effectiveTripMode === "curated" ? (
+            <div className="curated-trip" aria-label="Curated trip places">
+              <div>
+                <span>Origin</span>
+                <strong>Menger Hotel</strong>
+              </div>
+              <div>
+                <span>Destination</span>
+                <strong>The Alamo</strong>
+              </div>
+              <div>
+                <span>Area</span>
+                <strong>Downtown San Antonio / Alamo Plaza</strong>
+              </div>
             </div>
-            <div>
-              <span>Area</span>
-              <strong>Downtown San Antonio / Alamo Plaza</strong>
+          ) : (
+            <div className="exploratory-endpoints">
+              <p>Select both endpoints by searching or clicking the map.</p>
+              <label htmlFor="place-search">Search places</label>
+              <input
+                id="place-search"
+                value={search}
+                onChange={(event) => void searchPlaces(event.target.value)}
+                placeholder="Search a place"
+                disabled={busy}
+              />
+              {searchState === "loading" && (
+                <p role="status">Searching places...</p>
+              )}
+              {searchState === "error" && (
+                <p role="alert">
+                  Place search is unavailable. Select the endpoint on the map.
+                </p>
+              )}
+              {searchResults.map((place) => (
+                <button
+                  type="button"
+                  key={place.id}
+                  onClick={() => {
+                    (activeEndpoint === "origin" ? setOrigin : setDestination)(
+                      place
+                    );
+                    setSearch("");
+                    setSearchResults([]);
+                  }}
+                >
+                  {place.name} <small>{place.context}</small>
+                </button>
+              ))}
+              <div className="endpoint-buttons">
+                <button
+                  id="endpoint-origin"
+                  type="button"
+                  onClick={() => setActiveEndpoint("origin")}
+                  className={activeEndpoint === "origin" ? "active" : ""}
+                >
+                  Origin: {origin.name}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveEndpoint("destination")}
+                  className={activeEndpoint === "destination" ? "active" : ""}
+                >
+                  Destination: {destination.name}
+                </button>
+              </div>
+              {endpointError && (
+                <p className="field-error" role="alert">
+                  {endpointError}
+                </p>
+              )}
+              <MapContainer
+                center={[29.425, -98.486]}
+                zoom={14}
+                className="map"
+                scrollWheelZoom
+              >
+                <TileLayer
+                  attribution="&copy; OpenStreetMap contributors"
+                  url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                />
+                <EndpointMap
+                  onSelect={(point) =>
+                    (activeEndpoint === "origin" ? setOrigin : setDestination)(
+                      point
+                    )
+                  }
+                />
+                <CircleMarker
+                  center={[origin.latitude, origin.longitude]}
+                  radius={8}
+                  pathOptions={{ color: "#b9472f" }}
+                />
+                <CircleMarker
+                  center={[destination.latitude, destination.longitude]}
+                  radius={8}
+                  pathOptions={{ color: "#245c4a" }}
+                />
+              </MapContainer>
             </div>
-          </div>
+          )}
 
           <div className="setup-fields">
             <div className="field">
@@ -439,8 +655,8 @@ export function TripSetupScreen() {
                 ref={dateRef}
                 id="trip-date"
                 type="date"
-                value={date}
-                disabled={busy}
+                value={publicFixture ? PUBLIC_FIXTURE_DATE : date}
+                disabled={busy || publicFixture}
                 aria-invalid={Boolean(dateError)}
                 aria-describedby={dateError ? "date-error" : undefined}
                 onChange={(event) => {
@@ -463,8 +679,8 @@ export function TripSetupScreen() {
               <select
                 ref={startRef}
                 id="trip-start-hour"
-                value={startHour}
-                disabled={busy}
+                value={publicFixture ? PUBLIC_FIXTURE_START_HOUR : startHour}
+                disabled={busy || publicFixture}
                 aria-invalid={Boolean(startError)}
                 aria-describedby={startError ? "start-hour-error" : undefined}
                 onChange={(event) => {
@@ -494,8 +710,8 @@ export function TripSetupScreen() {
               <select
                 ref={endRef}
                 id="trip-end-hour"
-                value={endHour}
-                disabled={busy}
+                value={publicFixture ? PUBLIC_FIXTURE_END_HOUR : endHour}
+                disabled={busy || publicFixture}
                 aria-invalid={Boolean(endError)}
                 aria-describedby={endError ? "end-hour-error" : undefined}
                 onChange={(event) => {
@@ -521,6 +737,12 @@ export function TripSetupScreen() {
               )}
             </div>
           </div>
+          {publicFixture && (
+            <p className="fixture-facts" role="note">
+              Public demonstration facts are fixed to August 23, 2026, from
+              08:00 to 20:00. Cautious guidance remains available below.
+            </p>
+          )}
 
           <label className="cautious-option">
             <input
@@ -559,7 +781,7 @@ export function TripSetupScreen() {
           {health.status === "checking" && (
             <p role="status">Checking application mode...</p>
           )}
-          {mode && (
+          {mode && health.status === "available" && (
             <>
               <div className={`mode-value ${mode}`}>
                 {mode === "fixture" ? (
@@ -575,6 +797,10 @@ export function TripSetupScreen() {
                 {mode === "fixture"
                   ? "This analysis replays the committed San Antonio scenario."
                   : "This analysis requests current provider data."}
+              </p>
+              <p>
+                Deployment profile: <strong>{health.deployment_profile}</strong>
+                . Capability: <strong>{health.execution_capability}</strong>.
               </p>
             </>
           )}
@@ -701,6 +927,16 @@ export function TripSetupScreen() {
               <>
                 <h2>Trip analysis unavailable</h2>
                 <p>{tripAnalysis.unavailable?.reason}</p>
+                {tripAnalysis.unavailable?.action && (
+                  <p className="action-guidance">
+                    {tripAnalysis.unavailable.action === "choose_us_endpoints"
+                      ? "Choose origin and destination within the United States."
+                      : tripAnalysis.unavailable.action ===
+                          "edit_setup_or_use_live_data"
+                        ? "Edit the setup, or ask a maintainer to enable live data."
+                        : "Retry the analysis or edit the trip setup."}
+                  </p>
+                )}
               </>
             )}
             {(tripAnalysis.state === "success" ||

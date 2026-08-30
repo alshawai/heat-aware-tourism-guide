@@ -3,6 +3,7 @@
   "endpoint": "/api/trip/analyze",
   "request_configuration": {
     "landmark_name": "The Alamo",
+    "mode": "curated",
     "district_name": "Downtown San Antonio",
     "date": "2026-08-23",
     "start_hour": 8,

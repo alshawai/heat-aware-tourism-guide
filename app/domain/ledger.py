@@ -1,7 +1,7 @@
 """Operational call accounting without credentials or raw provider payloads.
 
 The provider does not report per-activity credit costs (ADR 0004 §5), so this
-ledger records two distinct facts: one *call record* per completed provider
+ledger records two distinct facts: one *call record* per submitted provider
 call keyed by activity ID, and *reconciliation records* holding authoritative
 account-level credit totals for an explicit date window. A call's
 ``credits_used`` is ``None`` when the provider did not report one — never a
@@ -18,7 +18,7 @@ from typing import Callable, Mapping, Sequence
 
 @dataclass(frozen=True)
 class UsageRecord:
-    """One completed provider call. ``credits_used`` is ``None`` if unreported."""
+    """One submitted provider call. ``credits_used`` is ``None`` if unreported."""
 
     activity_id: str
     endpoint: str
@@ -178,7 +178,7 @@ class CreditLedger:
         return self.authorize_call()
 
     def release_call(self, reservation: int | None = None) -> None:
-        """Return a reserved slot when submission does not complete a call."""
+        """Return a reserved slot only when no provider activity was accepted."""
         with self._lock:
             if reservation is not None:
                 self._reservations.pop(reservation, None)

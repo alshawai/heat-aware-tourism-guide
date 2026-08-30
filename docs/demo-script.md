@@ -2,7 +2,11 @@
 
 ## Primary Scenario
 
-Run the unified fixture-backed application with networking disabled:
+Open the hosted fixture demonstration at
+<https://heat-aware-tourism-guide-demo.onrender.com/>. The free service sleeps
+after 15 minutes without traffic, so allow about one minute for its first load.
+
+For an offline fallback, run the unified fixture-backed application locally:
 
 ```bash
 ALLOW_LIVE=false .venv/bin/uvicorn app.main:app --reload
@@ -45,4 +49,7 @@ npm run frontend:build
 
 The fixture flow makes no FortyGuard, Overpass, or OSRM requests. Live provider
 acquisition is a separate maintainer operation and must not be used for the
-public recording.
+public recording. Browser OSM tiles are allowed, but they are not a readiness
+dependency; a missing basemap does not invalidate the fixture demo. For hosted
+deployment smoke tests, health, warm-up, and rollback procedures are in the
+[deployment guide](deployment.md).

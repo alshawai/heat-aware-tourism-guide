@@ -2,7 +2,7 @@ import { scenarioLocations } from "../mocks/data";
 import { mockHotelRanking } from "../mocks/mockHotelRanking";
 import { mockTripAnalyze } from "../mocks/mockTripAnalyze";
 import type {
-  ExecutionMode,
+  HealthResponse,
   HotelRankRequest,
   HotelRankResponse,
   LocationSelection,
@@ -11,6 +11,7 @@ import type {
   TripAnalysisResponse,
   EnrichmentKind,
   EnrichmentResponse,
+  PlaceSearchResponse,
 } from "../types";
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -515,18 +516,23 @@ function isEnrichmentResponse(value: unknown): value is EnrichmentResponse {
 
 export const dataClient = {
   analyzeTrip: mockTripAnalyze,
-  async getHealth(signal?: AbortSignal): Promise<ExecutionMode> {
+  async getHealth(signal?: AbortSignal): Promise<HealthResponse> {
     const value = await readJson(await fetch("/health", { signal }));
     if (
       !isObject(value) ||
       value.status !== "ok" ||
-      (value.mode !== "fixture" && value.mode !== "live")
+      (value.mode !== "fixture" && value.mode !== "live") ||
+      (value.deployment_profile !== "local" &&
+        value.deployment_profile !== "public-fixture" &&
+        value.deployment_profile !== "protected-live") ||
+      (value.execution_capability !== "fixture-only" &&
+        value.execution_capability !== "fixture-and-live")
     ) {
       throw new Error("Invalid health response");
     }
-    return value.mode;
+    return value as HealthResponse;
   },
-  async analyzeCuratedTrip(
+  async analyzeTripAnalysis(
     request: TripAnalysisRequest
   ): Promise<TripAnalysisResponse> {
     const value = await readJson(
@@ -541,6 +547,19 @@ export const dataClient = {
     }
     return value;
   },
+  async searchPlaces(
+    query: string,
+    signal?: AbortSignal
+  ): Promise<PlaceSearchResponse> {
+    const value = await readJson(
+      await fetch(`/api/places/search?q=${encodeURIComponent(query)}`, {
+        signal,
+      })
+    );
+    if (!isObject(value) || !Array.isArray(value.places))
+      throw new Error("Invalid place search response");
+    return value as PlaceSearchResponse;
+  },
   async rankHotels(
     location: LocationSelection,
     options: RequestOptions = {}
@@ -549,11 +568,11 @@ export const dataClient = {
     if (options.mode !== undefined || options.scenario !== undefined) {
       return mockHotelRanking(location, options);
     }
-    const executionMode = await this.getHealth(options.signal);
+    const health = await this.getHealth(options.signal);
     const request: HotelRankRequest = {
       // The current hotel flow is scoped to the canonical district AOI.
       district_name: "Downtown San Antonio",
-      execution_mode: executionMode,
+      execution_mode: health.mode,
     };
     const value = await readJson(
       await fetch("/api/hotels/rank", {

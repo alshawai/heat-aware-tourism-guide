@@ -925,6 +925,30 @@ def test_client_classifies_submit_errors_before_activity_lookup() -> None:
         ).submit_and_poll("/v1/heatmap", {})
 
 
+def test_client_releases_budget_after_definitive_submission_rejection() -> None:
+    from app.domain.ledger import CreditLedger
+
+    class RejectedTransport:
+        def post(self, endpoint: str, payload: object, api_key: str) -> dict[str, object]:
+            return {"status_code": 400, "detail": "invalid request"}
+
+        def get(self, endpoint: str, api_key: str) -> dict[str, object]:
+            raise AssertionError("status lookup must not run")
+
+    ledger = CreditLedger(1)
+    client = FortyGuardClient(
+        RejectedTransport(),
+        "secret",
+        clock=lambda: datetime(2026, 8, 23, tzinfo=timezone.utc),
+        ledger=ledger,
+    )
+    with pytest.raises(Exception, match="activity submission failed"):
+        client.submit_and_poll("/v1/heatmap", {})
+
+    assert ledger.call_count == 0
+    assert ledger.remaining == 1
+
+
 def test_polling_retries_transient_status_transport_without_resubmission() -> None:
     responses: Iterator[dict[str, object]] = iter(
         [
@@ -1039,6 +1063,60 @@ def test_client_logs_the_call_when_provider_reports_no_credits() -> None:
     assert ledger.reported_credits == 0
 
 
+def test_client_consumes_budget_when_polling_fails_after_submission() -> None:
+    from app.domain.ledger import BudgetExceededError, CreditLedger
+
+    class FailingPollTransport:
+        def post(self, endpoint: str, payload: object, api_key: str) -> dict[str, object]:
+            return {"activity_id": "activity-1"}
+
+        def get(self, endpoint: str, api_key: str) -> dict[str, object]:
+            return {"status_code": 503}
+
+    ledger = CreditLedger(1)
+    client = FortyGuardClient(
+        FailingPollTransport(),
+        "secret",
+        clock=lambda: datetime(2026, 8, 23, tzinfo=timezone.utc),
+        ledger=ledger,
+    )
+    with pytest.raises(Exception, match="status lookup failed"):
+        client.submit_and_poll("/v1/heatmap", {}, max_polls=1, sleep=lambda _: None)
+
+    assert ledger.call_count == 1
+    assert ledger.records[0].activity_id == "activity-1"
+    assert ledger.records[0].status == "submitted"
+    with pytest.raises(BudgetExceededError):
+        client.submit_and_poll("/v1/heatmap", {}, sleep=lambda _: None)
+
+
+def test_client_consumes_budget_when_submission_result_is_ambiguous() -> None:
+    from app.domain.ledger import BudgetExceededError, CreditLedger
+
+    class AmbiguousSubmitTransport:
+        def post(self, endpoint: str, payload: object, api_key: str) -> dict[str, object]:
+            raise TimeoutError("submission response timed out")
+
+        def get(self, endpoint: str, api_key: str) -> dict[str, object]:
+            raise AssertionError("status lookup cannot run without an activity ID")
+
+    ledger = CreditLedger(1)
+    client = FortyGuardClient(
+        AmbiguousSubmitTransport(),
+        "secret",
+        clock=lambda: datetime(2026, 8, 23, tzinfo=timezone.utc),
+        ledger=ledger,
+    )
+    with pytest.raises(TimeoutError, match="submission response timed out"):
+        client.submit_and_poll("/v1/heatmap", {})
+
+    assert ledger.call_count == 1
+    assert ledger.records[0].activity_id.startswith("submission-unknown-")
+    assert ledger.records[0].status == "submission_unknown"
+    with pytest.raises(BudgetExceededError):
+        client.submit_and_poll("/v1/heatmap", {})
+
+
 def test_client_refuses_to_spend_once_the_call_budget_is_exhausted() -> None:
     """Enforcement happens before the provider call, so no request is sent."""
     from app.domain.ledger import BudgetExceededError, CreditLedger, UsageRecord
@@ -1094,7 +1172,7 @@ def test_client_records_accepted_submission_when_activity_id_is_missing() -> Non
         ).submit_and_poll("/v1/env_params", {}, scope="enrichment")
     assert len(ledger.records) == 1
     assert ledger.records[0].scope == "enrichment"
-    assert ledger.records[0].status == "failed"
+    assert ledger.records[0].status == "submission_unknown"
 
 
 def test_client_keeps_core_environment_calls_on_core_budget() -> None:
