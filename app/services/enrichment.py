@@ -78,6 +78,12 @@ class EnrichmentService:
         request_payload = dict(request or {})
         cache_payload = {
             "target_id": target_id,
+            "coordinates": (
+                {"latitude": coordinates.latitude, "longitude": coordinates.longitude}
+                if coordinates is not None
+                else None
+            ),
+            "route_geometry": route_geometry,
             **{key: value for key, value in request_payload.items() if key != "refresh"},
         }
         cache_key = (
@@ -90,7 +96,15 @@ class EnrichmentService:
             if self.cache is not None
             else None
         )
-        if self.cache is not None and cache_key is not None and not request_payload.get("refresh"):
+        refresh = request_payload.get("refresh", False)
+        if not isinstance(refresh, bool):
+            return EnrichmentResponse(
+                **common_for_request(kind, target_id, base_result),
+                state=EnrichmentState.UNAVAILABLE,
+                reason="invalid_refresh",
+            )
+        bypass_cache = refresh and self.live
+        if self.cache is not None and cache_key is not None and not bypass_cache:
             cached = self.cache.get_if_fresh(cache_key, now=self.clock(), ttl=self.cache_ttls[kind])
             if cached is not None:
                 return EnrichmentResponse(
@@ -106,6 +120,9 @@ class EnrichmentService:
                         schema_version="enrichment-v1",
                         provider_config_version="fortyguard-enrichment-v1",
                         response_status="cached",
+                        data_date=cached.provenance.data_date,
+                        stale=False,
+                        raw_payload=cached.provenance.raw_payload,
                     ),
                     limitations=LIMITATIONS[kind],
                     payload=cached.payload,
@@ -127,7 +144,15 @@ class EnrichmentService:
             limitations=LIMITATIONS[kind],
         )
         adapter = self.adapters.get(kind)
-        if adapter is None or estimate is None:
+        if adapter is None:
+            reason = (
+                "provider_schema_not_validated"
+                if self.live
+                and kind in (EnrichmentKind.SATELLITE_CANOPY, EnrichmentKind.STREET_VIEW)
+                else "configuration_missing"
+            )
+            return EnrichmentResponse(**common, state=EnrichmentState.UNAVAILABLE, reason=reason)
+        if estimate is None:
             return EnrichmentResponse(
                 **common, state=EnrichmentState.UNAVAILABLE, reason="configuration_missing"
             )
@@ -153,6 +178,12 @@ class EnrichmentService:
                 payload = adapter_output.payload
             if not isinstance(payload, Mapping) or not payload:
                 raise ValueError("provider payload is unusable")
+        except BudgetExceededError:
+            if reservation is not None:
+                self.ledger.release_call(reservation)
+            return EnrichmentResponse(
+                **common, state=EnrichmentState.UNAVAILABLE, reason="budget_exhausted"
+            )
         except Exception as error:
             # A provider adapter owns activity recording when it submits through
             # FortyGuard. This reservation is only safe to release before submit.
@@ -165,25 +196,49 @@ class EnrichmentService:
                 if isinstance(error, ValueError)
                 else "provider_failure"
             )
-            return EnrichmentResponse(**common, state=EnrichmentState.UNAVAILABLE, reason=reason)
+            return EnrichmentResponse(
+                **common,
+                state=EnrichmentState.UNAVAILABLE,
+                reason=reason,
+                provenance=(
+                    EnrichmentProvenance(
+                        source="provider",
+                        retrieved_at=self.clock().isoformat(),
+                        fresh=False,
+                        schema_version="enrichment-v1",
+                        provider_config_version="fortyguard-enrichment-v1",
+                        response_status="failed",
+                        activity_id=error.activity_id,
+                    )
+                    if hasattr(error, "activity_id")
+                    else None
+                ),
+                usage=EnrichmentUsage(
+                    estimated_credits=estimate,
+                    actual_credits=None,
+                    completed_calls=1 if self.live and hasattr(error, "activity_id") else 0,
+                ),
+            )
         activity_id = (
             adapter_output.activity_id if isinstance(adapter_output, EnrichmentPayload) else None
         )
-        if reservation is not None and activity_id is None:
+        if reservation is not None:
             self.ledger.record(
                 UsageRecord(
-                    activity_id=f"enrichment-{uuid4().hex}",
+                    activity_id=activity_id or f"enrichment-{uuid4().hex}",
                     endpoint=f"/enrichment/{kind.value}",
-                    credits_used=None,
+                    credits_used=(
+                        adapter_output.actual_credits
+                        if isinstance(adapter_output, EnrichmentPayload)
+                        else None
+                    ),
                     completed_at=self.clock(),
                     status="completed",
                     scope="enrichment",
                 ),
                 reservation=reservation,
             )
-        elif reservation is not None:
-            self.ledger.release_call(reservation)
-        if self.cache is not None and cache_key is not None:
+        if self.cache is not None and cache_key is not None and self.live:
             self.cache.put(
                 f"/enrichment/{kind.value}",
                 "enrichment-v1",
@@ -202,7 +257,11 @@ class EnrichmentService:
                     if isinstance(adapter_output, EnrichmentPayload)
                     else ("provider" if self.live else "fixture")
                 ),
-                retrieved_at=self.clock().isoformat(),
+                retrieved_at=(
+                    adapter_output.retrieved_at
+                    if isinstance(adapter_output, EnrichmentPayload)
+                    else self.clock().isoformat()
+                ),
                 fresh=True,
                 schema_version="enrichment-v1",
                 provider_config_version="fortyguard-enrichment-v1",
@@ -212,9 +271,16 @@ class EnrichmentService:
                     else "completed"
                 ),
                 activity_id=activity_id,
+                data_date=self.clock().date().isoformat() if self.live else None,
+                raw_payload=dict(payload),
             ),
             usage=EnrichmentUsage(
                 estimated_credits=estimate,
+                actual_credits=(
+                    adapter_output.actual_credits
+                    if isinstance(adapter_output, EnrichmentPayload)
+                    else None
+                ),
                 completed_calls=1 if self.live else 0,
                 budget_remaining=(
                     self.ledger.remaining_enrichment(now=self.clock()) if self.live else 0
@@ -228,13 +294,25 @@ class EnrichmentService:
         )
 
 
+def common_for_request(
+    kind: EnrichmentKind, target_id: str, base_result: Mapping[str, Any] | None
+) -> dict[str, Any]:
+    return {
+        "kind": kind,
+        "target_id": target_id,
+        "base_result": base_result or {},
+        "limitations": LIMITATIONS[kind],
+    }
+
+
 class FixtureEnrichmentAdapter:
     """Replay one sanitized normalized fixture without touching provider clients."""
 
-    def __init__(self, payload: Mapping[str, Any]) -> None:
+    def __init__(self, payload: Mapping[str, Any], *, source: str = "fixture") -> None:
         self._payload = dict(payload)
+        self._source = source
 
-    def enrich(self, context: EnrichmentContext, request: Mapping[str, Any]) -> Mapping[str, Any]:
+    def enrich(self, context: EnrichmentContext, request: Mapping[str, Any]) -> EnrichmentPayload:
         payload = dict(self._payload)
         if payload.get("fixture_data_unavailable") is True:
             raise ValueError("fixture data unavailable")
@@ -244,4 +322,4 @@ class FixtureEnrichmentAdapter:
                 raise ValueError("temperature anchor is required")
             payload["temperature_anchor_celsius"] = anchor
             payload["warning"] = LIMITATIONS[EnrichmentKind.ENVIRONMENT][0]
-        return payload
+        return EnrichmentPayload(payload, source=self._source, retrieved_at=None)

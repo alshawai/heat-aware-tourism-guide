@@ -172,3 +172,39 @@ def test_api_route_enrichment_uses_midpoint_and_rejects_distant_point() -> None:
         json={"result_set_token": token, "point": {"latitude": 30, "longitude": -97}},
     )
     assert distant.status_code == 400
+
+
+def test_live_segmentation_without_validated_adapter_is_unavailable() -> None:
+    configured = EnrichmentService(
+        ledger=CreditLedger(enrichment_budget=1),
+        adapters={},
+        estimates={"satellite_canopy": 12},
+        live=True,
+    )
+    result = configured.run(
+        kind=EnrichmentKind.SATELLITE_CANOPY,
+        target_id="route-1",
+        route_geometry=((-98.48, 29.42), (-98.479, 29.421)),
+    )
+    assert result.state is EnrichmentState.UNAVAILABLE
+    assert result.reason == "provider_schema_not_validated"
+    assert configured.ledger.records == []
+
+
+def test_adapter_reported_credits_are_exposed_and_recorded() -> None:
+    from app.domain.enrichment import EnrichmentPayload
+
+    class CreditedAdapter:
+        def enrich(self, context: object, request: dict[str, Any]) -> EnrichmentPayload:
+            return EnrichmentPayload({"ok": True}, "activity-credited", actual_credits=7)
+
+    configured = EnrichmentService(
+        ledger=CreditLedger(enrichment_budget=1),
+        adapters={EnrichmentKind.ENVIRONMENT: cast(EnrichmentAdapter, CreditedAdapter())},
+        estimates={"environment": 12},
+        clock=lambda: datetime(2026, 8, 30, 12, tzinfo=timezone.utc),
+        live=True,
+    )
+    result = configured.run(kind=EnrichmentKind.ENVIRONMENT, target_id="hotel-1")
+    assert result.usage.actual_credits == 7
+    assert configured.ledger.records[0].credits_used == 7

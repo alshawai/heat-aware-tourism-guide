@@ -22,6 +22,7 @@ class ProviderError(Exception):
     kind: ProviderErrorKind
     status_code: int | None = None
     detail: str = "provider request failed"
+    activity_id: str | None = None
 
     def __str__(self) -> str:
         return f"{self.kind.value}: {self.detail}"

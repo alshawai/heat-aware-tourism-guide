@@ -21,7 +21,7 @@ from shapely.geometry.base import BaseGeometry
 
 from app.api import create_app
 from app.domain.contracts import ExecutionMode, TripAnalysisAdapter
-from app.domain.enrichment import EnrichmentKind, EnrichmentPayload
+from app.domain.enrichment import EnrichmentKind
 from app.domain.hotel_heat_score import ComponentEvidence
 from app.domain.hotels import BoundingBox, DiscoveryState, HotelDiscoveryResult
 from app.domain.ledger import CreditLedger
@@ -30,19 +30,17 @@ from app.domain.security import sanitize_payload
 from app.integrations.fortyguard.client import FortyGuardClient
 from app.integrations.fortyguard.contracts import (
     AnalyticType,
-    EnvParamsRequest,
     HeatmapRequest,
-    normalize_env_params_response,
     normalize_heatmap_response,
 )
 from app.integrations.fortyguard.errors import ProviderError
 from app.integrations.fortyguard.live import (
     LiveAreaHeatmapAdapter,
     LiveEnvParamsAdapter,
+    LiveEnvironmentEnrichment,
     LiveFortyGuardTransport,
     LiveHeatmapAdapter,
     LiveSharedRouteHeatAdapter,
-    LiveSegmentationAdapter,
 )
 from app.integrations.osrm.client import OsrmClient
 from app.integrations.osrm.transport import HttpOsrmTransport
@@ -561,66 +559,17 @@ def create_production_app(
             ),
         )
 
-        class LiveEnvironmentEnrichment:
-            def enrich(self, context: object, request: Mapping[str, object]) -> EnrichmentPayload:
-                from app.domain.enrichment import EnrichmentContext
-
-                if not isinstance(context, EnrichmentContext):
-                    raise ValueError("invalid enrichment context")
-                if context.coordinates is None:
-                    raise ValueError("missing spatial input")
-                anchor = request.get("temperature_anchor_celsius")
-                if not isinstance(anchor, (int, float)) or isinstance(anchor, bool):
-                    raise ValueError("temperature anchor is required")
-                result = LiveEnvParamsAdapter(client, polling=resolved.polling).load(
-                    EnvParamsRequest(
-                        context.coordinates.latitude,
-                        context.coordinates.longitude,
-                        date.today(),
-                        float(anchor),
-                    )
-                )
-                return EnrichmentPayload(
-                    {
-                        "entries": [
-                            {
-                                "valid_time": entry.valid_time.isoformat(),
-                                "heat_index_celsius": entry.heat_index_celsius,
-                                "humidity_percent": entry.humidity_percent,
-                                "parameters": dict(entry.parameters),
-                            }
-                            for entry in normalize_env_params_response(
-                                result.payload,
-                                request=EnvParamsRequest(
-                                    context.coordinates.latitude,
-                                    context.coordinates.longitude,
-                                    date.today(),
-                                    float(anchor),
-                                ),
-                            ).entries
-                        ],
-                        "warning": "caller-supplied temperature anchor; not a real 24-hour forecast",
-                    },
-                    result.activity_id,
-                    "provider",
-                    "completed",
-                    datetime.now(timezone.utc).isoformat(),
-                )
-
         enrichment_service = EnrichmentService(
             ledger=ledger,
             adapters={
-                EnrichmentKind.ENVIRONMENT: LiveEnvironmentEnrichment(),
-                EnrichmentKind.SATELLITE_CANOPY: LiveSegmentationAdapter(
-                    client, "/v1/satellite", resolved.polling
-                ),
-                EnrichmentKind.STREET_VIEW: LiveSegmentationAdapter(
-                    client, "/v1/streetview", resolved.polling
+                EnrichmentKind.ENVIRONMENT: LiveEnvironmentEnrichment(
+                    client, polling=resolved.polling
                 ),
             },
             estimates=resolved.enrichment_estimated_credits,
             live=True,
             adapter_manages_budget=True,
+            cache=cache,
         )
     else:
         fixture_payload = {}
@@ -632,10 +581,12 @@ def create_production_app(
             adapters={
                 EnrichmentKind.ENVIRONMENT: FixtureEnrichmentAdapter(fixture_payload),
                 EnrichmentKind.SATELLITE_CANOPY: FixtureEnrichmentAdapter(
-                    _load_enrichment_fixture(heatmap_fixture.parent / "satellite-canopy.json")
+                    _load_enrichment_fixture(heatmap_fixture.parent / "satellite-canopy.json"),
+                    source="synthesized",
                 ),
                 EnrichmentKind.STREET_VIEW: FixtureEnrichmentAdapter(
-                    _load_enrichment_fixture(heatmap_fixture.parent / "street-view.json")
+                    _load_enrichment_fixture(heatmap_fixture.parent / "street-view.json"),
+                    source="synthesized",
                 ),
             },
             estimates={"environment": 0, "satellite_canopy": 0, "street_view": 0},

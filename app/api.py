@@ -586,7 +586,7 @@ def _trip_result(
     if response.execution_mode is not execution_mode:
         raise ValueError("trip adapter returned the wrong execution mode")
     result = asdict(response)
-    if response.state.value == "success" and result_token_secret:
+    if response.state.value in {"success", "degraded"} and result_token_secret:
         routes = result.get("routes") or {}
         alternatives = routes.get("alternatives", []) if isinstance(routes, dict) else []
         route_ids = [item.get("identity") for item in alternatives if isinstance(item, dict)]
@@ -711,13 +711,33 @@ def _point_near_claimed_route(value: object, target_id: str, claims: dict[str, o
     geometry = geometries.get(target_id) if isinstance(geometries, dict) else None
     if not isinstance(geometry, list):
         return False
-    distances = [
-        ((longitude - point[0]) * 111_000 * math.cos(math.radians(latitude))) ** 2
-        + ((latitude - point[1]) * 111_000) ** 2
-        for point in geometry
-        if isinstance(point, (list, tuple)) and len(point) == 2
-    ]
-    return bool(distances) and min(distances) ** 0.5 <= 50
+    points = [point for point in geometry if isinstance(point, (list, tuple)) and len(point) == 2]
+    if not points:
+        return False
+    scale_x = 111_000 * math.cos(math.radians(latitude))
+    scale_y = 111_000
+    projected = [(float(point[0]) * scale_x, float(point[1]) * scale_y) for point in points]
+    target = (longitude * scale_x, latitude * scale_y)
+    distances: list[float] = []
+    for start, end in zip(projected, projected[1:]):
+        dx, dy = end[0] - start[0], end[1] - start[1]
+        length_squared = dx * dx + dy * dy
+        fraction = (
+            max(
+                0.0,
+                min(
+                    1.0,
+                    ((target[0] - start[0]) * dx + (target[1] - start[1]) * dy) / length_squared,
+                ),
+            )
+            if length_squared
+            else 0.0
+        )
+        nearest = (start[0] + fraction * dx, start[1] + fraction * dy)
+        distances.append(math.dist(target, nearest))
+    if len(projected) == 1:
+        distances.append(math.dist(target, projected[0]))
+    return bool(distances) and min(distances) <= 50
 
 
 def _route_midpoint(claims: dict[str, object], target_id: str) -> dict[str, float]:
@@ -725,9 +745,27 @@ def _route_midpoint(claims: dict[str, object], target_id: str) -> dict[str, floa
     geometry = geometries.get(target_id) if isinstance(geometries, dict) else None
     if not isinstance(geometry, list) or not geometry:
         raise ValueError("route geometry is required")
-    point = geometry[len(geometry) // 2]
-    if not isinstance(point, (list, tuple)) or len(point) != 2:
+    points = [point for point in geometry if isinstance(point, (list, tuple)) and len(point) == 2]
+    if not points:
         raise ValueError("route geometry is malformed")
+    if len(points) == 1:
+        point = points[0]
+    else:
+        lengths = [
+            math.dist((float(start[0]), float(start[1])), (float(end[0]), float(end[1])))
+            for start, end in zip(points, points[1:])
+        ]
+        halfway = sum(lengths) / 2
+        point = points[-1]
+        for start, end, length in zip(points, points[1:], lengths):
+            if halfway <= length:
+                fraction = halfway / length if length else 0.0
+                point = (
+                    float(start[0]) + fraction * (float(end[0]) - float(start[0])),
+                    float(start[1]) + fraction * (float(end[1]) - float(start[1])),
+                )
+                break
+            halfway -= length
     return {"longitude": float(point[0]), "latitude": float(point[1])}
 
 

@@ -12,6 +12,7 @@ from app.integrations.fortyguard.contracts import (
     normalize_heatmap_response,
 )
 from app.integrations.fortyguard.errors import (
+    ProviderError,
     ProviderErrorKind,
     classify_provider_error,
 )
@@ -1074,3 +1075,40 @@ def test_client_rejects_invalid_provider_credit_metadata() -> None:
         FortyGuardClient(
             Transport(), "secret", clock=lambda: datetime.now(timezone.utc)
         ).submit_and_poll("/v1/heatmap", {}, sleep=lambda _: None)
+
+
+def test_client_records_accepted_submission_when_activity_id_is_missing() -> None:
+    from app.domain.ledger import CreditLedger
+
+    class Transport:
+        def post(self, endpoint: str, payload: object, api_key: str) -> dict[str, object]:
+            return {"status_code": 202}
+
+        def get(self, endpoint: str, api_key: str) -> dict[str, object]:
+            raise AssertionError("malformed submission must not poll")
+
+    ledger = CreditLedger(enrichment_budget=1)
+    with pytest.raises(ProviderError, match="missing activity id"):
+        FortyGuardClient(
+            Transport(), "secret", clock=lambda: datetime.now(timezone.utc), ledger=ledger
+        ).submit_and_poll("/v1/env_params", {}, scope="enrichment")
+    assert len(ledger.records) == 1
+    assert ledger.records[0].scope == "enrichment"
+    assert ledger.records[0].status == "failed"
+
+
+def test_client_keeps_core_environment_calls_on_core_budget() -> None:
+    from app.domain.ledger import CreditLedger
+
+    class Transport:
+        def post(self, endpoint: str, payload: object, api_key: str) -> dict[str, object]:
+            return {"activity_id": "core-env"}
+
+        def get(self, endpoint: str, api_key: str) -> dict[str, object]:
+            return {"status": "Completed", "result": {"ok": True}}
+
+    ledger = CreditLedger(budget=1, enrichment_budget=0)
+    FortyGuardClient(
+        Transport(), "secret", clock=lambda: datetime.now(timezone.utc), ledger=ledger
+    ).submit_and_poll("/v1/env_params", {}, scope="core", sleep=lambda _: None)
+    assert ledger.records[0].scope == "core"

@@ -28,6 +28,7 @@ from app.integrations.fortyguard.contracts import (
     AnalyticType,
     EnvParamsRequest,
     HeatmapRequest,
+    normalize_env_params_response,
 )
 from app.integrations.fortyguard.errors import ProviderError, ProviderErrorKind
 from app.integrations.fortyguard.transport import HttpFortyGuardTransport
@@ -48,6 +49,7 @@ class LivePayload:
     transformations: tuple[Transformation, ...] = ()
     activity: ActivityMetadata | None = None
     inferred_unit: str | None = None
+    actual_credits: int | None = None
 
 
 # The heatmap and env-params loaders share one payload shape; the two names
@@ -820,10 +822,12 @@ class LiveEnvParamsAdapter:
         *,
         polling: FortyGuardPollingSettings | None = None,
         sleep: Callable[[float], None] | None = None,
+        scope: str = "core",
     ) -> None:
         self._client = client
         self._polling = polling or FortyGuardPollingSettings()
         self._sleep = sleep
+        self._scope = scope
 
     def load(self, request: EnvParamsRequest) -> LiveEnvParamsPayload:
         payload = build_documented_env_params_payload(request)
@@ -834,64 +838,56 @@ class LiveEnvParamsAdapter:
             max_polls=self._polling.max_polls,
             interval_seconds=self._polling.interval_seconds,
             status_404_grace_checks=self._polling.status_404_grace_checks,
-            scope="enrichment",
+            scope=self._scope,
         )
-        return LiveEnvParamsPayload(result, metadata.activity_id, env_params_transformations())
+        credits = result.get("credits_used")
+        return LiveEnvParamsPayload(
+            result,
+            metadata.activity_id,
+            env_params_transformations(),
+            actual_credits=credits if isinstance(credits, int) else None,
+        )
 
 
-class LiveSegmentationAdapter:
-    """Submit documented segmentation requests while preserving opaque classes."""
+class LiveEnvironmentEnrichment:
+    """Normalize the live environmental enrichment response."""
 
-    def __init__(self, client: FortyGuardClient, endpoint: str, polling: FortyGuardPollingSettings):
-        self._client = client
-        self._endpoint = endpoint
-        self._polling = polling
+    def __init__(self, client: FortyGuardClient, *, polling: FortyGuardPollingSettings):
+        self._adapter = LiveEnvParamsAdapter(client, polling=polling, scope="enrichment")
 
-    def enrich(
-        self,
-        context: object,
-        request: Mapping[str, object],
-    ) -> EnrichmentPayload:
+    def enrich(self, context: object, request: Mapping[str, object]) -> EnrichmentPayload:
         from app.domain.enrichment import EnrichmentContext
 
-        if not isinstance(context, EnrichmentContext):
-            raise ValueError("invalid enrichment context")
-        if context.coordinates is None:
+        if not isinstance(context, EnrichmentContext) or context.coordinates is None:
             raise ValueError("missing spatial input")
-        if self._endpoint == "/v1/satellite":
-            payload = {
-                "sat": {
-                    "latitude": context.coordinates.latitude,
-                    "longitude": context.coordinates.longitude,
-                },
-                "date_time": {
-                    "start_date": request.get("date", date.today().isoformat()),
-                    "filter_type": 3,
-                },
-                "granularity": 80,
-            }
-        else:
-            point_value = request.get("point")
-            point: Mapping[str, object] = (
-                point_value
-                if isinstance(point_value, Mapping)
-                else {
-                    "latitude": context.coordinates.latitude,
-                    "longitude": context.coordinates.longitude,
-                }
-            )
-            payload = {**point, "vertical_angle": 10.0, "horizontal_angle": 0.0, "back_view": False}
-        result, metadata = self._client.submit_and_poll(
-            self._endpoint,
-            payload,
-            max_polls=self._polling.max_polls,
-            interval_seconds=self._polling.interval_seconds,
-            status_404_grace_checks=self._polling.status_404_grace_checks,
-            scope="enrichment",
+        anchor = request.get("temperature_anchor_celsius")
+        if not isinstance(anchor, (int, float)) or isinstance(anchor, bool):
+            raise ValueError("temperature anchor is required")
+        env_request = EnvParamsRequest(
+            context.coordinates.latitude,
+            context.coordinates.longitude,
+            date.today(),
+            float(anchor),
         )
+        result = self._adapter.load(env_request)
+        normalized = normalize_env_params_response(result.payload, request=env_request)
+        reported_credits = result.payload.get("credits_used")
+        actual_credits = reported_credits if isinstance(reported_credits, int) else None
         return EnrichmentPayload(
-            {"provider_result": dict(result), "segmentation": True},
-            metadata.activity_id,
+            {
+                "entries": [
+                    {
+                        "valid_time": entry.valid_time.isoformat(),
+                        "heat_index_celsius": entry.heat_index_celsius,
+                        "humidity_percent": entry.humidity_percent,
+                        "parameters": dict(entry.parameters),
+                    }
+                    for entry in normalized.entries
+                ],
+                "warning": "caller-supplied temperature anchor; not a real 24-hour forecast",
+            },
+            result.activity_id,
             "provider",
             "completed",
+            actual_credits=actual_credits,
         )

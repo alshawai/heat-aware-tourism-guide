@@ -34,6 +34,11 @@ class EnrichmentProvenance:
     provider_config_version: str
     response_status: str
     activity_id: str | None = None
+    data_date: str | None = None
+    stale: bool = False
+    forecast: bool = False
+    raw_payload: Mapping[str, Any] | None = None
+    transformations: tuple[Mapping[str, Any], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -94,6 +99,7 @@ class EnrichmentPayload:
     source: str = "fixture"
     response_status: str = "completed"
     retrieved_at: str | None = None
+    actual_credits: int | None = None
 
 
 class EnrichmentAdapter(Protocol):

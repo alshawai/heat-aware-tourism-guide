@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from time import sleep as default_sleep
 from typing import Callable, Mapping
+from uuid import uuid4
 
 from app.domain.ledger import CreditLedger, UsageRecord
 from app.domain.security import sanitize_payload
@@ -68,14 +69,16 @@ class FortyGuardClient:
             status_code = response.get("status_code")
             if isinstance(status_code, int) and status_code >= 400:
                 raise classify_provider_error(status_code, "activity submission failed")
+            # A successful POST is billable even if its response cannot be decoded.
+            submitted = True
             candidate_activity_id = response.get("activity_id")
             activity_id = candidate_activity_id if isinstance(candidate_activity_id, str) else None
             if not isinstance(activity_id, str) or not activity_id:
+                activity_id = f"unknown-{uuid4().hex}"
                 raise ProviderError(
                     ProviderErrorKind.MALFORMED_RESPONSE, detail="missing activity id"
                 )
             submitted_at = self._clock()
-            submitted = True
             self._emit(
                 "fortyguard.submitted",
                 {
@@ -130,13 +133,20 @@ class FortyGuardClient:
                 "fortyguard.completed", {"activity_id": activity_id, **_response_metadata(result)}
             )
             return result, metadata
-        except Exception:
+        except Exception as error:
             if submitted and activity_id is not None and self._ledger is not None:
                 self._ledger.record(
                     UsageRecord(activity_id, endpoint, None, self._clock(), "failed", scope),
                     reservation=reservation,
                 )
                 reservation = None
+            if isinstance(error, ProviderError) and activity_id is not None:
+                raise ProviderError(
+                    error.kind,
+                    error.status_code,
+                    error.detail,
+                    activity_id,
+                ) from error
             raise
         finally:
             if reservation is not None and self._ledger is not None and not submitted:
