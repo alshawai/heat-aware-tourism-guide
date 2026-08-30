@@ -10,7 +10,7 @@ import json
 import math
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
@@ -23,6 +23,8 @@ from app.domain.contracts import (
     TripAnalysisRequest,
     TripAnalysisResponse,
     TripMode,
+    ResultState,
+    UnavailableResult,
 )
 from app.domain.ledger import BudgetExceededError
 from app.domain.hotel_heat_score import COMPONENTS, NeighbourhoodHeatScorer
@@ -93,6 +95,50 @@ def create_fixture_server(
     )
 
     class Handler(BaseHTTPRequestHandler):
+        def do_GET(self) -> None:
+            parsed = urlparse(self.path)
+            if parsed.path != "/api/places/search":
+                self.send_error(404)
+                return
+            query = str(parse_qs(parsed.query).get("q", [""])[0]).strip()
+            if len(query) < 2:
+                status = 400
+                payload: dict[str, object] = {
+                    "status": "error",
+                    "error": "search query must contain at least 2 characters",
+                }
+            else:
+                places: list[dict[str, object]] = [
+                    {
+                        "id": "menger-hotel",
+                        "name": "Menger Hotel",
+                        "context": "San Antonio, TX",
+                        "latitude": 29.4245914,
+                        "longitude": -98.4864288,
+                    },
+                    {
+                        "id": "the-alamo",
+                        "name": "The Alamo",
+                        "context": "San Antonio, TX",
+                        "latitude": 29.425833,
+                        "longitude": -98.485833,
+                    },
+                ]
+                status = 200
+                payload = {
+                    "places": [
+                        place
+                        for place in places
+                        if query.casefold() in str(place["name"]).casefold()
+                    ]
+                }
+            response = json.dumps(payload).encode()
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(response)))
+            self.end_headers()
+            self.wfile.write(response)
+
         def do_POST(self) -> None:
             path = urlparse(self.path).path
             if path not in {"/api/heatmap", "/api/trip/analyze"}:
@@ -184,6 +230,39 @@ def create_app(
     @app.get("/health")
     def health() -> dict[str, str]:
         return {"status": "ok", "mode": "live" if allow_live else "fixture"}
+
+    @app.get("/api/places/search")
+    def places_search(q: str = "") -> dict[str, object]:
+        query = q.strip()
+        if len(query) < 2:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "status": "error",
+                    "error": "search query must contain at least 2 characters",
+                },
+            )
+        places: list[dict[str, object]] = [
+            {
+                "id": "menger-hotel",
+                "name": "Menger Hotel",
+                "context": "San Antonio, TX",
+                "latitude": 29.4245914,
+                "longitude": -98.4864288,
+            },
+            {
+                "id": "the-alamo",
+                "name": "The Alamo",
+                "context": "San Antonio, TX",
+                "latitude": 29.425833,
+                "longitude": -98.485833,
+            },
+        ]
+        return {
+            "places": [
+                place for place in places if query.casefold() in str(place["name"]).casefold()
+            ]
+        }
 
     @app.post("/api/heatmap")
     def heatmap(body: dict[str, object]) -> dict[str, object]:
@@ -400,7 +479,7 @@ def _parse_trip_request(body: dict[str, object]) -> TripAnalysisRequest:
     if not isinstance(mode, str):
         raise ValueError("mode must be curated or exploratory")
 
-    return TripAnalysisRequest(
+    request = TripAnalysisRequest(
         mode=TripMode(mode),
         origin=Coordinates(origin_lat, origin_lon),
         destination=Coordinates(dest_lat, dest_lon),
@@ -411,6 +490,19 @@ def _parse_trip_request(body: dict[str, object]) -> TripAnalysisRequest:
         end_hour=end_hour,
         cautious=_required_bool(body, "cautious", default=False),
     )
+    return request
+
+
+def _validate_trip_mode(request: TripAnalysisRequest) -> None:
+    if request.mode is TripMode.CURATED and (
+        request.landmark_name != "The Alamo"
+        or request.district_name != "Downtown San Antonio"
+        or not math.isclose(request.origin.latitude, 29.4245914, abs_tol=1e-5)
+        or not math.isclose(request.origin.longitude, -98.4864288, abs_tol=1e-5)
+        or not math.isclose(request.destination.latitude, 29.425833, abs_tol=1e-5)
+        or not math.isclose(request.destination.longitude, -98.485833, abs_tol=1e-5)
+    ):
+        raise ValueError("curated trips must use the canonical Menger Hotel to The Alamo scenario")
 
 
 def _trip_result(
@@ -422,6 +514,22 @@ def _trip_result(
     """Run the trip analysis and serialize the shared product contract."""
     execution_mode = _execution_mode(body, allow_live=allow_live)
     request = _parse_trip_request(body)
+    _validate_trip_mode(request)
+    if execution_mode is ExecutionMode.LIVE and not _supported_live_geography(request):
+        return asdict(
+            TripAnalysisResponse(
+                request_identity=f"{request.mode.value}:{request.date}:{request.start_hour}-{request.end_hour}",
+                mode=request.mode,
+                execution_mode=execution_mode,
+                state=ResultState.UNAVAILABLE,
+                unavailable=UnavailableResult(
+                    "Live provider data is supported only for endpoints in the United States.",
+                    True,
+                    "unsupported_geography",
+                    "choose_us_endpoints",
+                ),
+            )
+        )
     if trip_adapter is None:
         raise ValueError("trip analysis adapter is not configured")
     response = trip_adapter.analyze(request, execution_mode)
@@ -430,6 +538,14 @@ def _trip_result(
     if response.execution_mode is not execution_mode:
         raise ValueError("trip adapter returned the wrong execution mode")
     return asdict(response)
+
+
+def _supported_live_geography(request: TripAnalysisRequest) -> bool:
+    """Apply the product's coarse US live-data boundary before provider calls."""
+    for point in (request.origin, request.destination):
+        if not 18.0 <= point.latitude <= 72.0 or not -180.0 <= point.longitude <= -65.0:
+            return False
+    return True
 
 
 def _execution_mode(body: dict[str, object], *, allow_live: bool) -> ExecutionMode:

@@ -8,6 +8,12 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
+import {
+  CircleMarker,
+  MapContainer,
+  TileLayer,
+  useMapEvents,
+} from "react-leaflet";
 import { useAppState } from "../app/AppState";
 import { dataClient } from "../services/dataClient";
 import type {
@@ -16,6 +22,7 @@ import type {
   HeatInterpretation,
   RouteComparisonResult,
   TripAnalysisRequest,
+  LocationSelection,
 } from "../types";
 
 const HOURS = Array.from({ length: 24 }, (_, hour) => hour);
@@ -24,6 +31,25 @@ type HealthState =
   | { status: "checking" | "unavailable" }
   | { status: "available"; mode: ExecutionMode };
 type RequestState = "idle" | "submitting" | "failed";
+
+function EndpointMap({
+  onSelect,
+}: {
+  onSelect: (point: LocationSelection) => void;
+}) {
+  useMapEvents({
+    click(event) {
+      onSelect({
+        id: `map-${event.latlng.lat}-${event.latlng.lng}`,
+        name: "Map selection",
+        context: "Selected directly on the map",
+        latitude: event.latlng.lat,
+        longitude: event.latlng.lng,
+      });
+    },
+  });
+  return null;
+}
 
 function validDate(value: string) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
@@ -301,9 +327,35 @@ export function TripSetupScreen() {
     setTripAnalysis,
   } = useAppState();
   const { date, startHour, endHour, cautious } = curatedTripSetup;
+  const [tripMode, setTripMode] = useState<"curated" | "exploratory">(
+    "curated"
+  );
+  const [origin, setOrigin] = useState<LocationSelection>({
+    id: "menger",
+    name: "Menger Hotel",
+    context: "San Antonio, TX",
+    latitude: 29.4245914,
+    longitude: -98.4864288,
+  });
+  const [destination, setDestination] = useState<LocationSelection>({
+    id: "alamo",
+    name: "The Alamo",
+    context: "San Antonio, TX",
+    latitude: 29.425833,
+    longitude: -98.485833,
+  });
+  const [activeEndpoint, setActiveEndpoint] = useState<
+    "origin" | "destination"
+  >("origin");
+  const [search, setSearch] = useState("");
+  const [searchResults, setSearchResults] = useState<LocationSelection[]>([]);
+  const [searchState, setSearchState] = useState<"idle" | "loading" | "error">(
+    "idle"
+  );
   const [dateError, setDateError] = useState("");
   const [startError, setStartError] = useState("");
   const [endError, setEndError] = useState("");
+  const [endpointError, setEndpointError] = useState("");
   const [health, setHealth] = useState<HealthState>({ status: "checking" });
   const [requestState, setRequestState] = useState<RequestState>("idle");
   const dateRef = useRef<HTMLInputElement>(null);
@@ -348,6 +400,10 @@ export function TripSetupScreen() {
     const invalidDate = !validDate(date);
     const invalidOrder = startHour >= endHour;
     const invalidLength = !invalidOrder && endHour - startHour > 12;
+    const invalidEndpoints =
+      tripMode === "exploratory" &&
+      origin.latitude === destination.latitude &&
+      origin.longitude === destination.longitude;
     setDateError(invalidDate ? "Enter a valid date." : "");
     setStartError(
       invalidOrder ? "Start time must be earlier than end time." : ""
@@ -359,22 +415,27 @@ export function TripSetupScreen() {
           ? "The time window cannot exceed 12 hours."
           : ""
     );
-    if (invalidDate || invalidOrder || invalidLength) {
+    setEndpointError(invalidEndpoints ? "Choose two different endpoints." : "");
+    if (invalidDate || invalidOrder || invalidLength || invalidEndpoints) {
       if (invalidDate) dateRef.current?.focus();
       else if (invalidOrder) startRef.current?.focus();
-      else endRef.current?.focus();
+      else if (invalidOrder || invalidLength) endRef.current?.focus();
+      else document.getElementById("endpoint-origin")?.focus();
       return;
     }
     if (health.status !== "available" || requestState === "submitting") return;
 
     const request: TripAnalysisRequest = {
-      mode: "curated",
-      origin_latitude: 29.4245914,
-      origin_longitude: -98.4864288,
-      destination_latitude: 29.425833,
-      destination_longitude: -98.485833,
-      landmark_name: "The Alamo",
-      district_name: "Downtown San Antonio",
+      mode: tripMode,
+      origin_latitude: tripMode === "curated" ? 29.4245914 : origin.latitude,
+      origin_longitude: tripMode === "curated" ? -98.4864288 : origin.longitude,
+      destination_latitude:
+        tripMode === "curated" ? 29.425833 : destination.latitude,
+      destination_longitude:
+        tripMode === "curated" ? -98.485833 : destination.longitude,
+      landmark_name: tripMode === "curated" ? "The Alamo" : destination.name,
+      district_name:
+        tripMode === "curated" ? "Downtown San Antonio" : destination.context,
       date,
       start_hour: startHour,
       end_hour: endHour,
@@ -384,7 +445,7 @@ export function TripSetupScreen() {
     setTripAnalysis(null);
     setRequestState("submitting");
     try {
-      const response = await dataClient.analyzeCuratedTrip(request);
+      const response = await dataClient.analyzeTripAnalysis(request);
       if (response.state === "error") {
         setRequestState("failed");
       } else {
@@ -393,6 +454,24 @@ export function TripSetupScreen() {
       }
     } catch {
       setRequestState("failed");
+    }
+  }
+
+  async function searchPlaces(value: string) {
+    setSearch(value);
+    if (value.trim().length < 2) {
+      setSearchResults([]);
+      setSearchState("idle");
+      return;
+    }
+    setSearchState("loading");
+    try {
+      const result = await dataClient.searchPlaces(value);
+      setSearchResults(result.places);
+      setSearchState("idle");
+    } catch {
+      setSearchState("error");
+      setSearchResults([]);
     }
   }
 
@@ -417,20 +496,129 @@ export function TripSetupScreen() {
           aria-busy={busy}
           noValidate
         >
-          <div className="curated-trip" aria-label="Curated trip places">
-            <div>
-              <span>Origin</span>
-              <strong>Menger Hotel</strong>
-            </div>
-            <div>
-              <span>Destination</span>
-              <strong>The Alamo</strong>
-            </div>
-            <div>
-              <span>Area</span>
-              <strong>Downtown San Antonio / Alamo Plaza</strong>
-            </div>
+          <div
+            className="setup-mode-toggle"
+            role="group"
+            aria-label="Trip mode"
+          >
+            <button
+              type="button"
+              className={tripMode === "curated" ? "active" : ""}
+              onClick={() => setTripMode("curated")}
+              disabled={busy}
+            >
+              Curated trip
+            </button>
+            <button
+              type="button"
+              className={tripMode === "exploratory" ? "active" : ""}
+              onClick={() => setTripMode("exploratory")}
+              disabled={busy}
+            >
+              Explore another trip
+            </button>
           </div>
+          {tripMode === "curated" ? (
+            <div className="curated-trip" aria-label="Curated trip places">
+              <div>
+                <span>Origin</span>
+                <strong>Menger Hotel</strong>
+              </div>
+              <div>
+                <span>Destination</span>
+                <strong>The Alamo</strong>
+              </div>
+              <div>
+                <span>Area</span>
+                <strong>Downtown San Antonio / Alamo Plaza</strong>
+              </div>
+            </div>
+          ) : (
+            <div className="exploratory-endpoints">
+              <p>Select both endpoints by searching or clicking the map.</p>
+              <label htmlFor="place-search">Search places</label>
+              <input
+                id="place-search"
+                value={search}
+                onChange={(event) => void searchPlaces(event.target.value)}
+                placeholder="Search a place"
+                disabled={busy}
+              />
+              {searchState === "loading" && (
+                <p role="status">Searching places...</p>
+              )}
+              {searchState === "error" && (
+                <p role="alert">
+                  Place search is unavailable. Select the endpoint on the map.
+                </p>
+              )}
+              {searchResults.map((place) => (
+                <button
+                  type="button"
+                  key={place.id}
+                  onClick={() => {
+                    (activeEndpoint === "origin" ? setOrigin : setDestination)(
+                      place
+                    );
+                    setSearch("");
+                    setSearchResults([]);
+                  }}
+                >
+                  {place.name} <small>{place.context}</small>
+                </button>
+              ))}
+              <div className="endpoint-buttons">
+                <button
+                  id="endpoint-origin"
+                  type="button"
+                  onClick={() => setActiveEndpoint("origin")}
+                  className={activeEndpoint === "origin" ? "active" : ""}
+                >
+                  Origin: {origin.name}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveEndpoint("destination")}
+                  className={activeEndpoint === "destination" ? "active" : ""}
+                >
+                  Destination: {destination.name}
+                </button>
+              </div>
+              {endpointError && (
+                <p className="field-error" role="alert">
+                  {endpointError}
+                </p>
+              )}
+              <MapContainer
+                center={[29.425, -98.486]}
+                zoom={14}
+                className="map"
+                scrollWheelZoom
+              >
+                <TileLayer
+                  attribution="&copy; OpenStreetMap contributors"
+                  url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                />
+                <EndpointMap
+                  onSelect={(point) =>
+                    (activeEndpoint === "origin" ? setOrigin : setDestination)(
+                      point
+                    )
+                  }
+                />
+                <CircleMarker
+                  center={[origin.latitude, origin.longitude]}
+                  radius={8}
+                  pathOptions={{ color: "#b9472f" }}
+                />
+                <CircleMarker
+                  center={[destination.latitude, destination.longitude]}
+                  radius={8}
+                  pathOptions={{ color: "#245c4a" }}
+                />
+              </MapContainer>
+            </div>
+          )}
 
           <div className="setup-fields">
             <div className="field">
@@ -701,6 +889,16 @@ export function TripSetupScreen() {
               <>
                 <h2>Trip analysis unavailable</h2>
                 <p>{tripAnalysis.unavailable?.reason}</p>
+                {tripAnalysis.unavailable?.action && (
+                  <p className="action-guidance">
+                    {tripAnalysis.unavailable.action === "choose_us_endpoints"
+                      ? "Choose origin and destination within the United States."
+                      : tripAnalysis.unavailable.action ===
+                          "edit_setup_or_use_live_data"
+                        ? "Edit the setup, or ask a maintainer to enable live data."
+                        : "Retry the analysis or edit the trip setup."}
+                  </p>
+                )}
               </>
             )}
             {(tripAnalysis.state === "success" ||

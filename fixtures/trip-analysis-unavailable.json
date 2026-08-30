@@ -1,3 +1,13 @@
 {
+  "scenario": {
+    "mode": "exploratory",
+    "landmark_name": "The Alamo",
+    "district_name": "Downtown San Antonio",
+    "date": "2026-08-23",
+    "start_hour": 8,
+    "end_hour": 20,
+    "origin": { "latitude": 29.4245914, "longitude": -98.4864288 },
+    "destination": { "latitude": 29.425833, "longitude": -98.485833 }
+  },
   "unavailable": "no matching fixture for the requested exploratory trip"
 }

@@ -196,13 +196,13 @@ export type BestTimeResult = {
 };
 
 export type TripAnalysisRequest = {
-  mode: "curated";
+  mode: "curated" | "exploratory";
   origin_latitude: number;
   origin_longitude: number;
   destination_latitude: number;
   destination_longitude: number;
-  landmark_name: "The Alamo";
-  district_name: "Downtown San Antonio";
+  landmark_name: string;
+  district_name: string;
   date: string;
   start_hour: number;
   end_hour: number;
@@ -278,14 +278,19 @@ export type RouteComparisonResult = {
 
 export type TripAnalysisResponse = {
   request_identity: string;
-  mode: "curated";
+  mode: "curated" | "exploratory";
   execution_mode: ExecutionMode;
   state: "series_ready" | "success" | "degraded" | "unavailable" | "error";
   environment: EnvironmentSeriesResult | null;
   best_time: BestTimeResult | null;
   hotels: Record<string, unknown> | null;
   routes: RouteComparisonResult | null;
-  unavailable: { reason: string; recoverable: boolean } | null;
+  unavailable: {
+    reason: string;
+    recoverable: boolean;
+    code?: string;
+    action?: string | null;
+  } | null;
   degraded_reasons: Record<string, string> | null;
 };
 
@@ -319,3 +324,5 @@ export type CuratedTripSetup = {
   endHour: number;
   cautious: boolean;
 };
+
+export type PlaceSearchResponse = { places: LocationSelection[] };
