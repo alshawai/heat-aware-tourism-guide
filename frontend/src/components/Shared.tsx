@@ -1,4 +1,11 @@
-import { AlertCircle, Database, MapPin, RefreshCw, Search } from "lucide-react";
+import {
+  AlertCircle,
+  Database,
+  Loader2,
+  MapPin,
+  RefreshCw,
+  Search,
+} from "lucide-react";
 import { useMemo, useState } from "react";
 import {
   CircleMarker,
@@ -230,6 +237,19 @@ export function ResultProblem({
       <button type="button" onClick={onRetry}>
         <RefreshCw size={17} /> Retry
       </button>
+    </section>
+  );
+}
+export function WakingNotice() {
+  return (
+    <section className="waking-state" role="status" aria-live="polite">
+      <Loader2 className="spin" size={30} aria-hidden="true" />
+      <h2>Waking the demo server…</h2>
+      <p>
+        This free-tier demo sleeps after a period of inactivity and takes about
+        a minute to wake. We’re retrying automatically — your selection is kept,
+        so no action is needed.
+      </p>
     </section>
   );
 }

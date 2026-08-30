@@ -134,6 +134,13 @@ export type RequestOptions = {
   scenario?: string;
   mode?: MockMode;
   signal?: AbortSignal;
+  /**
+   * Invoked when a network request is retried because the server looks like a
+   * cold-starting free-tier instance (a timeout, a transport failure, or a
+   * 502/503/504 response). Lets the UI show a distinct "waking up" state instead
+   * of a terminal error. `attempt` is the 1-based attempt that just failed.
+   */
+  onColdStartRetry?: (attempt: number) => void;
 };
 
 export type ExecutionMode = "fixture" | "live";
