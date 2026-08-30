@@ -1,0 +1,499 @@
+{
+  "best_time": {
+    "environmental_concerns": null,
+    "exceedance_hours": null,
+    "framing_direction": null,
+    "framing_threshold_celsius": null,
+    "heat_interpretation": {
+      "action_required": true,
+      "action_threshold_band": "provider_higher",
+      "band": "provider_higher",
+      "band_label": "Higher provider temperature",
+      "guidance_policy": "standard",
+      "is_actual_heat_index": false,
+      "metric": "tcm",
+      "noaa_heat_index_available": false,
+      "policy_applied": "standard_heat_guidance",
+      "value_celsius": 38.0
+    },
+    "hourly": [
+      {
+        "hour": 10,
+        "metric": {
+          "is_actual_heat_index": false,
+          "label": "provider_tcm",
+          "unit": "C",
+          "value": 38.0
+        }
+      },
+      {
+        "hour": 13,
+        "metric": {
+          "is_actual_heat_index": false,
+          "label": "provider_tcm",
+          "unit": "C",
+          "value": 39.0
+        }
+      },
+      {
+        "hour": 16,
+        "metric": {
+          "is_actual_heat_index": false,
+          "label": "provider_tcm",
+          "unit": "C",
+          "value": 40.0
+        }
+      }
+    ],
+    "hourly_coverage": 0.125,
+    "metric_label": "provider_tcm",
+    "persistence_hours": null,
+    "provenance": {
+      "activity_id": null,
+      "confidence": "insufficient",
+      "coverage": null,
+      "data_date": "2024-07-15",
+      "fresh": false,
+      "note": "No live or provider heat acquisition supports these demo values.",
+      "provider": "heat-aware-tourism-guide-synthesized-demo-heat",
+      "request_configuration": {
+        "evidence_class": "synthesized_demo",
+        "purpose": "offline product-state demonstration"
+      },
+      "response_status": "synthesized_demo",
+      "retrieved_at": null,
+      "source": "synthesized",
+      "transformation_version": "demo-best-time-v1"
+    },
+    "recommendation_hour": 10,
+    "recommendation_reason": "coolest synthesized demo period; not a provider observation",
+    "recommendation_time": "2024-07-15T10:00:00-05:00",
+    "recommendation_timezone": "America/Chicago",
+    "recommended_hour_tcm_celsius": 38.0,
+    "temporal_evidence": "exact"
+  },
+  "degraded_reasons": {
+    "best_time": "elevated demo TCM is synthesized solely to exercise ADR 0007",
+    "hotels": "optional hotel enrichment was unavailable; base ranking remains",
+    "routes": "building-height evidence is insufficient for a route recommendation"
+  },
+  "hotels": {
+    "component_temporal_metadata": {
+      "day": {
+        "caveat_code": "date_level_not_interval_maximum",
+        "end": "17:00",
+        "interval": "[start,end)",
+        "provider_window_validated": false,
+        "start": "10:00",
+        "temporal_basis": "date_level_tcm",
+        "timezone": "America/Chicago"
+      },
+      "night": {
+        "caveat_code": "date_level_not_interval_maximum",
+        "end": "05:00",
+        "interval": "[start,end)",
+        "provider_window_validated": false,
+        "start": "00:00",
+        "temporal_basis": "date_level_tcm",
+        "timezone": "America/Chicago"
+      }
+    },
+    "component_units": {
+      "day": "C",
+      "hot_hours": "hours",
+      "night": "C",
+      "persistence": "hours"
+    },
+    "discovered_count": 7,
+    "enrichment": {
+      "code": "optional_provider_failure",
+      "reason": "Optional hotel enrichment was unavailable; base hotel results are unchanged.",
+      "state": "unavailable"
+    },
+    "provenance": {
+      "activity_id": "942d1fda-cc90-4a93-8cdc-30eeeadc0322",
+      "confidence": "sufficient",
+      "coverage": null,
+      "data_date": "2024-07-15",
+      "fresh": false,
+      "note": "Computed ranking from genuine district heat components and synthesized base hotel discovery. Night/day are the same date-level TCM anchor, not validated interval maxima.",
+      "provider": "heat-aware-tourism-guide",
+      "request_configuration": {
+        "component_evidence": "three genuine canonical district FortyGuard anchors",
+        "component_provider": "fortyguard",
+        "hotel_discovery_source": "committed synthesized base fixture",
+        "spatial_interpretation": "anchor values applied equally; no interval or per-hotel maxima invented"
+      },
+      "response_status": "completed",
+      "retrieved_at": "2026-08-30T15:06:53.453206+00:00",
+      "source": "computed",
+      "transformation_version": "hotel-ranking-v1"
+    },
+    "ranked": [
+      {
+        "components": {
+          "day": 31.7218,
+          "hot_hours": 6.8883,
+          "night": 31.7218,
+          "persistence": 6.8883
+        },
+        "identity": "Alamo Plaza Hotel",
+        "percentile": 100.0,
+        "score": 20.546725000000002,
+        "tie_group": 0
+      },
+      {
+        "components": {
+          "day": 31.7218,
+          "hot_hours": 6.8883,
+          "night": 31.7218,
+          "persistence": 6.8883
+        },
+        "identity": "Commerce Street Inn",
+        "percentile": 100.0,
+        "score": 20.546725000000002,
+        "tie_group": 0
+      },
+      {
+        "components": {
+          "day": 31.7218,
+          "hot_hours": 6.8883,
+          "night": 31.7218,
+          "persistence": 6.8883
+        },
+        "identity": "Hemisfair Hotel",
+        "percentile": 100.0,
+        "score": 20.546725000000002,
+        "tie_group": 0
+      },
+      {
+        "components": {
+          "day": 31.7218,
+          "hot_hours": 6.8883,
+          "night": 31.7218,
+          "persistence": 6.8883
+        },
+        "identity": "Market Square Lodge",
+        "percentile": 100.0,
+        "score": 20.546725000000002,
+        "tie_group": 0
+      },
+      {
+        "components": {
+          "day": 31.7218,
+          "hot_hours": 6.8883,
+          "night": 31.7218,
+          "persistence": 6.8883
+        },
+        "identity": "Mission Courtyard Hotel",
+        "percentile": 100.0,
+        "score": 20.546725000000002,
+        "tie_group": 0
+      },
+      {
+        "components": {
+          "day": 31.7218,
+          "hot_hours": 6.8883,
+          "night": 31.7218,
+          "persistence": 6.8883
+        },
+        "identity": "River Walk House",
+        "percentile": 100.0,
+        "score": 20.546725000000002,
+        "tie_group": 0
+      }
+    ],
+    "usable_count": 6,
+    "weights": {
+      "day": 0.2,
+      "hot_hours": 0.25,
+      "night": 0.35,
+      "persistence": 0.2
+    }
+  },
+  "routes": {
+    "alternatives": [
+      {
+        "building_coverage": 0.3464163111025993,
+        "building_explicit_count": 7,
+        "building_explicit_fraction": 0.07493419615505657,
+        "building_inferred_levels_count": 16,
+        "building_inferred_levels_fraction": 0.2714821149475427,
+        "building_unknown_count": 87,
+        "building_unknown_fraction": 0.6535836888974008,
+        "distance_m": 265.5,
+        "dropped_building_geometry_count": 0,
+        "duration_s": 212.3,
+        "geometry": [
+          [-98.494195, 29.424698],
+          [-98.494542, 29.424715],
+          [-98.494623, 29.424717],
+          [-98.494706, 29.424717],
+          [-98.494737, 29.424718],
+          [-98.494727, 29.424904],
+          [-98.494758, 29.424904],
+          [-98.495287, 29.424918],
+          [-98.495371, 29.42492],
+          [-98.495415, 29.424912],
+          [-98.495443, 29.424943],
+          [-98.495441, 29.424978],
+          [-98.495477, 29.425019],
+          [-98.495506, 29.425057],
+          [-98.495509, 29.425076],
+          [-98.495673, 29.425076],
+          [-98.496063, 29.425077],
+          [-98.49613, 29.425089],
+          [-98.496272, 29.425093],
+          [-98.496272, 29.42507],
+          [-98.496276, 29.424929],
+          [-98.496276, 29.424823]
+        ],
+        "heat_coverage": 1.0,
+        "heat_interpretation": {
+          "action_required": true,
+          "action_threshold_band": "provider_higher",
+          "band": "provider_higher",
+          "band_label": "Higher provider temperature",
+          "guidance_policy": "standard",
+          "is_actual_heat_index": false,
+          "metric": "tcm",
+          "noaa_heat_index_available": false,
+          "policy_applied": "standard_heat_guidance",
+          "value_celsius": 38.0
+        },
+        "heat_metric": "tcm",
+        "heat_source": "landmark_reuse",
+        "heat_status": "elevated",
+        "heat_unit": "C",
+        "heat_value": 38.0,
+        "identity": "route-1",
+        "modeled_shade_percent": 0.0,
+        "recommendation_reason": null,
+        "recommended": false,
+        "shade_confidence": "insufficient",
+        "shade_limitations": [
+          "modeled OSM building shade excludes trees, awnings, clouds, temporary obstructions, and buildings beyond the configured search boundary"
+        ],
+        "shade_model_label": "modeled OSM building-shade estimate, not measured real-world shade"
+      },
+      {
+        "building_coverage": 0.3404737158839083,
+        "building_explicit_count": 7,
+        "building_explicit_fraction": 0.07364873822043985,
+        "building_inferred_levels_count": 16,
+        "building_inferred_levels_fraction": 0.26682497766346847,
+        "building_unknown_count": 87,
+        "building_unknown_fraction": 0.6595262841160917,
+        "distance_m": 278.6,
+        "dropped_building_geometry_count": 0,
+        "duration_s": 222.8,
+        "geometry": [
+          [-98.494195, 29.424698],
+          [-98.494542, 29.424715],
+          [-98.494535, 29.425103],
+          [-98.494529, 29.425112],
+          [-98.494608, 29.425109],
+          [-98.494707, 29.425106],
+          [-98.495072, 29.42509],
+          [-98.495091, 29.425085],
+          [-98.495147, 29.425057],
+          [-98.495166, 29.425064],
+          [-98.495226, 29.425084],
+          [-98.495509, 29.425076],
+          [-98.495673, 29.425076],
+          [-98.496063, 29.425077],
+          [-98.49613, 29.425089],
+          [-98.496272, 29.425093],
+          [-98.496272, 29.42507],
+          [-98.496276, 29.424929],
+          [-98.496276, 29.424823]
+        ],
+        "heat_coverage": 1.0,
+        "heat_interpretation": {
+          "action_required": true,
+          "action_threshold_band": "provider_higher",
+          "band": "provider_higher",
+          "band_label": "Higher provider temperature",
+          "guidance_policy": "standard",
+          "is_actual_heat_index": false,
+          "metric": "tcm",
+          "noaa_heat_index_available": false,
+          "policy_applied": "standard_heat_guidance",
+          "value_celsius": 38.0
+        },
+        "heat_metric": "tcm",
+        "heat_source": "landmark_reuse",
+        "heat_status": "elevated",
+        "heat_unit": "C",
+        "heat_value": 38.0,
+        "identity": "route-2",
+        "modeled_shade_percent": 12.257669655828291,
+        "recommendation_reason": null,
+        "recommended": false,
+        "shade_confidence": "insufficient",
+        "shade_limitations": [
+          "modeled OSM building shade excludes trees, awnings, clouds, temporary obstructions, and buildings beyond the configured search boundary"
+        ],
+        "shade_model_label": "modeled OSM building-shade estimate, not measured real-world shade"
+      }
+    ],
+    "building_provenance": {
+      "activity_id": null,
+      "confidence": "sufficient",
+      "coverage": 0.3404737158839083,
+      "data_date": "2026-08-30",
+      "fresh": false,
+      "note": "Modeled locally from genuine Overpass building geometry; not measured shade.",
+      "provider": "overpass-api-de",
+      "request_configuration": {
+        "aoi": {
+          "east": -98.491604468,
+          "north": 29.427384596,
+          "south": 29.422431929,
+          "west": -98.498865419
+        },
+        "dropped_geometry_count": 0,
+        "metres_per_level": 3.0,
+        "minimum_building_coverage": 0.7,
+        "model_version": "route-shade-v1",
+        "query_options": {
+          "object_types": ["way", "relation"],
+          "output": "body geom",
+          "response_format": "json",
+          "selected_tags": ["building", "building:part"],
+          "timeout_seconds": 60
+        },
+        "search_distance_m": 250.0
+      },
+      "response_status": "completed",
+      "retrieved_at": "2026-08-30T14:26:21.629845+00:00",
+      "source": "fixture",
+      "transformation_version": "route-shade-building-normalization-v1"
+    },
+    "comparison_scope": "returned alternatives",
+    "confidence": "insufficient",
+    "corridor_heat_value": 38.0,
+    "coverage": 1.0,
+    "decision_state": "insufficient_shade_comparison_required",
+    "fallback_reason": "building-height coverage or solar evidence was insufficient",
+    "heat_interpretation": {
+      "action_required": true,
+      "action_threshold_band": "provider_higher",
+      "band": "provider_higher",
+      "band_label": "Higher provider temperature",
+      "guidance_policy": "standard",
+      "is_actual_heat_index": false,
+      "metric": "tcm",
+      "noaa_heat_index_available": false,
+      "policy_applied": "standard_heat_guidance",
+      "value_celsius": 38.0
+    },
+    "heat_metric": "tcm",
+    "heat_provenance": {
+      "activity_id": null,
+      "confidence": "insufficient",
+      "coverage": null,
+      "data_date": "2024-07-15",
+      "fresh": false,
+      "note": "No Cathedral heat acquisition exists; 38 C is synthesized demo heat, not a provider observation.",
+      "provider": "heat-aware-tourism-guide-synthesized-demo-heat",
+      "request_configuration": {
+        "purpose": "exercise ADR 0007 only",
+        "route_heat_source": "landmark_reuse"
+      },
+      "response_status": "synthesized_demo",
+      "retrieved_at": null,
+      "source": "synthesized",
+      "transformation_version": "route-landmark-heat-reuse-v1"
+    },
+    "heat_status": "elevated",
+    "heat_unit": "C",
+    "lowest_heat_route_id": "route-1",
+    "provenance": {
+      "activity_id": null,
+      "confidence": "insufficient",
+      "coverage": null,
+      "data_date": "2024-07-15",
+      "fresh": false,
+      "note": null,
+      "provider": "heat-aware-tourism-guide",
+      "request_configuration": {
+        "heat_provider": "heat-aware-tourism-guide-synthesized-demo-heat",
+        "routing_provider": "fossgis-osrm"
+      },
+      "response_status": "completed",
+      "retrieved_at": "2026-08-30T16:00:00+00:00",
+      "source": "computed",
+      "transformation_version": "route-heat-gate-v1"
+    },
+    "reason": "daytime building-shade evidence is insufficient; compare returned route trade-offs",
+    "recommended_id": null,
+    "route_set_state": "alternatives_returned",
+    "routing_provenance": {
+      "activity_id": null,
+      "confidence": "sufficient",
+      "coverage": null,
+      "data_date": "2026-08-30",
+      "fresh": false,
+      "note": "Genuine two-route OSRM response.",
+      "provider": "fossgis-osrm",
+      "request_configuration": {
+        "alternatives": true,
+        "destination": {
+          "latitude": 29.4248225,
+          "longitude": -98.4959872
+        },
+        "geometries": "geojson",
+        "origin": {
+          "latitude": 29.424559,
+          "longitude": -98.4942042
+        },
+        "overview": "full",
+        "profile": "foot",
+        "provider_instance": "fossgis-routed-foot",
+        "request_version": "v1",
+        "steps": false
+      },
+      "response_status": "completed",
+      "retrieved_at": "2026-08-30T14:25:41.027160+00:00",
+      "source": "fixture",
+      "transformation_version": "osrm-route-normalization-v1"
+    },
+    "solar_provenance": {
+      "activity_id": null,
+      "confidence": "sufficient",
+      "coverage": null,
+      "data_date": "2024-07-15",
+      "fresh": true,
+      "note": null,
+      "provider": "astral",
+      "request_configuration": {
+        "azimuth_degrees": 85.86668028370279,
+        "elevation_degrees": 40.119562224765914,
+        "instant": "2024-07-15T10:00:00-05:00",
+        "latitude": 29.42496282373376,
+        "longitude": -98.49527065097293,
+        "model_version": "astral-3.2-apparent",
+        "timezone": "America/Chicago",
+        "transformations": [
+          {
+            "name": "local_instant_to_utc",
+            "version": 1
+          },
+          {
+            "name": "apparent_solar_position",
+            "version": 1
+          }
+        ],
+        "utc_offset_seconds": -18000
+      },
+      "response_status": "completed",
+      "retrieved_at": "2026-08-30T16:00:00+00:00",
+      "source": "computed",
+      "transformation_version": "route-solar-position-v1"
+    }
+  },
+  "schema_version": "trip-contract-v2",
+  "state": "degraded",
+  "unavailable": null
+}

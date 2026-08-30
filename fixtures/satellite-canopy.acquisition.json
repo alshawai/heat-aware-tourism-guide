@@ -1,5 +1,6 @@
 {
   "source": "synthesized",
+  "provider": "heat-aware-tourism-guide",
   "endpoint": "/v1/satellite",
   "request_configuration": {
     "kind": "satellite_canopy",
@@ -11,5 +12,9 @@
   "schema_version": "enrichment-v1",
   "provider_config_version": "fortyguard-enrichment-v1",
   "activity_id": null,
-  "transformations": []
+  "derived_from": [],
+  "transformations": [],
+  "response_metadata": {
+    "fixture_kind": "satellite_canopy"
+  }
 }

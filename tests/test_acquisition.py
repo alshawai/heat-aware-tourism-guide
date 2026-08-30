@@ -8,6 +8,7 @@ import pytest
 
 from app.domain.ledger import CreditLedger
 from app.domain.provenance import AcquisitionRecord
+from app.domain.routing import RouteRequest
 from app.integrations.fortyguard.client import FortyGuardClient
 from app.integrations.fortyguard.errors import ProviderError
 from app.services.acquisition import (
@@ -15,6 +16,8 @@ from app.services.acquisition import (
     HEATMAP_SCENARIOS,
     acquire_env_params_fixture,
     acquire_heatmap_fixture,
+    OSRM_SCENARIOS,
+    acquire_osrm_fixture,
 )
 from app.services.execution import HeatmapExecution
 
@@ -95,6 +98,8 @@ def test_heatmap_acquisition_writes_raw_fixture_and_sidecar(tmp_path: Path) -> N
     )
     assert record == outcome.record
     assert record.source == "provider"
+    assert record.provider == "fortyguard"
+    assert record.derived_from == ()
     assert record.endpoint == "/v1/heatmap"
     assert record.status == "ok"
     assert record.activity_id == "activity-acq-1"
@@ -150,6 +155,7 @@ def test_env_params_acquisition_writes_raw_fixture_and_sidecar(tmp_path: Path) -
 
     record = outcome.record
     assert record.source == "provider"
+    assert record.provider == "fortyguard"
     assert record.endpoint == "/v1/env_params"
     assert record.status == "ok"
     assert record.data_date == "2026-08-28"
@@ -207,3 +213,67 @@ def test_acquire_script_requires_live_configuration() -> None:
     )
     assert completed.returncode == 2
     assert "ALLOW_LIVE" in completed.stderr
+
+
+def test_public_osrm_registry_and_sidecar_are_truthful(tmp_path: Path) -> None:
+    class Transport:
+        base_url = "https://routing.openstreetmap.de/routed-foot/route/v1"
+
+    class Client:
+        transport = Transport()
+
+        def load(self, request: RouteRequest) -> dict[str, object]:
+            return {
+                "code": "Ok",
+                "routes": [
+                    {
+                        "distance": 123.0,
+                        "duration": 100.0,
+                        "geometry": {
+                            "type": "LineString",
+                            "coordinates": [[-98.49, 29.42], [-98.48, 29.43]],
+                        },
+                    }
+                ],
+                "waypoints": [],
+            }
+
+    outcome = acquire_osrm_fixture(
+        OSRM_SCENARIOS["main-plaza-market-square"],
+        Client(),
+        out_dir=tmp_path,
+        clock=lambda: CLOCK,
+    )
+    record = AcquisitionRecord.from_payload(
+        json.loads(
+            (tmp_path / "main-plaza-market-square.acquisition.json").read_text(encoding="utf-8")
+        )
+    )
+    assert record == outcome.record
+    assert record.provider == "fossgis-osrm"
+    assert record.activity_id is None
+    assert record.retrieved_at == CLOCK
+    assert record.data_date == "2026-08-28"
+    assert record.request_configuration["alternatives"] is True
+
+
+def test_public_osrm_acquisition_does_not_overwrite(tmp_path: Path) -> None:
+    class Client:
+        transport = type("Transport", (), {"base_url": "https://example.test"})()
+
+        def load(self, request: object) -> dict[str, object]:
+            return {
+                "code": "Ok",
+                "routes": [
+                    {
+                        "distance": 1,
+                        "duration": 1,
+                        "geometry": {"type": "LineString", "coordinates": [[0, 0], [1, 1]]},
+                    }
+                ],
+            }
+
+    scenario = OSRM_SCENARIOS["main-plaza-market-square"]
+    acquire_osrm_fixture(scenario, Client(), out_dir=tmp_path, clock=lambda: CLOCK)
+    with pytest.raises(FileExistsError):
+        acquire_osrm_fixture(scenario, Client(), out_dir=tmp_path, clock=lambda: CLOCK)

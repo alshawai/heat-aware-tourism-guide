@@ -154,5 +154,5 @@ Render's deploy history, then rerun health and browser smoke tests. Keep
 `ALLOW_LIVE=false` during recovery. For a persistent provider incident, leave
 the public URL unchanged if possible and use the local recording fallback.
 
-See [ADR 0008](adr/0008-separated-public-fixture-and-protected-live-deployments.md)
+See [ADR 0009](adr/0009-separated-public-fixture-and-protected-live-deployments.md)
 for the separation, authentication, ledger, Render, and rollback rationale.

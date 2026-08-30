@@ -28,7 +28,7 @@ and demo instructions are organized under the Diataxis structure:
 
 - [Design explanation](docs/design/design-doc.md)
 - [Deployment guide](docs/deployment.md)
-- [Deployment decision](docs/adr/0008-separated-public-fixture-and-protected-live-deployments.md)
+- [Deployment decision](docs/adr/0009-separated-public-fixture-and-protected-live-deployments.md)
 - [Fixture demo script](docs/demo-script.md)
 - [Provider and coordinate research](docs/research/)
 

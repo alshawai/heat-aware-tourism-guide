@@ -1,23 +1,28 @@
 {
-  "source": "synthesized",
+  "activity_id": null,
+  "data_date": "2026-08-24",
+  "derived_from": [],
   "endpoint": "local:canonical-district-hotel-analysis",
+  "provider": "heat-aware-tourism-guide",
+  "provider_config_version": "fortyguard-config-v1",
   "request_configuration": {
-    "district_name": "Downtown San Antonio",
     "aoi": {
-      "south": 29.421,
-      "west": -98.49,
+      "east": -98.482,
       "north": 29.429,
-      "east": -98.482
+      "south": 29.421,
+      "west": -98.49
     },
     "components": ["night", "hot_hours", "persistence", "day"],
+    "district_name": "Downtown San Antonio",
     "threshold_celsius": 35,
     "tile_resolution_m": 80
   },
+  "response_metadata": {
+    "generator_state": "completed"
+  },
   "retrieved_at": null,
-  "data_date": "2026-08-24",
-  "status": "complete",
   "schema_version": "hotel-heat-analysis-v1",
-  "provider_config_version": "fortyguard-config-v1",
-  "activity_id": null,
+  "source": "synthesized",
+  "status": "complete",
   "transformations": []
 }

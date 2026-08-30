@@ -1,0 +1,73 @@
+{
+  "activity_id": "942d1fda-cc90-4a93-8cdc-30eeeadc0322",
+  "data_date": "2024-07-15",
+  "derived_from": [],
+  "endpoint": "/v1/heatmap",
+  "provider": "fortyguard",
+  "provider_config_version": "fortyguard-config-v1",
+  "request_configuration": {
+    "analysis_aoi": {
+      "east": -98.482,
+      "north": 29.429,
+      "south": 29.421,
+      "west": -98.49
+    },
+    "analytic_type": "tcm",
+    "caveat_code": "date_level_not_interval_maximum",
+    "declared_windows": [
+      {
+        "end": "05:00",
+        "interval": "[start,end)",
+        "label": "night",
+        "start": "00:00",
+        "timezone": "America/Chicago"
+      },
+      {
+        "end": "17:00",
+        "interval": "[start,end)",
+        "label": "day",
+        "start": "10:00",
+        "timezone": "America/Chicago"
+      }
+    ],
+    "direction": null,
+    "forecast": false,
+    "granularity": 80,
+    "latitude": 29.425,
+    "longitude": -98.486,
+    "provider_window_validated": false,
+    "request_scope": "canonical_district_anchor",
+    "reused_for_components": ["night", "day"],
+    "start_date": "2024-07-15",
+    "temporal_basis": "date_level_tcm",
+    "threshold_celsius": null,
+    "timezone": "America/Chicago"
+  },
+  "response_metadata": {
+    "freshness_present": false,
+    "raw_units_present": [],
+    "terminal_status": null
+  },
+  "retrieved_at": "2026-08-30T15:06:53.453206+00:00",
+  "schema_version": "v1",
+  "source": "provider",
+  "status": "ok",
+  "transformations": [
+    {
+      "name": "live_envelope_unwrapped",
+      "version": 1
+    },
+    {
+      "name": "point_to_aoi_expansion",
+      "version": 1
+    },
+    {
+      "name": "valid_time_from_request",
+      "version": 2
+    },
+    {
+      "name": "tcm_unit_celsius",
+      "version": 1
+    }
+  ]
+}

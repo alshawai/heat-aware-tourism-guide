@@ -845,6 +845,7 @@ class LiveEnvParamsAdapter:
             result,
             metadata.activity_id,
             env_params_transformations(),
+            activity=metadata,
             actual_credits=credits if isinstance(credits, int) else None,
         )
 

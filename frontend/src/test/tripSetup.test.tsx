@@ -1,5 +1,6 @@
 import {
   cleanup,
+  fireEvent,
   render,
   screen,
   waitFor,
@@ -8,6 +9,18 @@ import {
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { App } from "../app/App";
+import briscoeFixture from "../../../fixtures/trips/briscoe-tower-unavailable.trip.json";
+import cathedralFixture from "../../../fixtures/trips/cathedral-governors-palace.trip.json";
+import mengerFixture from "../../../fixtures/trips/menger-alamo.trip.json";
+
+vi.mock("react-leaflet", () => ({
+  CircleMarker: () => null,
+  MapContainer: ({ children }: { children: React.ReactNode }) => (
+    <div data-testid="trip-map">{children}</div>
+  ),
+  TileLayer: () => null,
+  useMapEvents: () => undefined,
+}));
 
 const successResponse = {
   request_identity: "curated:2026-08-23:8-20",
@@ -287,6 +300,15 @@ function mockFetch(...responses: Array<Response | Promise<Response>>) {
   return fetchMock;
 }
 
+function modernFixtureResponse(snapshot: Record<string, unknown>) {
+  return {
+    ...snapshot,
+    request_identity: "curated:2024-07-15:8-20",
+    mode: "curated",
+    execution_mode: "fixture",
+  };
+}
+
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
@@ -294,6 +316,91 @@ afterEach(() => {
 });
 
 describe("curated Trip Setup", () => {
+  it("renders the canonical temporal caveat and one-route limitation", async () => {
+    mockFetch(
+      jsonResponse({
+        status: "ok",
+        deployment_profile: "local",
+        mode: "fixture",
+        execution_capability: "fixture-only",
+      }),
+      jsonResponse(modernFixtureResponse(mengerFixture))
+    );
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findByText("Fixture replay");
+    fireEvent.change(screen.getByLabelText("Date"), {
+      target: { value: "2024-07-15" },
+    });
+
+    await user.click(screen.getByRole("button", { name: "Analyze trip" }));
+
+    expect(
+      await screen.findByText(
+        /provider timestamp is inconsistent with local time/i
+      )
+    ).toBeInTheDocument();
+    expect(screen.getByText(/no alternatives to compare/i)).toBeInTheDocument();
+  });
+
+  it("renders weak route evidence and optional enrichment warnings", async () => {
+    mockFetch(
+      jsonResponse({
+        status: "ok",
+        deployment_profile: "local",
+        mode: "fixture",
+        execution_capability: "fixture-only",
+      }),
+      jsonResponse(
+        modernFixtureResponse({
+          ...cathedralFixture,
+          best_time: mengerFixture.best_time,
+        })
+      )
+    );
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findByText("Fixture replay");
+    fireEvent.change(screen.getByLabelText("Date"), {
+      target: { value: "2024-07-15" },
+    });
+
+    await user.click(screen.getByRole("button", { name: "Analyze trip" }));
+
+    expect(
+      await screen.findByText(/No route is recommended/)
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/base hotel ranking remains available/i)
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Recommended route")).not.toBeInTheDocument();
+  });
+
+  it("renders provider-data recovery guidance from structured unavailability", async () => {
+    mockFetch(
+      jsonResponse({
+        status: "ok",
+        deployment_profile: "local",
+        mode: "fixture",
+        execution_capability: "fixture-only",
+      }),
+      jsonResponse(modernFixtureResponse(briscoeFixture))
+    );
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findByText("Fixture replay");
+    fireEvent.change(screen.getByLabelText("Date"), {
+      target: { value: "2024-07-15" },
+    });
+
+    await user.click(screen.getByRole("button", { name: "Analyze trip" }));
+
+    expect(
+      await screen.findByText(/Required provider data is missing/)
+    ).toBeInTheDocument();
+    expect(screen.getByText(/supported fixture scenario/)).toBeInTheDocument();
+  });
+
   it("loads fixture mode and submits the complete setup exactly once", async () => {
     const fetchMock = mockFetch(
       jsonResponse({
@@ -892,5 +999,101 @@ describe("curated Trip Setup", () => {
 
     expect(await screen.findByText("Trip analysis ready")).toBeInTheDocument();
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
+  });
+});
+
+describe("exploratory Trip Setup", () => {
+  it("selects an approved alternate and submits its exact fixture identity", async () => {
+    const mainPlaza = {
+      id: "main-plaza",
+      name: "Main Plaza",
+      context: "San Antonio, TX",
+      latitude: 29.4245773,
+      longitude: -98.4935063,
+    };
+    const marketSquare = {
+      id: "historic-market-square-el-mercado",
+      name: "Historic Market Square (El Mercado)",
+      context: "San Antonio, TX",
+      latitude: 29.4254009,
+      longitude: -98.4994785,
+    };
+    const fetchMock = mockFetch(
+      jsonResponse({
+        status: "ok",
+        deployment_profile: "local",
+        mode: "fixture",
+        execution_capability: "fixture-only",
+      }),
+      jsonResponse({ places: [mainPlaza] }),
+      jsonResponse({ places: [marketSquare] }),
+      jsonResponse({
+        ...successResponse,
+        request_identity: "exploratory:2024-07-15:10-17",
+        mode: "exploratory",
+      })
+    );
+    const user = userEvent.setup();
+
+    render(<App />);
+    await screen.findByText("Fixture replay");
+    await user.click(
+      screen.getByRole("button", { name: "Explore another trip" })
+    );
+
+    const search = screen.getByLabelText("Search places");
+    fireEvent.change(search, { target: { value: "main" } });
+    await user.click(
+      await screen.findByRole("button", { name: "Set origin to Main Plaza" })
+    );
+    expect(
+      screen.getByRole("button", { name: "Origin: Main Plaza" })
+    ).toHaveAttribute("aria-pressed", "true");
+
+    await user.click(
+      screen.getByRole("button", { name: "Destination: The Alamo" })
+    );
+    fireEvent.change(search, { target: { value: "market" } });
+    await user.click(
+      await screen.findByRole("button", {
+        name: "Set destination to Historic Market Square (El Mercado)",
+      })
+    );
+
+    expect(screen.getByLabelText("Date")).toHaveValue("2024-07-15");
+    expect(screen.getByLabelText("Start time")).toHaveValue("10");
+    expect(screen.getByLabelText("End time")).toHaveValue("17");
+    await user.click(screen.getByRole("button", { name: "Curated trip" }));
+    expect(screen.getByLabelText("Date")).toHaveValue("2026-08-23");
+    expect(screen.getByLabelText("Start time")).toHaveValue("8");
+    expect(screen.getByLabelText("End time")).toHaveValue("20");
+    await user.click(
+      screen.getByRole("button", { name: "Explore another trip" })
+    );
+    await user.click(screen.getByRole("button", { name: "Analyze trip" }));
+
+    await screen.findByText("Trip analysis ready");
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      4,
+      "/api/trip/analyze",
+      expect.objectContaining({
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          mode: "exploratory",
+          origin_latitude: 29.4245773,
+          origin_longitude: -98.4935063,
+          destination_latitude: 29.4254009,
+          destination_longitude: -98.4994785,
+          landmark_name: "Historic Market Square (El Mercado)",
+          district_name: "Downtown San Antonio",
+          date: "2024-07-15",
+          start_hour: 10,
+          end_hour: 17,
+          cautious: false,
+          execution_mode: "fixture",
+        }),
+      })
+    );
   });
 });

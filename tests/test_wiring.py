@@ -57,6 +57,11 @@ def test_env_params_route_serves_fixture_series() -> None:
         "retrieved_at": "2026-08-24T11:28:01+00:00",
         "data_date": "2026-08-24",
         "transformations": [],
+        "response_metadata": {
+            "freshness_present": False,
+            "raw_units_present": [],
+            "terminal_status": None,
+        },
     }
 
 

@@ -1,0 +1,383 @@
+{
+  "best_time": {
+    "environmental_concerns": null,
+    "exceedance_hours": null,
+    "framing_direction": null,
+    "framing_threshold_celsius": null,
+    "heat_interpretation": {
+      "action_required": false,
+      "action_threshold_band": "provider_higher",
+      "band": "provider_moderate",
+      "band_label": "Moderate provider temperature",
+      "guidance_policy": "standard",
+      "is_actual_heat_index": false,
+      "metric": "tcm",
+      "noaa_heat_index_available": false,
+      "policy_applied": "standard_heat_guidance",
+      "value_celsius": 32.0
+    },
+    "hourly": [
+      {
+        "hour": 10,
+        "metric": {
+          "is_actual_heat_index": false,
+          "label": "provider_tcm",
+          "unit": "C",
+          "value": 32.0
+        }
+      },
+      {
+        "hour": 13,
+        "metric": {
+          "is_actual_heat_index": false,
+          "label": "provider_tcm",
+          "unit": "C",
+          "value": 33.0
+        }
+      },
+      {
+        "hour": 16,
+        "metric": {
+          "is_actual_heat_index": false,
+          "label": "provider_tcm",
+          "unit": "C",
+          "value": 34.0
+        }
+      }
+    ],
+    "hourly_coverage": 0.125,
+    "metric_label": "provider_tcm",
+    "persistence_hours": null,
+    "provenance": {
+      "activity_id": null,
+      "confidence": "insufficient",
+      "coverage": null,
+      "data_date": "2024-07-15",
+      "fresh": false,
+      "note": "No live or provider heat acquisition supports these demo values.",
+      "provider": "heat-aware-tourism-guide-synthesized-demo-heat",
+      "request_configuration": {
+        "evidence_class": "synthesized_demo",
+        "purpose": "offline product-state demonstration"
+      },
+      "response_status": "synthesized_demo",
+      "retrieved_at": null,
+      "source": "synthesized",
+      "transformation_version": "demo-best-time-v1"
+    },
+    "recommendation_hour": 10,
+    "recommendation_reason": "coolest synthesized demo period; not a provider observation",
+    "recommendation_time": null,
+    "recommendation_timezone": null,
+    "recommended_hour_tcm_celsius": 32.0,
+    "temporal_evidence": "unavailable"
+  },
+  "degraded_reasons": {
+    "best_time": "demo TCM and environmental evidence is synthesized, not provider-observed",
+    "hotels": "demo hotel evidence is synthesized, not provider-observed",
+    "routes": "one returned route limits comparison; route heat reuses synthesized destination demo TCM"
+  },
+  "hotels": {
+    "component_temporal_metadata": {
+      "day": {
+        "caveat_code": "date_level_not_interval_maximum",
+        "end": "17:00",
+        "interval": "[start,end)",
+        "provider_window_validated": false,
+        "start": "10:00",
+        "temporal_basis": "date_level_tcm",
+        "timezone": "America/Chicago"
+      },
+      "night": {
+        "caveat_code": "date_level_not_interval_maximum",
+        "end": "05:00",
+        "interval": "[start,end)",
+        "provider_window_validated": false,
+        "start": "00:00",
+        "temporal_basis": "date_level_tcm",
+        "timezone": "America/Chicago"
+      }
+    },
+    "component_units": {
+      "day": "C",
+      "hot_hours": "hours",
+      "night": "C",
+      "persistence": "hours"
+    },
+    "discovered_count": 5,
+    "enrichment": {
+      "code": null,
+      "reason": null,
+      "state": "not_requested"
+    },
+    "provenance": {
+      "activity_id": null,
+      "confidence": "insufficient",
+      "coverage": null,
+      "data_date": "2024-07-15",
+      "fresh": false,
+      "note": "Demo values are not acquired provider observations.",
+      "provider": "heat-aware-tourism-guide-synthesized-demo-hotels",
+      "request_configuration": {
+        "evidence_class": "synthesized_demo"
+      },
+      "response_status": "synthesized_demo",
+      "retrieved_at": null,
+      "source": "synthesized",
+      "transformation_version": "demo-hotel-ranking-v1"
+    },
+    "ranked": [
+      {
+        "components": {
+          "day": 36.0,
+          "hot_hours": 1.0,
+          "night": 31.0,
+          "persistence": 0.5
+        },
+        "identity": "Demo Hotel 1",
+        "percentile": 100.0,
+        "score": 18.4,
+        "tie_group": 0
+      },
+      {
+        "components": {
+          "day": 37.0,
+          "hot_hours": 2.0,
+          "night": 32.0,
+          "persistence": 1.0
+        },
+        "identity": "Demo Hotel 2",
+        "percentile": 75.0,
+        "score": 19.3,
+        "tie_group": 1
+      },
+      {
+        "components": {
+          "day": 38.0,
+          "hot_hours": 3.0,
+          "night": 33.0,
+          "persistence": 1.5
+        },
+        "identity": "Demo Hotel 3",
+        "percentile": 50.0,
+        "score": 20.2,
+        "tie_group": 2
+      },
+      {
+        "components": {
+          "day": 39.0,
+          "hot_hours": 4.0,
+          "night": 34.0,
+          "persistence": 2.0
+        },
+        "identity": "Demo Hotel 4",
+        "percentile": 25.0,
+        "score": 21.099999999999998,
+        "tie_group": 3
+      },
+      {
+        "components": {
+          "day": 40.0,
+          "hot_hours": 5.0,
+          "night": 35.0,
+          "persistence": 2.5
+        },
+        "identity": "Demo Hotel 5",
+        "percentile": 0.0,
+        "score": 22.0,
+        "tie_group": 4
+      }
+    ],
+    "usable_count": 5,
+    "weights": {
+      "day": 0.2,
+      "hot_hours": 0.25,
+      "night": 0.35,
+      "persistence": 0.2
+    }
+  },
+  "routes": {
+    "alternatives": [
+      {
+        "building_coverage": 0.0,
+        "building_explicit_count": 0,
+        "building_explicit_fraction": 0.0,
+        "building_inferred_levels_count": 0,
+        "building_inferred_levels_fraction": 0.0,
+        "building_unknown_count": 0,
+        "building_unknown_fraction": 0.0,
+        "distance_m": 635.7,
+        "dropped_building_geometry_count": 0,
+        "duration_s": 510.7,
+        "geometry": [
+          [-98.493819, 29.424595],
+          [-98.493813, 29.42468],
+          [-98.494542, 29.424715],
+          [-98.494623, 29.424717],
+          [-98.494706, 29.424717],
+          [-98.494737, 29.424718],
+          [-98.494727, 29.424904],
+          [-98.494758, 29.424904],
+          [-98.495287, 29.424918],
+          [-98.495371, 29.42492],
+          [-98.495415, 29.424912],
+          [-98.495443, 29.424943],
+          [-98.495441, 29.424978],
+          [-98.495477, 29.425019],
+          [-98.495506, 29.425057],
+          [-98.495509, 29.425076],
+          [-98.495673, 29.425076],
+          [-98.496063, 29.425077],
+          [-98.49613, 29.425089],
+          [-98.496272, 29.425093],
+          [-98.496331, 29.425095],
+          [-98.49633, 29.425107],
+          [-98.49633, 29.425156],
+          [-98.496329, 29.425203],
+          [-98.496329, 29.425225],
+          [-98.496401, 29.425226],
+          [-98.496542, 29.425236],
+          [-98.49731, 29.425267],
+          [-98.497321, 29.425269],
+          [-98.497326, 29.425274],
+          [-98.497365, 29.425276],
+          [-98.497372, 29.425188],
+          [-98.497511, 29.425194],
+          [-98.497622, 29.425205],
+          [-98.497705, 29.425219],
+          [-98.497788, 29.425244],
+          [-98.49795, 29.425329],
+          [-98.497964, 29.425238],
+          [-98.498041, 29.425277],
+          [-98.498188, 29.425363],
+          [-98.498246, 29.425399],
+          [-98.498295, 29.425411],
+          [-98.498381, 29.425454],
+          [-98.498492, 29.425486],
+          [-98.498539, 29.425502],
+          [-98.498906, 29.425538],
+          [-98.499459, 29.425583]
+        ],
+        "heat_coverage": 1.0,
+        "heat_interpretation": {
+          "action_required": false,
+          "action_threshold_band": "provider_higher",
+          "band": "provider_moderate",
+          "band_label": "Moderate provider temperature",
+          "guidance_policy": "standard",
+          "is_actual_heat_index": false,
+          "metric": "tcm",
+          "noaa_heat_index_available": false,
+          "policy_applied": "standard_heat_guidance",
+          "value_celsius": 32.0
+        },
+        "heat_metric": "tcm",
+        "heat_source": "landmark_reuse",
+        "heat_status": "not_elevated",
+        "heat_unit": "C",
+        "heat_value": 32.0,
+        "identity": "route-1",
+        "modeled_shade_percent": null,
+        "recommendation_reason": "shortest returned route under mild heat",
+        "recommended": true,
+        "shade_confidence": null,
+        "shade_limitations": [],
+        "shade_model_label": null
+      }
+    ],
+    "building_provenance": null,
+    "comparison_scope": "returned alternatives",
+    "confidence": "sufficient",
+    "corridor_heat_value": 32.0,
+    "coverage": 1.0,
+    "decision_state": "mild_shortest_recommended",
+    "fallback_reason": null,
+    "heat_interpretation": {
+      "action_required": false,
+      "action_threshold_band": "provider_higher",
+      "band": "provider_moderate",
+      "band_label": "Moderate provider temperature",
+      "guidance_policy": "standard",
+      "is_actual_heat_index": false,
+      "metric": "tcm",
+      "noaa_heat_index_available": false,
+      "policy_applied": "standard_heat_guidance",
+      "value_celsius": 32.0
+    },
+    "heat_metric": "tcm",
+    "heat_provenance": {
+      "activity_id": null,
+      "confidence": "insufficient",
+      "coverage": null,
+      "data_date": "2024-07-15",
+      "fresh": false,
+      "note": "Route heat reuses destination TCM; no corridor heat acquisition was made.",
+      "provider": "heat-aware-tourism-guide-demo-heat",
+      "request_configuration": {
+        "evidence_class": "synthesized_demo",
+        "route_heat_source": "landmark_reuse"
+      },
+      "response_status": "synthesized_demo",
+      "retrieved_at": null,
+      "source": "synthesized",
+      "transformation_version": "route-landmark-heat-reuse-v1"
+    },
+    "heat_status": "not_elevated",
+    "heat_unit": "C",
+    "lowest_heat_route_id": "route-1",
+    "provenance": {
+      "activity_id": null,
+      "confidence": "insufficient",
+      "coverage": null,
+      "data_date": "2024-07-15",
+      "fresh": false,
+      "note": null,
+      "provider": "heat-aware-tourism-guide",
+      "request_configuration": {
+        "heat_provider": "heat-aware-tourism-guide-demo-heat",
+        "routing_provider": "fossgis-osrm"
+      },
+      "response_status": "completed",
+      "retrieved_at": "2026-08-30T16:00:00+00:00",
+      "source": "computed",
+      "transformation_version": "route-heat-gate-v1"
+    },
+    "reason": "heat is mild across the comparable returned routes; the shortest route is recommended",
+    "recommended_id": "route-1",
+    "route_set_state": "single_route",
+    "routing_provenance": {
+      "activity_id": null,
+      "confidence": "sufficient",
+      "coverage": null,
+      "data_date": "2026-08-30",
+      "fresh": false,
+      "note": "Genuine OSRM response retrieved 2026-08-30T14:25:30.796810+00:00.",
+      "provider": "fossgis-osrm",
+      "request_configuration": {
+        "alternatives": true,
+        "destination": {
+          "latitude": 29.4254009,
+          "longitude": -98.4994785
+        },
+        "geometries": "geojson",
+        "origin": {
+          "latitude": 29.4245773,
+          "longitude": -98.4935063
+        },
+        "overview": "full",
+        "profile": "foot",
+        "provider_instance": "fossgis-routed-foot",
+        "request_version": "v1",
+        "steps": false
+      },
+      "response_status": "completed",
+      "retrieved_at": "2026-08-30T14:25:30.796810+00:00",
+      "source": "fixture",
+      "transformation_version": "osrm-route-normalization-v1"
+    },
+    "solar_provenance": null
+  },
+  "schema_version": "trip-contract-v2",
+  "state": "degraded",
+  "unavailable": null
+}

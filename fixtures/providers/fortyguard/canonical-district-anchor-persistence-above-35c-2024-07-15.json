@@ -1,0 +1,36 @@
+{
+  "map_data": {
+    "type": "FeatureCollection",
+    "features": [
+      {
+        "id": "0",
+        "type": "Feature",
+        "properties": {
+          "tile_id": 0,
+          "value": 6.8883
+        },
+        "geometry": {
+          "type": "Polygon",
+          "coordinates": [
+            [
+              [-98.48654073716303, 29.424477764375087],
+              [-98.48569352474583, 29.424474496194424],
+              [-98.48569003895129, 29.425166474698322],
+              [-98.48653725711, 29.42516974297078],
+              [-98.48654073716303, 29.424477764375087]
+            ]
+          ]
+        }
+      }
+    ]
+  },
+  "stats_data": {
+    "activity_id": "15a6f14d-5e90-48ea-8f2c-250329119f79",
+    "analytic_type": "persistence",
+    "units": "hour",
+    "n_cells": 1,
+    "min": 6.8883,
+    "max": 6.8883,
+    "mean": 6.8883
+  }
+}

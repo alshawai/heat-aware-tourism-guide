@@ -1,0 +1,104 @@
+{
+  "activity_id": null,
+  "data_date": "2024-07-15",
+  "derived_from": [
+    {
+      "fixture": "fixtures/providers/osrm/menger-alamo.json",
+      "role": "routing",
+      "sha256": "88932e6c031344322aa292e2ef8ac0b6a00de5966cf33a536c8a3ac24c4f4524",
+      "sidecar_sha256": "7639676a3b9d8933efc7f7d319906f2d98a832f6abae3d564c026c73625ac254"
+    },
+    {
+      "fixture": "fixtures/providers/fortyguard/menger-alamo-destination-tcm-2024-07-15.json",
+      "role": "destination_tcm",
+      "sha256": "8aa93a776a47329233fb11c1f9c68c0074bf08f6763cf1fba8f987cf8627564b",
+      "sidecar_sha256": "0a31b1dbc49b7801ffe559bf40e057539a31e3dfc55e18805957f3a454bcc3cf"
+    },
+    {
+      "fixture": "fixtures/providers/fortyguard/menger-alamo-destination-env-params-2024-07-15.json",
+      "role": "environment_parameters",
+      "sha256": "7aaa3762b4c50cc64fb953ca09cef38d05970c1910a9de1e234038f52da1b56e",
+      "sidecar_sha256": "789c8414ba45492d22c80cfb659ef64026801c04ecf0f116f14fdd7721d58111"
+    },
+    {
+      "fixture": "fixtures/providers/fortyguard/canonical-district-anchor-date-tcm-2024-07-15.json",
+      "role": "hotel_night_and_day_tcm",
+      "sha256": "7ab6f9eb46691f201a2ffe4b71fe73b36dd4e0f6a281441ad0a0f0da86e1e602",
+      "sidecar_sha256": "dad752e7f1f5415e0be2a52527e83450c982159dc0b73f4357f039127a802df9"
+    },
+    {
+      "fixture": "fixtures/providers/fortyguard/canonical-district-anchor-exceedance-above-35c-2024-07-15.json",
+      "role": "hotel_hot_hours",
+      "sha256": "6fc97903bda9801830eac7ca5937932a5ef5ca37a87a2beaed1268caffec7af8",
+      "sidecar_sha256": "f46eee48baf79aef0b8b2d1107becd56d568edb746b99253d33b8c7f06dcd4fe"
+    },
+    {
+      "fixture": "fixtures/providers/fortyguard/canonical-district-anchor-persistence-above-35c-2024-07-15.json",
+      "role": "hotel_persistence",
+      "sha256": "01e1e56cb6eb22356f9973b1204ef800231e68a9c3c6a2c9f87e8de8da722be6",
+      "sidecar_sha256": "64bf75fcb893e43afe0f64ffd7d0919dcce9426c90cf85c61ff927fb97ac784b"
+    },
+    {
+      "fixture": "fixtures/hotel-heat-analysis.json",
+      "role": "base_hotel_discovery",
+      "sha256": "fde152a6c473fb6a38a6fe2928ccf4718a17d621e61f7d7c8da3d84d5a69e84b",
+      "sidecar_sha256": "1f66ac7364bec7cd5a997f224ed3fdf8c4dbdb77f55cb6bf59b085c4a0e7f3c0"
+    }
+  ],
+  "endpoint": "local:trip-product-snapshot",
+  "provider": "heat-aware-tourism-guide",
+  "provider_config_version": "trip-product-config-v1",
+  "request_configuration": {
+    "building_aoi": null,
+    "cautious": false,
+    "date": "2024-07-15",
+    "destination": {
+      "application_id": "the-alamo",
+      "authority": "OpenStreetMap/Nominatim selected object",
+      "coordinate_meaning": "component central point",
+      "latitude": 29.425833,
+      "longitude": -98.485833,
+      "name": "The Alamo",
+      "osm_identity": "way/129152944"
+    },
+    "district_name": "Downtown San Antonio",
+    "end_hour": 20,
+    "generator_metadata": {
+      "evidence": "provider inputs plus computed product decisions",
+      "temporal_caveat": "GMT-7 environment evidence is inconsistent with America/Chicago"
+    },
+    "generator_version": "trip-product-snapshot-v1",
+    "hotel_aoi": {
+      "east": -98.482,
+      "north": 29.429,
+      "south": 29.421,
+      "west": -98.49
+    },
+    "landmark_name": "The Alamo",
+    "mode": "curated",
+    "origin": {
+      "application_id": "menger-hotel",
+      "authority": "OpenStreetMap/Nominatim selected object",
+      "coordinate_meaning": "Nominatim centroid",
+      "latitude": 29.4245914,
+      "longitude": -98.4864288,
+      "name": "Menger Hotel",
+      "osm_identity": "way/23727574"
+    },
+    "route_heat_aoi": null,
+    "start_hour": 8
+  },
+  "response_metadata": {
+    "generator_state": "completed"
+  },
+  "retrieved_at": null,
+  "schema_version": "trip-contract-v2",
+  "source": "synthesized",
+  "status": "ok",
+  "transformations": [
+    {
+      "name": "trip-product-snapshot",
+      "version": 1
+    }
+  ]
+}

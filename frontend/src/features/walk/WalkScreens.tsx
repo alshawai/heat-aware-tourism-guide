@@ -231,6 +231,12 @@ export function RouteComparisonScreen() {
           route recommendation is made.
         </DegradedNotice>
       )}
+      {routes.decision_state === "insufficient_shade_comparison_required" && (
+        <DegradedNotice>
+          Building-height coverage is weak, so no route is recommended. Compare
+          the returned route trade-offs directly.
+        </DegradedNotice>
+      )}
       <div className="route-layout">
         <div className="route-map">
           <MapContainer

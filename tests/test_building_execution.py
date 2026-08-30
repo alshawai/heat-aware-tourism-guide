@@ -67,6 +67,7 @@ def _fixture(tmp_path: Path, identity: dict[str, Any], **overrides: Any) -> Path
     path.write_text(json.dumps(_response("2026-08-20T04:00:00Z")), encoding="utf-8")
     values: dict[str, Any] = {
         "source": "synthesized",
+        "provider": "heat-aware-tourism-guide",
         "endpoint": ENDPOINT,
         "request_configuration": identity,
         "retrieved_at": None,
@@ -75,6 +76,8 @@ def _fixture(tmp_path: Path, identity: dict[str, Any], **overrides: Any) -> Path
         "schema_version": "building-v1",
         "provider_config_version": "overpass-building-config-v1",
         "activity_id": None,
+        "derived_from": (),
+        "response_metadata": {},
     }
     values.update(overrides)
     write_sidecar(path, AcquisitionRecord(**values))
