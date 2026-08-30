@@ -245,6 +245,8 @@ directly.
 - `docs/research/issue-23-alternate-scenarios.md` — Issue #23 place identities
   and observed route/height evidence.
 - `docs/design/fortyguard-extraction.md` — extraction contract from issue #6.
+- `docs/README.md` — the Diataxis documentation map: tutorials, how-to
+  guides, reference, and explanation, plus the demo script.
 - Layout: `app/domain/` (pure contracts), `app/services/` (cache, execution,
   acquisition, sidecars, ledger store), `app/integrations/fortyguard/`
   (provider client stack + live adapter), `app/api.py` + `app/main.py` +
