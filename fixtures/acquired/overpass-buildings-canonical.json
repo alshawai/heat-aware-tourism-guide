@@ -1,0 +1,196 @@
+{
+  "version": 0.6,
+  "generator": "synthesized-overpass-building-shape",
+  "note": "Synthesized canonical Overpass building response shape for the canonical OSRM route AOI. Geometry, identities, and tags are invented, not real OpenStreetMap data.",
+  "osm3s": {
+    "timestamp_osm_base": "2026-08-29T20:14:03Z",
+    "copyright": "synthesized fixture; no OpenStreetMap data is reproduced"
+  },
+  "elements": [
+    {
+      "type": "way",
+      "id": 101,
+      "tags": {
+        "building": "office",
+        "height": "34",
+        "name": "Corridor Office Block"
+      },
+      "geometry": [
+        {
+          "lat": 29.4245639,
+          "lon": -98.4858495
+        },
+        {
+          "lat": 29.4249457,
+          "lon": -98.4856662
+        },
+        {
+          "lat": 29.4250778,
+          "lon": -98.4860277
+        },
+        {
+          "lat": 29.424696,
+          "lon": -98.486211
+        },
+        {
+          "lat": 29.4245639,
+          "lon": -98.4858495
+        }
+      ]
+    },
+    {
+      "type": "way",
+      "id": 102,
+      "tags": {
+        "building": "commercial",
+        "building:levels": "9"
+      },
+      "geometry": [
+        {
+          "lat": 29.4251373,
+          "lon": -98.4856078
+        },
+        {
+          "lat": 29.4254859,
+          "lon": -98.4854404
+        },
+        {
+          "lat": 29.4256041,
+          "lon": -98.4857639
+        },
+        {
+          "lat": 29.4252555,
+          "lon": -98.4859312
+        },
+        {
+          "lat": 29.4251373,
+          "lon": -98.4856078
+        }
+      ]
+    },
+    {
+      "type": "way",
+      "id": 103,
+      "tags": {
+        "building": "yes"
+      },
+      "geometry": [
+        {
+          "lat": 29.4249551,
+          "lon": -98.4864668
+        },
+        {
+          "lat": 29.4252041,
+          "lon": -98.4863473
+        },
+        {
+          "lat": 29.4252944,
+          "lon": -98.4865946
+        },
+        {
+          "lat": 29.4250455,
+          "lon": -98.4867141
+        },
+        {
+          "lat": 29.4249551,
+          "lon": -98.4864668
+        }
+      ]
+    },
+    {
+      "type": "relation",
+      "id": 104,
+      "tags": {
+        "type": "multipolygon",
+        "building": "hotel",
+        "height": "48"
+      },
+      "members": [
+        {
+          "type": "way",
+          "ref": 1041,
+          "role": "outer",
+          "geometry": [
+            {
+              "lat": 29.4253335,
+              "lon": -98.4862516
+            },
+            {
+              "lat": 29.4257982,
+              "lon": -98.4860285
+            },
+            {
+              "lat": 29.4259512,
+              "lon": -98.486447
+            },
+            {
+              "lat": 29.4254864,
+              "lon": -98.4866702
+            },
+            {
+              "lat": 29.4253335,
+              "lon": -98.4862516
+            }
+          ]
+        },
+        {
+          "type": "way",
+          "ref": 1042,
+          "role": "inner",
+          "geometry": [
+            {
+              "lat": 29.4255433,
+              "lon": -98.4863186
+            },
+            {
+              "lat": 29.4256927,
+              "lon": -98.4862469
+            },
+            {
+              "lat": 29.4257414,
+              "lon": -98.48638
+            },
+            {
+              "lat": 29.425592,
+              "lon": -98.4864518
+            },
+            {
+              "lat": 29.4255433,
+              "lon": -98.4863186
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "way",
+      "id": 105,
+      "tags": {
+        "building:part": "yes",
+        "height": "72"
+      },
+      "geometry": [
+        {
+          "lat": 29.4247065,
+          "lon": -98.4858928
+        },
+        {
+          "lat": 29.4248725,
+          "lon": -98.4858132
+        },
+        {
+          "lat": 29.4249351,
+          "lon": -98.4859844
+        },
+        {
+          "lat": 29.4247691,
+          "lon": -98.4860641
+        },
+        {
+          "lat": 29.4247065,
+          "lon": -98.4858928
+        }
+      ]
+    }
+  ]
+}

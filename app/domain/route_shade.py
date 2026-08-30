@@ -38,6 +38,11 @@ SHADE_MODEL_LIMITATIONS = (
 SOLAR_MODEL_IDENTITY = "astral-3.2-apparent"
 """Solar-position provider identity recorded in shade provenance."""
 
+SHADE_UNAVAILABLE_LIMITATION = (
+    "no OSM building geometry was available from the provider, cache, or committed fixture, "
+    "so no modeled building shade could be calculated"
+)
+
 
 @dataclass(frozen=True)
 class RouteShadeEvidence:
@@ -88,6 +93,31 @@ class RouteShadeEvidence:
             raise ValueError("shade confidence must be a ShadeConfidence value")
         if not self.limitations or any(not item.strip() for item in self.limitations):
             raise ValueError("modeled shade limitations are required")
+
+
+def unavailable_shade_evidence(
+    reason: str = SHADE_UNAVAILABLE_LIMITATION,
+) -> RouteShadeEvidence:
+    """Explicit zero-evidence shade result naming why no building shade exists.
+
+    Insufficient rather than not-applicable: shade is physically relevant here,
+    the evidence for it is simply missing.
+    """
+    if not reason.strip():
+        raise ValueError("unavailable shade evidence requires a reason")
+    return RouteShadeEvidence(
+        modeled_shade_percent=0.0,
+        building_coverage=0.0,
+        confidence=ShadeConfidence.INSUFFICIENT,
+        explicit_area_fraction=0.0,
+        inferred_levels_area_fraction=0.0,
+        unknown_area_fraction=0.0,
+        explicit_count=0,
+        inferred_levels_count=0,
+        unknown_count=0,
+        dropped_geometry_count=0,
+        limitations=(SHADE_MODEL_LIMITATIONS, reason),
+    )
 
 
 @dataclass(frozen=True)

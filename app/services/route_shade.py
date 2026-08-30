@@ -22,10 +22,11 @@ from app.domain.route_shade import (
     SolarPosition,
     building_from_geojson,
     route_shade_percent,
+    unavailable_shade_evidence,
 )
 from app.domain.routing import RouteSet
-from app.integrations.overpass.client import OverpassClient
 from app.integrations.overpass.errors import OverpassError
+from app.services.building_execution import BuildingExecution, BuildingsUnavailable
 
 
 class RouteShadeService:
@@ -33,7 +34,7 @@ class RouteShadeService:
 
     def __init__(
         self,
-        client: OverpassClient,
+        execution: BuildingExecution,
         *,
         corridor_buffer_m: float = 250.0,
         minimum_building_coverage: float = 0.70,
@@ -45,7 +46,7 @@ class RouteShadeService:
             raise ValueError("minimum building coverage must be between zero and one")
         if not math.isfinite(metres_per_level) or metres_per_level <= 0:
             raise ValueError("metres per building level must be positive and finite")
-        self._client = client
+        self._execution = execution
         self._corridor_buffer_m = corridor_buffer_m
         self._minimum_building_coverage = minimum_building_coverage
         self._metres_per_level = metres_per_level
@@ -58,10 +59,13 @@ class RouteShadeService:
     ) -> Mapping[str, RouteShadeEvidence]:
         if instant.tzinfo is None or instant.utcoffset() is None:
             raise ValueError("shade instant must be timezone-aware")
-        response = self._client.query_buildings(_shared_bbox(routes, self._corridor_buffer_m))
-        buildings, dropped_geometry_count = _normalize_buildings(
-            response, metres_per_level=self._metres_per_level
-        )
+        try:
+            outcome = self._execution.run(_shared_bbox(routes, self._corridor_buffer_m))
+            buildings, dropped_geometry_count = _normalize_buildings(
+                outcome.payload, metres_per_level=self._metres_per_level
+            )
+        except (BuildingsUnavailable, OverpassError):
+            return {route.identity: unavailable_shade_evidence() for route in routes.routes}
         return {
             route.identity: self._route_evidence(
                 LineString(route.geometry.coordinates),
