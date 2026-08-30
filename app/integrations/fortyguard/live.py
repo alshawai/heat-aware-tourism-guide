@@ -98,8 +98,9 @@ def build_documented_heatmap_payload(
 
     A request carrying a validated traveler window (``start_hour``/``end_hour``)
     is submitted as the documented range-of-hours filter (``filter_type`` 2 with
-    ``start_time``/``end_time``); without one it stays a full-day request
-    (``filter_type`` 3), preserving every existing caller.
+    ``start_time``/``end_time``), or as the single-hour filter (``filter_type``
+    1) when that window is one hour wide; without a window it stays a full-day
+    request (``filter_type`` 3), preserving every existing caller.
     """
     current = date.today() if today is None else today
     _validate_documented_window(
@@ -132,15 +133,28 @@ def _date_time_filter(*, start_date: date, window: TimeWindow | None) -> dict[st
     :meth:`TimeWindow.end_time` renders the window's last in-window hour rather
     than its exclusive bound. Heatmap and env-params share this helper so a
     chained trip asks both endpoints for the identical set of hours.
+
+    A one-hour window is therefore *not* a range: rendering it as one would
+    submit ``start_time == end_time``, an undocumented degenerate shape the
+    provider rejects at submission. It uses the documented single-hour filter
+    (``filter_type`` 1, ``start_time`` alone) instead — the same shape the
+    selected-hour route and env-params paths already submit. The per-hour heat
+    fan-out sends nothing but one-hour windows, so this is the shape it needs.
     """
-    date_time: dict[str, object] = {
+    if window is None:
+        return {"start_date": start_date.isoformat(), "filter_type": 3}
+    if len(window.hours) == 1:
+        return {
+            "start_date": start_date.isoformat(),
+            "filter_type": 1,
+            "start_time": window.start_time(),
+        }
+    return {
         "start_date": start_date.isoformat(),
-        "filter_type": 2 if window is not None else 3,
+        "filter_type": 2,
+        "start_time": window.start_time(),
+        "end_time": window.end_time(),
     }
-    if window is not None:
-        date_time["start_time"] = window.start_time()
-        date_time["end_time"] = window.end_time()
-    return date_time
 
 
 def _validate_documented_window(*, start_date: date, forecast: bool, today: date) -> None:
@@ -192,12 +206,18 @@ def _point_square_feature_collection(
 def _tile_valid_time(request: HeatmapRequest) -> str:
     """Stamp tiles with the hour the readings were actually requested for.
 
-    A windowed request is submitted as the range filter (``filter_type`` 2 with
-    ``start_time``/``end_time``), so the readings that come back describe that
-    window rather than midnight. Stamping the window start keeps the tile inside
-    the traveler window that :func:`app.domain.environment.select_anchor_celsius`
-    tests, which midnight would fall outside of for every daytime window.
-    Full-day requests (``filter_type`` 3) carry no hour and keep midnight.
+    A windowed request is submitted for that window's hours (the range filter,
+    or the single-hour filter when the window is one hour wide), so the readings
+    that come back describe that window rather than midnight. Stamping the window
+    start keeps the tile inside the traveler window that
+    :func:`app.domain.environment.select_anchor_celsius` tests, which midnight
+    would fall outside of for every daytime window. Full-day requests
+    (``filter_type`` 3) carry no hour and keep midnight.
+
+    The provider's windowed products carry no per-hour timestamp of their own, so
+    a multi-hour window collapses onto its start hour here. Callers that need a
+    reading per hour submit one one-hour request per hour instead
+    (:meth:`app.services.trip_adapters.TemporalTripAnalysisAdapter._hourly_heatmap`).
     """
     window = request.window
     hour = 0 if window is None else window.start_hour
@@ -789,9 +809,10 @@ def build_documented_env_params_payload(request: EnvParamsRequest) -> dict[str, 
     observations: between 2019-01-01 and today.
 
     The filter mirrors the request it was built from: a single ``hour`` stays
-    the single-hour filter (``filter_type`` 1), a traveler window
+    the single-hour filter (``filter_type`` 1), a multi-hour traveler window
     (``start_hour``/``end_hour``) becomes the range filter (``filter_type`` 2
-    with ``start_time``/``end_time``), and neither is the full-day series
+    with ``start_time``/``end_time``), a one-hour window collapses onto the
+    single-hour filter, and none of them is the full-day series
     (``filter_type`` 3). The window and the chained heatmap request therefore
     always carry an identical ``date_time`` block (issue #44).
     """

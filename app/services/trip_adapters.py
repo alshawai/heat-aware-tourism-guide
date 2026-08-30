@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import math
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import replace
 from datetime import date, datetime
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from pathlib import Path
@@ -60,6 +62,45 @@ from app.services.sidecars import load_acquisition_record
 
 FRAMING_THRESHOLD_CELSIUS = 35.0
 FRAMING_DIRECTION = "above"
+# One windowed env-params call, two route-heat calls, two framing products.
+_FIXED_CALL_ALLOWANCE = 5
+
+
+def _failure_reason(error: BaseException) -> str:
+    """Keep the provider's error classification attached to a per-hour failure.
+
+    ``ExecutionService`` collapses every live heatmap failure into one sentence
+    and moves the provider's classification onto ``UnavailableError.error_kind``
+    (``app/services/execution.py``). Recording only ``str(error)`` therefore
+    reports an authentication rejection, a validation rejection and a timeout
+    identically — which is exactly what made the first live fan-out failure
+    unreadable from its response.
+    """
+    kind = getattr(error, "error_kind", None)
+    return f"{error} ({kind})" if isinstance(kind, str) and kind else str(error)
+
+
+def _merge_heatmap_results(results: tuple[HeatmapResult, ...]) -> HeatmapResult:
+    """Fold per-hour heatmap responses into the one result the decision consumes.
+
+    Tiles concatenate in hour order. Provenance is taken from the first hour —
+    every response describes the same product, location and date — but is
+    downgraded to ``stale`` if *any* hour fell back to cache or fixture, so the
+    merged freshness is never better than its worst part. Activity metadata
+    identifies the first submitted call; the remaining activity ids stay on
+    their own tiles.
+    """
+    if not results:
+        raise UnavailableError("the hourly heatmap series is unavailable: no hour returned data")
+    provenance = replace(
+        results[0].provenance,
+        stale=any(result.provenance.stale for result in results),
+    )
+    return HeatmapResult(
+        tiles=tuple(tile for result in results for tile in result.tiles),
+        provenance=provenance,
+        activity=next((result.activity for result in results if result.activity is not None), None),
+    )
 
 
 class FixtureTripAnalysisAdapter:
@@ -129,17 +170,29 @@ class LiveTripAnalysisAdapter:
 
 
 class TemporalTripAnalysisAdapter:
-    """Build the best-time decision from one reusable landmark series."""
+    """Build the best-time decision from one reusable landmark series.
+
+    The provider's heatmap product carries no per-hour timestamp, so a single
+    windowed request stamps every tile with the window's start hour and can
+    only ever describe one hour. The hourly series is therefore assembled by
+    fanning out one *single-hour* heatmap request per traveler hour and merging
+    the responses; each response arrives stamped with the hour it asked for.
+    """
 
     def __init__(
         self,
         heatmap_execution: HeatmapExecution,
         env_params_execution: EnvParamsExecution,
         route_analysis: RouteAnalysisService | None = None,
+        *,
+        max_concurrency: int = 4,
+        remaining_calls: Callable[[], int] | None = None,
     ) -> None:
         self.heatmap_execution = heatmap_execution
         self.env_params_execution = env_params_execution
         self.route_analysis = route_analysis
+        self.max_concurrency = max(1, max_concurrency)
+        self.remaining_calls = remaining_calls
 
     def analyze(
         self,
@@ -149,6 +202,12 @@ class TemporalTripAnalysisAdapter:
         if execution_mode is not ExecutionMode.LIVE:
             raise ValueError("temporal trip adapter only supports live execution")
         analysis_date = date.fromisoformat(request.date)
+        refusal = self._budget_refusal(request, execution_mode)
+        if refusal is not None:
+            return refusal
+        # A window-wide template: it is never executed, it only carries the
+        # shared shape to the per-hour fan-out and to the framing products,
+        # which stay window-wide (one value each for the whole window).
         heatmap_request = HeatmapRequest(
             analytic_type=AnalyticType.TCM,
             latitude=request.destination.latitude,
@@ -159,7 +218,7 @@ class TemporalTripAnalysisAdapter:
             end_hour=request.end_hour,
         )
         try:
-            heatmap = self.heatmap_execution.run(heatmap_request, live=True)
+            heatmap, hourly_failures = self._hourly_heatmap(heatmap_request, request)
             anchor = select_anchor_celsius(heatmap.tiles, request.window)
         except (UnavailableError, ValueError) as error:
             return _unavailable_response(request, execution_mode, str(error))
@@ -190,6 +249,7 @@ class TemporalTripAnalysisAdapter:
                 environment_failure=environment_failure,
                 exceedance_hours=exceedance_hours,
                 persistence_hours=persistence_hours,
+                hourly_failures=hourly_failures,
             )
         except ValueError as error:
             return _unavailable_response(request, execution_mode, str(error))
@@ -217,6 +277,80 @@ class TemporalTripAnalysisAdapter:
             routes=routes,
             degraded_reasons=degraded_reasons,
         )
+
+    def _budget_refusal(
+        self, request: TripAnalysisRequest, execution_mode: ExecutionMode
+    ) -> TripAnalysisResponse | None:
+        """Refuse before spending anything when the window cannot be afforded.
+
+        Cost of one analysis: one heatmap call per traveler hour, plus
+        ``_FIXED_CALL_ALLOWANCE`` for the single windowed env-params call, the
+        two route-heat calls, and the two framing products.
+        """
+        if self.remaining_calls is None:
+            return None
+        try:
+            remaining = self.remaining_calls()
+        except RuntimeError:
+            # A record-only ledger has no budget to check against.
+            return None
+        needed = len(request.window.hours) + _FIXED_CALL_ALLOWANCE
+        if needed <= remaining:
+            return None
+        return _unavailable_response(
+            request,
+            execution_mode,
+            (
+                f"this {len(request.window.hours)}-hour analysis needs about {needed} provider "
+                f"calls but only {remaining} remain in the budget; shorten the time window or "
+                "raise the budget"
+            ),
+            code="insufficient_call_budget",
+            action="shorten_window_or_raise_budget",
+        )
+
+    def _hourly_heatmap(
+        self, template: HeatmapRequest, request: TripAnalysisRequest
+    ) -> tuple[HeatmapResult, dict[int, str]]:
+        """One single-hour TCM request per traveler hour, merged into one result.
+
+        Runs concurrently: the credit ledger guards every mutation with a lock
+        and the provider transport is stateless, so the only shared state is the
+        bounded thread pool. Hours that fail are dropped and reported; the whole
+        analysis fails only when no hour survives.
+        """
+        hours = tuple(request.window.hours)
+        requests = {
+            hour: HeatmapRequest(
+                analytic_type=AnalyticType.TCM,
+                latitude=template.latitude,
+                longitude=template.longitude,
+                start_date=template.start_date,
+                forecast=template.forecast,
+                start_hour=hour,
+                end_hour=hour + 1,
+            )
+            for hour in hours
+        }
+        results: dict[int, HeatmapResult] = {}
+        failures: dict[int, str] = {}
+        with ThreadPoolExecutor(max_workers=min(self.max_concurrency, len(requests))) as pool:
+            futures = {
+                pool.submit(self.heatmap_execution.run, hour_request, live=True): hour
+                for hour, hour_request in requests.items()
+            }
+            for future in as_completed(futures):
+                hour = futures[future]
+                try:
+                    results[hour] = future.result()
+                except (UnavailableError, ValueError) as error:
+                    failures[hour] = _failure_reason(error)
+        if not results:
+            raise UnavailableError(
+                "the hourly heatmap series is unavailable: "
+                f"every hour failed ({next(iter(failures.values()), 'no reason reported')})"
+            )
+        return _merge_heatmap_results(tuple(results[hour] for hour in sorted(results))), failures
 
     def _framing_value(
         self, tcm_request: HeatmapRequest, analytic_type: AnalyticType
@@ -261,6 +395,7 @@ def _best_time_result(
     environment_failure: str | None,
     exceedance_hours: float | None,
     persistence_hours: float | None,
+    hourly_failures: Mapping[int, str] | None = None,
 ) -> BestTimeResult:
     tcm_by_hour = {
         hour: max(
@@ -319,8 +454,12 @@ def _best_time_result(
         heatmap=heatmap,
         exceedance_hours=exceedance_hours,
         persistence_hours=persistence_hours,
+        hourly_failures=hourly_failures or {},
     )
     reason = decision.reason
+    if hourly_failures:
+        missing = ", ".join(f"{hour:02d}:00" for hour in sorted(hourly_failures))
+        reason = f"hourly coverage is partial ({missing} unavailable); {reason}"
     if environment_failure is not None:
         reason = f"TCM-only fallback because environmental parameters are unavailable; {reason}"
     selected_times = tuple(
@@ -382,7 +521,9 @@ def _best_time_provenance(
     heatmap: HeatmapResult,
     exceedance_hours: float | None,
     persistence_hours: float | None,
+    hourly_failures: Mapping[int, str] | None = None,
 ) -> Provenance:
+    unavailable_hours = sorted(hourly_failures or {})
     configuration = dict(provenance.request_configuration)
     configuration.update(
         {
@@ -390,6 +531,8 @@ def _best_time_provenance(
             "framing_direction": FRAMING_DIRECTION,
             "exceedance_available": exceedance_hours is not None,
             "persistence_available": persistence_hours is not None,
+            "hourly_series_policy": "one_heatmap_request_per_hour",
+            "unavailable_hours": unavailable_hours,
             "environment_parameter_count": len(profiles[0].concerns),
             "reported_parameter_observations": sum(
                 len(profile.concerns) - profile.not_reported_count for profile in profiles
@@ -416,7 +559,12 @@ def _best_time_provenance(
         request_configuration=configuration,
         fresh=provenance.fresh and not heatmap.provenance.stale,
         coverage=provenance.coverage,
-        note=provenance.note,
+        note=(
+            "hourly heat is missing for "
+            + ", ".join(f"{hour:02d}:00" for hour in unavailable_hours)
+            if unavailable_hours
+            else provenance.note
+        ),
         activity_id=provenance.activity_id,
     )
 

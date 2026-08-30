@@ -455,17 +455,31 @@ describe("trip setup", () => {
     const analyze = await openSetup(user);
 
     expect(screen.getByText("Fixture replay")).toBeInTheDocument();
-    expect(screen.getByText("Menger Hotel")).toBeInTheDocument();
-    expect(screen.getByText("The Alamo")).toBeInTheDocument();
+    // One flow: the canonical walk is only the prefill, and the map that can
+    // move either pin is always on the setup screen.
     expect(
-      screen.getByText("Downtown San Antonio / Alamo Plaza")
+      screen.getByRole("button", { name: "Origin: Menger Hotel" })
     ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Destination: The Alamo" })
+    ).toBeInTheDocument();
+    expect(document.querySelector(".leaflet-container")).not.toBeNull();
+    expect(screen.queryByRole("button", { name: "Curated trip" })).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Explore another trip" })
+    ).toBeNull();
     expect(screen.getByLabelText("Date")).toHaveValue("2026-08-23");
     expect(screen.getByLabelText("Start time")).toHaveValue("8");
     expect(screen.getByLabelText("End time")).toHaveValue("20");
     expect(screen.getByLabelText(/Cautious guidance/)).not.toBeChecked();
     expect(screen.getByText("08:00 to 19:00")).toBeInTheDocument();
-    expect(screen.getByText(/United States/)).toBeInTheDocument();
+    // The always-present map carries its own United States hint, so this
+    // assertion names the setup copy rather than matching both.
+    expect(
+      screen.getByText(
+        /Live provider requests are supported in the United States/
+      )
+    ).toBeInTheDocument();
 
     await user.click(analyze);
 
@@ -507,6 +521,58 @@ describe("trip setup", () => {
         }),
       })
     );
+  });
+
+  it("sends exploratory once an endpoint leaves the canonical pair", async () => {
+    // The traveler no longer picks a mode, so the wire mode is derived from the
+    // endpoints: fixture replay only matches the canonical pair, and the server
+    // rejects `curated` for anything else.
+    const fetchMock = vi.fn(async (input: string, init?: RequestInit) => {
+      void init;
+      if (input === "/health") return jsonResponse(fixtureHealth);
+      if (input.startsWith("/api/places/search"))
+        return jsonResponse({
+          places: [
+            {
+              id: "riverwalk",
+              name: "River Walk",
+              context: "San Antonio, TX",
+              latitude: 29.4252,
+              longitude: -98.4861,
+            },
+          ],
+        });
+      // The client rejects a response whose identity does not match the request
+      // it sent (dataClient.ts:418-421), so an exploratory request needs an
+      // exploratory answer.
+      return jsonResponse({
+        ...successResponse,
+        request_identity: "exploratory:2026-08-23:8-20",
+        mode: "exploratory",
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+
+    const analyze = await openSetup(user);
+    await user.type(screen.getByLabelText("Search places"), "river");
+    await user.click(await screen.findByRole("option", { name: /River Walk/ }));
+    expect(
+      screen.getByRole("button", { name: "Destination: The Alamo" })
+    ).toBeInTheDocument();
+
+    await user.click(analyze);
+
+    expect(await screen.findByText("Trip analysis ready")).toBeInTheDocument();
+    const analyzeCall = fetchMock.mock.calls.find(
+      ([url]) => url === "/api/trip/analyze"
+    );
+    expect(JSON.parse(String(analyzeCall?.[1]?.body))).toMatchObject({
+      mode: "exploratory",
+      origin_latitude: 29.4252,
+      origin_longitude: -98.4861,
+      landmark_name: "The Alamo",
+    });
   });
 
   it("preserves edits and retries when application mode is unavailable", async () => {
@@ -942,6 +1008,79 @@ describe("trip results", () => {
     expect(within(comparison).getAllByText("Inferred 10%")).toHaveLength(2);
     expect(within(comparison).getByText("Unknown 20%")).toBeInTheDocument();
     expect(within(comparison).getByText("Unknown 50%")).toBeInTheDocument();
+
+    // The internal decision token never reaches the traveler; the buildings
+    // arrived and only their heights were thin, so the copy says exactly that
+    // and does not offer a retry that cannot help.
+    const notice = await screen.findByRole("note");
+    expect(
+      within(notice).getByRole("heading", {
+        name: "Routes are listed, but not ranked",
+      })
+    ).toBeInTheDocument();
+    expect(
+      within(notice).getByText(/do not publish enough height data/)
+    ).toBeInTheDocument();
+    expect(
+      within(notice).getByText(/will not change this/)
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(/insufficient_shade_comparison_required/)
+    ).not.toBeInTheDocument();
+    // The engineering fragment is not repeated beside the human explanation.
+    expect(
+      screen.queryByText("Route comparison requires manual trade-off review.")
+    ).not.toBeInTheDocument();
+  });
+
+  it("distinguishes unreachable building data from thin height coverage", async () => {
+    mockFetch(
+      jsonResponse(fixtureHealth),
+      jsonResponse({
+        ...successResponse,
+        state: "degraded",
+        routes: {
+          ...insufficientRoutes,
+          building_provenance: {
+            ...buildingProvenance,
+            source: "unavailable",
+            response_status: "unavailable",
+            confidence: "insufficient",
+            fresh: false,
+            coverage: 0,
+            note: "overpass request failed",
+          },
+        },
+        degraded_reasons: {
+          routes: "modeled building-shade evidence is insufficient",
+        },
+      })
+    );
+    const user = userEvent.setup();
+
+    const analyze = await openSetup(user);
+    await user.click(analyze);
+
+    const notice = await screen.findByRole("note");
+    expect(
+      within(notice).getByText(/could not reach the building data/)
+    ).toBeInTheDocument();
+    expect(
+      within(notice).getByText(/may reach the building data/)
+    ).toBeInTheDocument();
+    expect(
+      within(notice).getByText("overpass request failed")
+    ).toBeInTheDocument();
+    // The permanent coverage wording must not be shown for a transient failure.
+    expect(
+      within(notice).queryByText(/do not publish enough height data/)
+    ).not.toBeInTheDocument();
+    // The routes themselves stay listed, just unranked.
+    const comparison = screen.getByRole("region", { name: "Walking routes" });
+    expect(
+      within(comparison).queryByText("Recommended route")
+    ).not.toBeInTheDocument();
+    expect(within(comparison).getAllByText(/\d+\.\d{2} km/)).toHaveLength(2);
   });
 });
 

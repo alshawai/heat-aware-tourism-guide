@@ -365,41 +365,6 @@ button:disabled {
   color: var(--ink);
   font-size: 12px;
 }
-.hourly-chart {
-  display: flex;
-  justify-content: space-around;
-  align-items: end;
-  height: 260px;
-  padding: 24px 10px 0;
-  margin: 16px 0 26px;
-  border-bottom: 1px solid var(--line);
-}
-.hour-column {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-  height: 100%;
-  justify-content: end;
-}
-.bar {
-  width: clamp(24px, 7vw, 65px);
-  min-height: 30px;
-  display: grid;
-  place-items: start center;
-  padding-top: 7px;
-  color: #fff;
-  font-size: 12px;
-}
-.bar.lower {
-  background: #3d8873;
-}
-.bar.moderate {
-  background: #d19a37;
-}
-.bar.higher {
-  background: #ba583b;
-}
 .result-actions {
   margin: 20px 0 30px;
 }
@@ -498,19 +463,6 @@ dd {
   display: grid;
   gap: 11px;
   align-content: start;
-}
-.route-card {
-  width: 100%;
-  display: flex;
-  gap: 13px;
-  align-items: flex-start;
-  text-align: left;
-  background: var(--panel);
-  color: var(--ink);
-  border: 1px solid var(--line);
-}
-.route-card.active {
-  border: 2px solid var(--accent);
 }
 .route-index,
 .rank-number {
@@ -722,24 +674,6 @@ dd {
   display: grid;
   gap: 26px;
 }
-.curated-trip {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  border-top: 1px solid var(--line);
-  border-left: 1px solid var(--line);
-}
-.curated-trip > div {
-  min-width: 0;
-  display: grid;
-  gap: 6px;
-  padding: 17px;
-  border-right: 1px solid var(--line);
-  border-bottom: 1px solid var(--line);
-}
-.curated-trip > div:last-child {
-  grid-column: 1 / -1;
-}
-.curated-trip span,
 .mode-label {
   color: var(--accent);
   font-size: 11px;
@@ -747,7 +681,6 @@ dd {
   letter-spacing: 0.1em;
   text-transform: uppercase;
 }
-.curated-trip strong,
 .setup-outcome p,
 .setup-outcome li,
 .mode-card p {
@@ -1172,16 +1105,23 @@ dd {
   color: var(--muted);
   font-size: 12px;
 }
+/* One column that can never exceed the viewport: every results panel is a grid
+   item, and a grid item's automatic minimum size would otherwise let its widest
+   child (a table, a 12-hour chart row) push the whole page sideways. */
 .trip-results {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 24px;
 }
 .results-primary,
 .results-routes {
+  min-width: 0;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 16px;
 }
 .series-panel {
+  min-width: 0;
   padding: clamp(20px, 4vw, 30px);
   border: 1px solid var(--line);
   background: var(--panel);
@@ -1190,7 +1130,9 @@ dd {
   margin-top: 0;
 }
 .hourly-chart-panel {
+  min-width: 0;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 14px;
   padding: clamp(18px, 3vw, 26px);
   border: 1px solid var(--line);
@@ -1205,25 +1147,34 @@ dd {
   color: var(--muted);
   font-size: 13px;
 }
+/* The row scrolls like .series-table-wrap rather than widening the page, and a
+   column is width-capped so a one-hour series is a single bar, not a slab. */
 .hourly-chart {
   display: flex;
+  justify-content: flex-start;
   gap: 6px;
   align-items: stretch;
+  width: 100%;
   overflow-x: auto;
   margin: 0;
-  padding: 0;
+  padding: 0 0 2px;
   list-style: none;
 }
 .hourly-chart > li {
-  flex: 1 1 44px;
-  min-width: 44px;
+  flex: 1 1 56px;
+  min-width: 52px;
+  max-width: 72px;
   display: flex;
 }
 .hour-column {
   flex: 1;
+  min-width: 0;
   display: grid;
   gap: 5px;
-  grid-template-rows: 120px auto auto auto;
+  /* The bar row is fixed so every column shares one baseline, and the flag row
+     is fixed so an unflagged column stays the same height as a flagged one. */
+  grid-template-rows: 120px auto auto 19px;
+  align-content: end;
   justify-items: center;
   padding: 7px 3px;
   border: 1px solid var(--line);
@@ -1241,11 +1192,21 @@ dd {
   background: var(--accent-soft);
 }
 .hour-column.recommended {
+  border-color: #287158;
   box-shadow: inset 0 -4px 0 #287158;
+}
+/* The recommended hour starts out selected, so the warm "selected" tint would
+   fight its own green Best marker and read as a warning. Keep that pairing
+   green; a non-recommended override still gets the warm accent. */
+.hour-column.recommended[aria-pressed="true"],
+.hour-column.recommended.selected {
+  border-color: #287158;
+  background: #e7f0ea;
 }
 .hour-bar {
   width: 100%;
   height: 100%;
+  min-height: 0;
 }
 .hour-bar rect {
   fill: #6f8d84;
@@ -1265,12 +1226,21 @@ dd {
 .hour-value {
   font-size: 12px;
   font-weight: 750;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 .hour-label {
-  color: var(--muted);
-  font-size: 11px;
+  padding-top: 2px;
+  border-top: 1px solid var(--line);
+  align-self: stretch;
+  color: var(--ink);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  white-space: nowrap;
 }
 .hour-flag {
+  align-self: center;
   padding: 2px 6px;
   background: #287158;
   color: #fff;
@@ -1278,6 +1248,11 @@ dd {
   font-weight: 800;
   letter-spacing: 0.06em;
   text-transform: uppercase;
+  white-space: nowrap;
+}
+/* The hour actually being shown, when it is not the recommended one. */
+.hour-flag.shown {
+  background: var(--accent);
 }
 .chart-legend {
   display: flex;
@@ -1536,12 +1511,8 @@ dd {
     padding-bottom: 54px;
   }
   .setup-layout,
-  .setup-fields,
-  .curated-trip {
+  .setup-fields {
     grid-template-columns: minmax(0, 1fr);
-  }
-  .curated-trip > div:last-child {
-    grid-column: auto;
   }
   .setup-card,
   .mode-card,
@@ -1561,10 +1532,12 @@ dd {
     grid-template-columns: minmax(0, 1fr);
   }
   .hourly-chart > li {
-    flex: 0 0 46px;
+    flex: 1 1 50px;
+    min-width: 48px;
+    max-width: 64px;
   }
   .hour-column {
-    grid-template-rows: 96px auto auto auto;
+    grid-template-rows: 96px auto auto 19px;
   }
   .hour-override button,
   .setup-card > button,

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { isCanonicalTrip } from "../../app/AppState";
 import { dataClient } from "../../services/dataClient";
 import type {
   ExecutionMode,
@@ -56,9 +57,11 @@ export function resetTripAnalysisCache() {
 /**
  * Derive the wire request from the traveler's setup.
  *
- * A curated setup already holds the canonical Menger/Alamo endpoints and names,
- * so no field needs a per-mode branch here; `_validate_trip_mode` on the server
- * compares those exact values.
+ * `mode` is derived, not chosen: the traveler sees one "Explore trip" flow, while
+ * the server still validates `curated` against the exact canonical endpoints and
+ * fixture replay only matches that scenario. So an untouched Menger/Alamo setup
+ * must still go out as `curated` — otherwise every fixture run, including CI and
+ * the public demonstration, would come back unavailable.
  */
 export function buildTripRequest(
   setup: TripSetup,
@@ -69,7 +72,7 @@ export function buildTripRequest(
   }
 ): TripAnalysisRequest {
   return {
-    mode: setup.tripMode,
+    mode: isCanonicalTrip(setup) ? "curated" : "exploratory",
     origin_latitude: setup.origin.latitude,
     origin_longitude: setup.origin.longitude,
     destination_latitude: setup.destination.latitude,

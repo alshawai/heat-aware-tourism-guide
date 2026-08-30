@@ -38,8 +38,43 @@ export const CANONICAL_DESTINATION: LocationSelection = {
   longitude: -98.485833,
 };
 
+/** The tolerance `_validate_trip_mode` in `app/api.py` applies to a curated trip. */
+const CANONICAL_TOLERANCE = 1e-5;
+
+function samePlace(a: LocationSelection, b: LocationSelection) {
+  return (
+    Math.abs(a.latitude - b.latitude) <= CANONICAL_TOLERANCE &&
+    Math.abs(a.longitude - b.longitude) <= CANONICAL_TOLERANCE
+  );
+}
+
+/**
+ * Whether a setup is still the validated Menger Hotel to The Alamo journey.
+ *
+ * One "Explore trip" flow lets the traveler move either pin, but the wire
+ * contract still carries `mode`, and fixture replay only holds the curated
+ * scenario. So the request's mode is derived from the endpoints rather than from
+ * a screen the traveler no longer sees.
+ *
+ * `id` cannot decide this: a searched place carries a provider id and a map click
+ * carries a coordinate id, so a traveler could land on the canonical point with a
+ * different id. The check therefore mirrors `_validate_trip_mode` exactly — the
+ * same coordinate tolerance, plus the destination name and context the request
+ * sends as `landmark_name` and `district_name` — because anything the server
+ * would reject as non-canonical must not be labelled curated here.
+ */
+export function isCanonicalTrip(
+  setup: Pick<TripSetup, "origin" | "destination">
+): boolean {
+  return (
+    samePlace(setup.origin, CANONICAL_ORIGIN) &&
+    samePlace(setup.destination, CANONICAL_DESTINATION) &&
+    setup.destination.name === CANONICAL_DESTINATION.name &&
+    setup.destination.context === CANONICAL_DESTINATION.context
+  );
+}
+
 const DEFAULT_TRIP_SETUP: TripSetup = {
-  tripMode: "curated",
   origin: CANONICAL_ORIGIN,
   destination: CANONICAL_DESTINATION,
   date: "2026-08-23",

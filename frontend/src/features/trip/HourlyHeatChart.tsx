@@ -91,7 +91,8 @@ export function HourlyHeatChart({
       <header>
         <h3>Hourly heat</h3>
         <p>
-          {metricName} for each hour in the analyzed window.
+          {metricName} in {result.hourly[0].metric.unit} for each hour in the
+          analyzed window.
           {interactive
             ? " Choose another hour to re-analyze the walk for that hour."
             : " Hour selection is unavailable on the public demonstration."}
@@ -116,7 +117,14 @@ export function HourlyHeatChart({
                 {entry.metric.value.toFixed(1)}
               </span>
               <span className="hour-label">{formatClockHour(entry.hour)}</span>
-              {recommended && <span className="hour-flag">Best</span>}
+              {/* One flag row per column: the recommended hour is labelled
+                  "Best", and an overridden hour says which one is on screen, so
+                  a two- or three-hour series still shows what was chosen. */}
+              {recommended ? (
+                <span className="hour-flag">Best</span>
+              ) : selected ? (
+                <span className="hour-flag shown">Shown</span>
+              ) : null}
             </>
           );
           const className = `hour-column ${level}${selected ? " selected" : ""}${

@@ -38,12 +38,18 @@ test("walks the whole trip flow from the welcome screen on fixtures", async ({
   ).toBeVisible();
   await page.getByRole("link", { name: /Plan a walk/ }).click();
 
-  await expect(page.getByRole("heading", { name: "Trip Setup" })).toBeVisible();
-  await expect(page.getByText("Fixture replay", { exact: true })).toBeVisible();
   await expect(
-    page
-      .getByLabel("Curated trip places")
-      .getByText("The Alamo", { exact: true })
+    page.getByRole("heading", { name: "Explore trip" })
+  ).toBeVisible();
+  await expect(page.getByText("Fixture replay", { exact: true })).toBeVisible();
+  // One flow now: the canonical walk is only the prefill, so the endpoint
+  // picker that can move either pin is always on the setup screen. The wire
+  // mode below still says `curated` because the endpoints are untouched.
+  await expect(
+    page.getByRole("button", { name: "Origin: Menger Hotel" })
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Destination: The Alamo" })
   ).toBeVisible();
   await expect(page.getByText("08:00 to 19:00")).toBeVisible();
 

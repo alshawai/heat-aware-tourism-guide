@@ -16,6 +16,8 @@ import {
 } from "../../app/AppState";
 import type {
   ExecutionMode,
+  RouteComparisonResult,
+  RouteDecisionState,
   TripAnalysisResponse,
   TripSetup,
 } from "../../types";
@@ -75,7 +77,6 @@ function effectiveSetup(setup: TripSetup, health: HealthState): TripSetup {
   if (!isPublicFixture(health)) return setup;
   return {
     ...setup,
-    tripMode: "curated",
     origin: CANONICAL_ORIGIN,
     destination: CANONICAL_DESTINATION,
     date: PUBLIC_FIXTURE_DATE,
@@ -178,19 +179,6 @@ export function TripSetupScreen() {
     reset();
   }
 
-  function chooseTripMode(tripMode: TripSetup["tripMode"]) {
-    setEndpointError("");
-    edit(
-      tripMode === "curated"
-        ? {
-            tripMode,
-            origin: CANONICAL_ORIGIN,
-            destination: CANONICAL_DESTINATION,
-          }
-        : { tripMode }
-    );
-  }
-
   async function submit(event?: FormEvent) {
     event?.preventDefault();
     const invalidDate = !isValidDate(effective.date);
@@ -199,8 +187,8 @@ export function TripSetupScreen() {
       effective.endHour
     );
     const invalidOrder = effective.startHour >= effective.endHour;
+    // Either pin can be moved in this one flow, so the guard is unconditional.
     const sameEndpoints =
-      effective.tripMode === "exploratory" &&
       effective.origin.latitude === effective.destination.latitude &&
       effective.origin.longitude === effective.destination.longitude;
 
@@ -238,11 +226,11 @@ export function TripSetupScreen() {
   return (
     <section className="screen trip-setup">
       <header className="trip-setup-heading">
-        <span className="step-label">Step 1 of 2 · Trip setup</span>
-        <h1>Trip Setup</h1>
+        <span className="step-label">Step 1 of 2 · Explore trip</span>
+        <h1>Explore trip</h1>
         <p>
           {publicFixture
-            ? "Explore the fixed demonstration date and time window for the curated San Antonio walk."
+            ? "Explore the fixed demonstration date and time window for the San Antonio walk from the Menger Hotel to The Alamo."
             : "Choose where you are walking from and to, then the date and hours you are considering."}
         </p>
       </header>
@@ -254,60 +242,20 @@ export function TripSetupScreen() {
           aria-busy={busy}
           noValidate
         >
-          {!publicFixture && (
-            <div
-              className="setup-mode-toggle"
-              role="group"
-              aria-label="Trip mode"
-            >
-              <button
-                type="button"
-                className={effective.tripMode === "curated" ? "active" : ""}
-                onClick={() => chooseTripMode("curated")}
-                disabled={busy}
-              >
-                Curated trip
-              </button>
-              <button
-                type="button"
-                className={effective.tripMode === "exploratory" ? "active" : ""}
-                onClick={() => chooseTripMode("exploratory")}
-                disabled={busy}
-              >
-                Explore another trip
-              </button>
-            </div>
-          )}
-
-          {effective.tripMode === "curated" ? (
-            <div className="curated-trip" aria-label="Curated trip places">
-              <div>
-                <span>Origin</span>
-                <strong>Menger Hotel</strong>
-              </div>
-              <div>
-                <span>Destination</span>
-                <strong>The Alamo</strong>
-              </div>
-              <div>
-                <span>Area</span>
-                <strong>Downtown San Antonio / Alamo Plaza</strong>
-              </div>
-            </div>
-          ) : (
-            <EndpointPicker
-              origin={effective.origin}
-              destination={effective.destination}
-              disabled={busy}
-              error={endpointError}
-              onChange={(role, point) => {
-                setEndpointError("");
-                edit(
-                  role === "origin" ? { origin: point } : { destination: point }
-                );
-              }}
-            />
-          )}
+          {/* One flow, one picker: the Menger Hotel and The Alamo are only the
+              prefilled defaults, so both pins are always movable. */}
+          <EndpointPicker
+            origin={effective.origin}
+            destination={effective.destination}
+            disabled={busy || publicFixture}
+            error={endpointError}
+            onChange={(role, point) => {
+              setEndpointError("");
+              edit(
+                role === "origin" ? { origin: point } : { destination: point }
+              );
+            }}
+          />
 
           <div className="setup-fields">
             <div className="field">
@@ -524,6 +472,85 @@ type HourRefusal = {
   action: string | null;
 };
 
+/** The decision states that leave every returned route unranked. */
+const UNRANKED_DECISION_STATES: RouteDecisionState[] = [
+  "shade_required",
+  "insufficient_shade_comparison_required",
+  "heat_unavailable",
+];
+
+/**
+ * Why no route was recommended, in the traveler's terms.
+ *
+ * The backend's `decision_state` is an internal token and its degraded reason is
+ * an engineering fragment, so neither is shown. The two shade failures are
+ * genuinely different and must not be merged: the building data can fail to
+ * arrive at all, or it can arrive complete while too few buildings publish a
+ * height to model shade from. Only the first is worth retrying, and the
+ * discriminator is the building provenance the server already sends —
+ * `response_status: "unavailable"` is set exactly where the Overpass fetch
+ * failed, alongside the reason as `note`.
+ */
+function UnrankedRoutesNotice({ routes }: { routes: RouteComparisonResult }) {
+  const state = routes.decision_state;
+  if (!state || !UNRANKED_DECISION_STATES.includes(state)) return null;
+
+  const buildings = routes.building_provenance;
+  const buildingsMissing = buildings?.response_status === "unavailable";
+  const heading = "Routes are listed, but not ranked";
+
+  return (
+    <section className="route-unranked-notice" role="note">
+      <AlertTriangle size={20} />
+      <div>
+        <h2>{heading}</h2>
+        {state === "heat_unavailable" ? (
+          <p>
+            Heat could not be measured along this corridor, so no route is
+            recommended. Every returned route is still listed below, in the
+            order the routing service returned them.
+          </p>
+        ) : buildingsMissing ? (
+          <>
+            <p>
+              We could not reach the building data for this corridor, so no
+              shade could be modeled and no route is recommended. Every returned
+              route is still listed below, in the order the routing service
+              returned them.
+            </p>
+            <p>Re-running the analysis may reach the building data.</p>
+            {buildings?.note && (
+              <p className="notice-detail">{buildings.note}</p>
+            )}
+          </>
+        ) : (
+          <>
+            <p>
+              The buildings along this corridor do not publish enough height
+              data to compare shade, so no route is recommended. Every returned
+              route is still listed below, in the order the routing service
+              returned them.
+            </p>
+            <p>
+              Re-running the analysis will not change this: the heights are
+              missing from the map data itself, not from this request.
+            </p>
+          </>
+        )}
+      </div>
+    </section>
+  );
+}
+
+/** The reason the unranked notice already states, so it is not repeated raw. */
+function bannerReasons(analysis: TripAnalysisResponse): [string, string][] {
+  const state = analysis.routes?.decision_state;
+  const explained = Boolean(state && UNRANKED_DECISION_STATES.includes(state));
+  return Object.entries(analysis.degraded_reasons ?? {}).filter(
+    ([section]) => !(explained && section === "routes")
+  );
+}
+
 /**
  * Screen three: the whole answer on one screen.
  *
@@ -604,10 +631,8 @@ export function TripResultsScreen() {
             : "Your walk"}
         </h1>
         <p>
-          {baseline.mode === "curated"
-            ? "Menger Hotel to The Alamo"
-            : `${tripSetup.origin.name} to ${tripSetup.destination.name}`}{" "}
-          on {tripSetup.date}.
+          {tripSetup.origin.name} to {tripSetup.destination.name} on{" "}
+          {tripSetup.date}.
         </p>
         <Link className="text-link" to="/trip/setup">
           Edit setup
@@ -626,11 +651,9 @@ export function TripResultsScreen() {
             <>
               <h2>Trip analysis ready with limitations</h2>
               <ul>
-                {Object.values(analysis.degraded_reasons ?? {}).map(
-                  (reason) => (
-                    <li key={reason}>{reason}</li>
-                  )
-                )}
+                {bannerReasons(analysis).map(([section, reason]) => (
+                  <li key={section}>{reason}</li>
+                ))}
               </ul>
             </>
           )}
@@ -760,6 +783,7 @@ export function TripResultsScreen() {
 
       {routes && (
         <div className="results-routes">
+          <UnrankedRoutesNotice routes={routes} />
           <RouteMap
             routes={routes}
             selectedId={selectedId}

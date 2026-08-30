@@ -332,9 +332,10 @@ export type HeatBand =
  *
  * One setup drives the single billable analysis; the request builder derives
  * every wire field from it, so nothing about the trip lives outside this shape.
+ * There is no mode here: the request's `mode` is derived from the endpoints by
+ * `isCanonicalTrip`, so the traveler never picks one.
  */
 export type TripSetup = {
-  tripMode: "curated" | "exploratory";
   origin: LocationSelection;
   destination: LocationSelection;
   date: string;
