@@ -1,5 +1,6 @@
 {
   "source": "synthesized",
+  "provider": "heat-aware-tourism-guide",
   "endpoint": "https://overpass-api.de/api/interpreter",
   "request_configuration": {
     "aoi": {
@@ -24,5 +25,6 @@
   "schema_version": "building-v1",
   "provider_config_version": "overpass-building-config-v1",
   "activity_id": null,
+  "derived_from": [],
   "transformations": []
 }

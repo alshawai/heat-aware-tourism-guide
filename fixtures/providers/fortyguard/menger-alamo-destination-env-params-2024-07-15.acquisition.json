@@ -1,0 +1,47 @@
+{
+  "source": "provider",
+  "provider": "fortyguard",
+  "endpoint": "/v1/env_params",
+  "request_configuration": {
+    "latitude": 29.425833,
+    "longitude": -98.485833,
+    "start_date": "2024-07-15",
+    "temperature_anchor_celsius": 34.0147,
+    "hour": null,
+    "start_hour": 8,
+    "end_hour": 20,
+    "anchor_derivation": "max_normalized_tcm_in_requested_range",
+    "anchor_celsius": 34.0147,
+    "anchor_source_activity_id": "eeaceeb0-d7c6-4cd3-b922-7054e1f26c07",
+    "anchor_source_fixture": "menger-alamo-destination-tcm-2024-07-15.json",
+    "observed_timezone": "GMT-7",
+    "expected_timezone": "America/Chicago",
+    "temporal_evidence": "inconsistent",
+    "caveat_code": "provider_timezone_mismatch",
+    "provider_date_and_hours_validated": true,
+    "recovered_at": "2026-08-30T15:06:38.212582+00:00"
+  },
+  "retrieved_at": "2026-08-30T14:56:41.018766+00:00",
+  "data_date": "2024-07-15",
+  "status": "ok",
+  "schema_version": "v1",
+  "provider_config_version": "fortyguard-config-v1",
+  "activity_id": "f579d84c-9c17-41d5-b42f-84f0e261e344",
+  "derived_from": [
+    {
+      "fixture": "fixtures/providers/fortyguard/menger-alamo-destination-tcm-2024-07-15.json",
+      "role": "temperature_anchor_tcm",
+      "sha256": "98293540939b8dd1ca4c268c0e2fc9afc124b61494e20cc38564f5a06fb50c61"
+    }
+  ],
+  "transformations": [
+    {
+      "name": "live_envelope_unwrapped",
+      "version": 1
+    },
+    {
+      "name": "max_normalized_tcm_in_requested_range",
+      "version": 1
+    }
+  ]
+}

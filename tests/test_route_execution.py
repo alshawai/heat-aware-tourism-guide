@@ -28,7 +28,7 @@ def _request(**overrides: object) -> RouteRequest:
         "request_version": "osrm-route-v1",
     }
     values.update(overrides)
-    return RouteRequest(**values)  # type: ignore[arg-type]
+    return RouteRequest(**values)
 
 
 def _payload() -> dict[str, object]:
@@ -54,6 +54,7 @@ def _fixture(tmp_path: Path, request: RouteRequest) -> Path:
         path,
         AcquisitionRecord(
             source="provider",
+            provider="fossgis-osrm",
             endpoint="https://routing.example/route/v1",
             request_configuration=route_request_payload(request),
             retrieved_at=datetime(2026, 8, 23, tzinfo=timezone.utc),
@@ -62,6 +63,7 @@ def _fixture(tmp_path: Path, request: RouteRequest) -> Path:
             schema_version="v1",
             provider_config_version="osrm-config-v1",
             activity_id=None,
+            derived_from=(),
         ),
     )
     return path

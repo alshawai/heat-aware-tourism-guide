@@ -20,6 +20,14 @@ function isResultSection(value: unknown) {
   return value === null || isObject(value);
 }
 
+function hasExactKeys(value: Record<string, unknown>, expected: string[]) {
+  const actual = Object.keys(value);
+  return (
+    actual.length === expected.length &&
+    actual.every((key) => expected.includes(key))
+  );
+}
+
 function isNullableFiniteNumber(value: unknown) {
   return (
     value === null || (typeof value === "number" && Number.isFinite(value))
@@ -86,7 +94,11 @@ function validUnavailable(value: unknown) {
     isObject(value) &&
     typeof value.reason === "string" &&
     value.reason.length > 0 &&
-    typeof value.recoverable === "boolean"
+    typeof value.recoverable === "boolean" &&
+    (value.code === undefined || typeof value.code === "string") &&
+    (value.action === undefined ||
+      value.action === null ||
+      typeof value.action === "string")
   );
 }
 
@@ -190,6 +202,146 @@ function isUnitFraction(value: unknown) {
     Number.isFinite(value) &&
     value >= 0 &&
     value <= 1
+  );
+}
+
+function validApiProvenance(value: unknown) {
+  return (
+    isObject(value) &&
+    typeof value.source === "string" &&
+    typeof value.data_date === "string" &&
+    ["sufficient", "insufficient"].includes(String(value.confidence)) &&
+    typeof value.retrieved_at === "string" &&
+    !Number.isNaN(Date.parse(value.retrieved_at)) &&
+    typeof value.transformation_version === "string" &&
+    typeof value.provider === "string" &&
+    typeof value.response_status === "string" &&
+    isObject(value.request_configuration) &&
+    typeof value.fresh === "boolean" &&
+    (value.coverage === null || isUnitFraction(value.coverage)) &&
+    (value.note === null || typeof value.note === "string") &&
+    (value.activity_id === null || typeof value.activity_id === "string")
+  );
+}
+
+const hotelComponents = ["night", "hot_hours", "persistence", "day"];
+
+function validHotels(value: unknown) {
+  if (value === null) return true;
+  if (
+    !isObject(value) ||
+    !Array.isArray(value.ranked) ||
+    !isNonNegativeInteger(value.usable_count) ||
+    value.usable_count !== value.ranked.length ||
+    !isNonNegativeInteger(value.discovered_count) ||
+    !validApiProvenance(value.provenance) ||
+    !isObject(value.weights) ||
+    !isObject(value.component_units) ||
+    !isObject(value.enrichment) ||
+    !hasExactKeys(value, [
+      "ranked",
+      "weights",
+      "usable_count",
+      "discovered_count",
+      "provenance",
+      "enrichment",
+      "component_units",
+      "component_temporal_metadata",
+    ]) ||
+    !hasExactKeys(value.weights, hotelComponents) ||
+    !hasExactKeys(value.component_units, hotelComponents) ||
+    !hasExactKeys(value.enrichment, ["state", "code", "reason"])
+  ) {
+    return false;
+  }
+  const weights = value.weights as Record<string, unknown>;
+  const componentUnits = value.component_units as Record<string, unknown>;
+  const discoveredCount = value.discovered_count as number;
+  if (
+    !hotelComponents.every(
+      (component) =>
+        typeof weights[component] === "number" &&
+        Number.isFinite(weights[component]) &&
+        Number(weights[component]) >= 0
+    ) ||
+    Math.abs(
+      hotelComponents.reduce(
+        (sum, component) => sum + Number(weights[component]),
+        0
+      ) - 1
+    ) > 0.001 ||
+    componentUnits.night !== "C" ||
+    componentUnits.day !== "C" ||
+    componentUnits.hot_hours !== "hours" ||
+    componentUnits.persistence !== "hours" ||
+    discoveredCount < Number(value.usable_count)
+  ) {
+    return false;
+  }
+  const enrichment = value.enrichment;
+  const enrichmentValid =
+    enrichment.state === "unavailable"
+      ? enrichment.code === "optional_provider_failure" &&
+        typeof enrichment.reason === "string" &&
+        enrichment.reason.length > 0
+      : ["available", "not_requested"].includes(String(enrichment.state)) &&
+        enrichment.code === null &&
+        enrichment.reason === null;
+  const temporal = value.component_temporal_metadata;
+  const temporalValid =
+    temporal === null ||
+    (isObject(temporal) &&
+      ["night", "day"].every((component) => {
+        const metadata = temporal[component];
+        return (
+          isObject(metadata) &&
+          hasExactKeys(metadata, [
+            "start",
+            "end",
+            "timezone",
+            "interval",
+            "temporal_basis",
+            "provider_window_validated",
+            "caveat_code",
+          ]) &&
+          typeof metadata.start === "string" &&
+          typeof metadata.end === "string" &&
+          typeof metadata.timezone === "string" &&
+          metadata.interval === "[start,end)" &&
+          typeof metadata.temporal_basis === "string" &&
+          typeof metadata.provider_window_validated === "boolean" &&
+          typeof metadata.caveat_code === "string"
+        );
+      }));
+  return (
+    enrichmentValid &&
+    temporalValid &&
+    value.ranked.every((hotel) => {
+      if (!isObject(hotel) || !isObject(hotel.components)) return false;
+      const components = hotel.components;
+      return (
+        hasExactKeys(hotel, [
+          "identity",
+          "components",
+          "score",
+          "percentile",
+          "tie_group",
+        ]) &&
+        hasExactKeys(components, hotelComponents) &&
+        typeof hotel.identity === "string" &&
+        hotelComponents.every(
+          (component) =>
+            typeof components[component] === "number" &&
+            Number.isFinite(components[component])
+        ) &&
+        typeof hotel.score === "number" &&
+        Number.isFinite(hotel.score) &&
+        typeof hotel.percentile === "number" &&
+        hotel.percentile >= 0 &&
+        hotel.percentile <= 100 &&
+        isNonNegativeInteger(hotel.tie_group)
+      );
+    })
   );
 }
 
@@ -412,18 +564,44 @@ function isTripAnalysisResponse(
   value: unknown,
   request: TripAnalysisRequest
 ): value is TripAnalysisResponse {
+  const modern = isObject(value) && value.schema_version === "trip-contract-v2";
+  if (
+    modern &&
+    !hasExactKeys(value, [
+      "schema_version",
+      "state",
+      "best_time",
+      "hotels",
+      "routes",
+      "unavailable",
+      "degraded_reasons",
+      "request_identity",
+      "mode",
+      "execution_mode",
+    ])
+  ) {
+    return false;
+  }
   if (
     !isObject(value) ||
     value.request_identity !==
       `${request.mode}:${request.date}:${request.start_hour}-${request.end_hour}` ||
     value.mode !== request.mode ||
     value.execution_mode !== request.execution_mode ||
-    !["series_ready", "success", "degraded", "unavailable", "error"].includes(
-      String(value.state)
-    ) ||
-    !(value.environment === null || validEnvironment(value.environment)) ||
+    !(modern
+      ? ["success", "degraded", "unavailable"].includes(String(value.state))
+      : [
+          "series_ready",
+          "success",
+          "degraded",
+          "unavailable",
+          "error",
+        ].includes(String(value.state))) ||
+    !(modern
+      ? value.environment === undefined
+      : value.environment === null || validEnvironment(value.environment)) ||
     !validBestTime(value.best_time) ||
-    !isResultSection(value.hotels) ||
+    !(modern ? validHotels(value.hotels) : isResultSection(value.hotels)) ||
     !validRoutes(value.routes)
   ) {
     return false;
@@ -437,7 +615,7 @@ function isTripAnalysisResponse(
       value.degraded_reasons === null
     );
   }
-  if (value.environment !== null) return false;
+  if (!modern && value.environment !== null) return false;
   if (value.state === "success") {
     return Boolean(
       value.best_time &&
@@ -450,6 +628,9 @@ function isTripAnalysisResponse(
   if (value.state === "degraded") {
     const reasons = value.degraded_reasons;
     if (!validReasons(reasons)) return false;
+    if (modern) {
+      return hasResults && value.unavailable === null;
+    }
     const expectedReasons = [
       ...(!value.best_time ? ["best_time"] : []),
       ...(!value.hotels ? ["hotels"] : []),

@@ -1,5 +1,6 @@
 {
   "source": "synthesized",
+  "provider": "heat-aware-tourism-guide",
   "endpoint": "local:canonical-district-hotel-analysis",
   "request_configuration": {
     "district_name": "Downtown San Antonio",
@@ -19,5 +20,6 @@
   "schema_version": "hotel-heat-analysis-v1",
   "provider_config_version": "fortyguard-config-v1",
   "activity_id": null,
+  "derived_from": [],
   "transformations": []
 }

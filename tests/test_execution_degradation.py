@@ -88,6 +88,7 @@ def _write_sidecar(
 ) -> None:
     payload = {
         "source": source,
+        "provider": "fortyguard" if source == "provider" else "heat-aware-tourism-guide",
         "endpoint": endpoint,
         "request_configuration": dict(request_configuration),
         "retrieved_at": retrieved_at,
@@ -96,6 +97,7 @@ def _write_sidecar(
         "schema_version": "v1",
         "provider_config_version": "fortyguard-config-v1",
         "activity_id": activity_id,
+        "derived_from": [],
         "transformations": transformations or [],
     }
     fixture_path.with_name(f"{fixture_path.stem}.acquisition.json").write_text(

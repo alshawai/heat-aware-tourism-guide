@@ -1,0 +1,59 @@
+{
+  "activity_id": null,
+  "data_date": "2024-07-15",
+  "derived_from": [],
+  "endpoint": "local:trip-product-snapshot",
+  "provider": "heat-aware-tourism-guide",
+  "provider_config_version": "trip-product-config-v1",
+  "request_configuration": {
+    "building_aoi": null,
+    "cautious": false,
+    "date": "2024-07-15",
+    "destination": {
+      "application_id": "tower-of-the-americas",
+      "authority": "OpenStreetMap/Nominatim selected object",
+      "coordinate_meaning": "Nominatim centroid of tower footprint",
+      "latitude": 29.4190825,
+      "longitude": -98.4835734,
+      "name": "Tower of the Americas",
+      "osm_identity": "way/78485919"
+    },
+    "district_name": "Downtown San Antonio",
+    "end_hour": 17,
+    "generator_metadata": {
+      "orchestration_stopped_before": ["environment", "hotels", "routing"],
+      "provider_observations": [],
+      "synthesized_sections": ["core_provider_failure"]
+    },
+    "generator_version": "trip-product-snapshot-v1",
+    "hotel_aoi": {
+      "east": -98.482,
+      "north": 29.429,
+      "south": 29.421,
+      "west": -98.49
+    },
+    "landmark_name": "Tower of the Americas",
+    "mode": "exploratory",
+    "origin": {
+      "application_id": "briscoe-western-art-museum",
+      "authority": "OpenStreetMap/Nominatim selected object",
+      "coordinate_meaning": "Nominatim centroid of museum footprint",
+      "latitude": 29.4228983,
+      "longitude": -98.4888465,
+      "name": "Briscoe Western Art Museum",
+      "osm_identity": "way/337650172"
+    },
+    "route_heat_aoi": null,
+    "start_hour": 10
+  },
+  "retrieved_at": null,
+  "schema_version": "trip-contract-v2",
+  "source": "synthesized",
+  "status": "unavailable",
+  "transformations": [
+    {
+      "name": "trip-product-snapshot",
+      "version": 1
+    }
+  ]
+}

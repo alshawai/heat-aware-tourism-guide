@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 from time import sleep as default_sleep
-from typing import Callable, Mapping
+from typing import Callable, Mapping, cast
 
 from app.domain.ledger import CreditLedger, UsageRecord
 from app.domain.security import sanitize_payload
@@ -23,6 +23,16 @@ class ActivityMetadata:
     submitted_at: datetime
     endpoint: str
     request_fields: tuple[str, ...]
+    status_transitions: tuple[str, ...] = ()
+    response_metadata: Mapping[str, object] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class ActivityRecoveryMetadata:
+    """Facts observed while retrieving an activity submitted earlier."""
+
+    activity_id: str
+    recovered_at: datetime
     status_transitions: tuple[str, ...] = ()
     response_metadata: Mapping[str, object] = field(default_factory=dict)
 
@@ -82,7 +92,10 @@ class FortyGuardClient:
             transitions: list[str] = []
 
             def get_status(_: str) -> Mapping[str, object]:
-                return self._transport.get(f"/v1/status/{activity_id}", self._api_key)
+                return cast(
+                    Mapping[str, object],
+                    self._transport.get(f"/v1/status/{activity_id}", self._api_key),
+                )
 
             result = poll_activity(
                 activity_id,
@@ -126,6 +139,40 @@ class FortyGuardClient:
         finally:
             if reservation is not None and self._ledger is not None:
                 self._ledger.release_call(reservation)
+
+    def poll_existing_activity(
+        self,
+        activity_id: str,
+        *,
+        sleep: Callable[[float], None] = default_sleep,
+        max_polls: int = 24,
+        interval_seconds: float = 5.0,
+        status_404_grace_checks: int = 3,
+    ) -> tuple[Mapping[str, object], ActivityRecoveryMetadata]:
+        """Retrieve an existing activity without submission or ledger mutation."""
+        if not activity_id:
+            raise ValueError("activity id is required")
+        transitions: list[str] = []
+        result = poll_activity(
+            activity_id,
+            get_status=lambda _: self._transport.get(f"/v1/status/{activity_id}", self._api_key),
+            sleep=sleep,
+            max_polls=max_polls,
+            interval_seconds=interval_seconds,
+            status_404_grace_checks=status_404_grace_checks,
+            on_transition=transitions.append,
+            on_event=self._emit,
+        )
+        metadata = ActivityRecoveryMetadata(
+            activity_id=activity_id,
+            recovered_at=self._clock(),
+            status_transitions=tuple(transitions),
+            response_metadata=_response_metadata(result),
+        )
+        self._emit(
+            "fortyguard.recovered", {"activity_id": activity_id, **metadata.response_metadata}
+        )
+        return result, metadata
 
     def _emit(self, event: str, fields: Mapping[str, object]) -> None:
         if self._event_sink is not None:

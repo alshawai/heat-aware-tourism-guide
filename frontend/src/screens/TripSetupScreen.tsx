@@ -15,6 +15,7 @@ import {
   useMapEvents,
 } from "react-leaflet";
 import { useAppState } from "../app/AppState";
+import { fixtureScenarioFor } from "../features/trips/exploratoryScenarios";
 import { dataClient } from "../services/dataClient";
 import type {
   BestTimeResult,
@@ -106,6 +107,13 @@ function BestTimeSummary({ result }: { result: BestTimeResult }) {
         :00
       </h3>
       <p>{result.recommendation_reason}</p>
+      {result.temporal_evidence === "inconsistent" && (
+        <p className="series-warning" role="note">
+          <AlertTriangle size={17} />
+          The provider timestamp is inconsistent with local time, so this is an
+          hour-only recommendation.
+        </p>
+      )}
       <p>
         {source}, {dataMode}, {freshness}. Data date:{" "}
         {result.provenance.data_date}.
@@ -234,6 +242,15 @@ function RouteComparison({ result }: { result: RouteComparisonResult }) {
           </span>
         </div>
       )}
+      {result.route_set_state === "single_route" && (
+        <div className="route-evidence-warning" role="note">
+          <AlertTriangle size={18} />
+          <span>
+            One returned route is usable, but there are no alternatives to
+            compare.
+          </span>
+        </div>
+      )}
       <p className="shade-model-notice">
         <Sun size={17} />
         Modeled OSM building shade, not measured real-world shade. Trees,
@@ -326,10 +343,16 @@ export function TripSetupScreen() {
     tripAnalysis,
     setTripAnalysis,
   } = useAppState();
-  const { date, startHour, endHour, cautious } = curatedTripSetup;
   const [tripMode, setTripMode] = useState<"curated" | "exploratory">(
     "curated"
   );
+  const [exploratoryTripSetup, setExploratoryTripSetup] =
+    useState(curatedTripSetup);
+  const tripSetup =
+    tripMode === "curated" ? curatedTripSetup : exploratoryTripSetup;
+  const setTripSetup =
+    tripMode === "curated" ? setCuratedTripSetup : setExploratoryTripSetup;
+  const { date, startHour, endHour, cautious } = tripSetup;
   const [origin, setOrigin] = useState<LocationSelection>({
     id: "menger",
     name: "Menger Hotel",
@@ -434,8 +457,7 @@ export function TripSetupScreen() {
       destination_longitude:
         tripMode === "curated" ? -98.485833 : destination.longitude,
       landmark_name: tripMode === "curated" ? "The Alamo" : destination.name,
-      district_name:
-        tripMode === "curated" ? "Downtown San Antonio" : destination.context,
+      district_name: "Downtown San Antonio",
       date,
       start_hour: startHour,
       end_hour: endHour,
@@ -473,6 +495,28 @@ export function TripSetupScreen() {
       setSearchState("error");
       setSearchResults([]);
     }
+  }
+
+  function selectEndpoint(place: LocationSelection) {
+    const nextOrigin = activeEndpoint === "origin" ? place : origin;
+    const nextDestination =
+      activeEndpoint === "destination" ? place : destination;
+    (activeEndpoint === "origin" ? setOrigin : setDestination)(place);
+    const fixtureScenario = fixtureScenarioFor(nextOrigin, nextDestination);
+    if (
+      health.status === "available" &&
+      health.mode === "fixture" &&
+      fixtureScenario
+    ) {
+      setExploratoryTripSetup({
+        ...exploratoryTripSetup,
+        date: fixtureScenario.date,
+        startHour: fixtureScenario.startHour,
+        endHour: fixtureScenario.endHour,
+      });
+    }
+    setEndpointError("");
+    clearOutcome();
   }
 
   const busy = requestState === "submitting";
@@ -543,7 +587,11 @@ export function TripSetupScreen() {
                 onChange={(event) => void searchPlaces(event.target.value)}
                 placeholder="Search a place"
                 disabled={busy}
+                aria-describedby="place-search-help"
               />
+              <span id="place-search-help" className="visually-hidden">
+                Search results set the currently active origin or destination.
+              </span>
               {searchState === "loading" && (
                 <p role="status">Searching places...</p>
               )}
@@ -557,12 +605,11 @@ export function TripSetupScreen() {
                   type="button"
                   key={place.id}
                   onClick={() => {
-                    (activeEndpoint === "origin" ? setOrigin : setDestination)(
-                      place
-                    );
+                    selectEndpoint(place);
                     setSearch("");
                     setSearchResults([]);
                   }}
+                  aria-label={`Set ${activeEndpoint} to ${place.name}`}
                 >
                   {place.name} <small>{place.context}</small>
                 </button>
@@ -573,6 +620,7 @@ export function TripSetupScreen() {
                   type="button"
                   onClick={() => setActiveEndpoint("origin")}
                   className={activeEndpoint === "origin" ? "active" : ""}
+                  aria-pressed={activeEndpoint === "origin"}
                 >
                   Origin: {origin.name}
                 </button>
@@ -580,6 +628,7 @@ export function TripSetupScreen() {
                   type="button"
                   onClick={() => setActiveEndpoint("destination")}
                   className={activeEndpoint === "destination" ? "active" : ""}
+                  aria-pressed={activeEndpoint === "destination"}
                 >
                   Destination: {destination.name}
                 </button>
@@ -599,13 +648,7 @@ export function TripSetupScreen() {
                   attribution="&copy; OpenStreetMap contributors"
                   url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                 />
-                <EndpointMap
-                  onSelect={(point) =>
-                    (activeEndpoint === "origin" ? setOrigin : setDestination)(
-                      point
-                    )
-                  }
-                />
+                <EndpointMap onSelect={selectEndpoint} />
                 <CircleMarker
                   center={[origin.latitude, origin.longitude]}
                   radius={8}
@@ -632,8 +675,8 @@ export function TripSetupScreen() {
                 aria-invalid={Boolean(dateError)}
                 aria-describedby={dateError ? "date-error" : undefined}
                 onChange={(event) => {
-                  setCuratedTripSetup({
-                    ...curatedTripSetup,
+                  setTripSetup({
+                    ...tripSetup,
                     date: event.target.value,
                   });
                   setDateError("");
@@ -656,8 +699,8 @@ export function TripSetupScreen() {
                 aria-invalid={Boolean(startError)}
                 aria-describedby={startError ? "start-hour-error" : undefined}
                 onChange={(event) => {
-                  setCuratedTripSetup({
-                    ...curatedTripSetup,
+                  setTripSetup({
+                    ...tripSetup,
                     startHour: Number(event.target.value),
                   });
                   setStartError("");
@@ -687,8 +730,8 @@ export function TripSetupScreen() {
                 aria-invalid={Boolean(endError)}
                 aria-describedby={endError ? "end-hour-error" : undefined}
                 onChange={(event) => {
-                  setCuratedTripSetup({
-                    ...curatedTripSetup,
+                  setTripSetup({
+                    ...tripSetup,
                     endHour: Number(event.target.value),
                   });
                   setStartError("");
@@ -716,8 +759,8 @@ export function TripSetupScreen() {
               checked={cautious}
               disabled={busy}
               onChange={(event) => {
-                setCuratedTripSetup({
-                  ...curatedTripSetup,
+                setTripSetup({
+                  ...tripSetup,
                   cautious: event.target.checked,
                 });
                 setRequestState("idle");
@@ -889,6 +932,12 @@ export function TripSetupScreen() {
               <>
                 <h2>Trip analysis unavailable</h2>
                 <p>{tripAnalysis.unavailable?.reason}</p>
+                {tripAnalysis.unavailable?.code === "provider_data_missing" && (
+                  <p className="action-guidance">
+                    Required provider data is missing. Retry later or edit the
+                    trip setup to choose a supported fixture scenario.
+                  </p>
+                )}
                 {tripAnalysis.unavailable?.action && (
                   <p className="action-guidance">
                     {tripAnalysis.unavailable.action === "choose_us_endpoints"
@@ -901,6 +950,17 @@ export function TripSetupScreen() {
                 )}
               </>
             )}
+            {(tripAnalysis.state === "success" ||
+              tripAnalysis.state === "degraded") &&
+              tripAnalysis.hotels?.enrichment?.state === "unavailable" && (
+                <div className="route-evidence-warning" role="note">
+                  <AlertTriangle size={18} />
+                  <span>
+                    {tripAnalysis.hotels.enrichment.reason} The base hotel
+                    ranking remains available.
+                  </span>
+                </div>
+              )}
             {(tripAnalysis.state === "success" ||
               tripAnalysis.state === "degraded") &&
               tripAnalysis.best_time && (

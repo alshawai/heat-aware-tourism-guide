@@ -9,18 +9,21 @@ sidecar. Actual credit usage lands in the caller's ledger via the client.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime, timezone
 import json
 from pathlib import Path
-from typing import Callable, Mapping
+from typing import Callable, Mapping, Protocol, cast
 
 from app.domain.provenance import AcquisitionRecord
+from app.domain.routing import RouteRequest
+from app.domain.contracts import Coordinates
 from app.domain.security import sanitize_payload
 from app.integrations.fortyguard.client import FortyGuardClient
 from app.integrations.fortyguard.contracts import (
     PROVIDER_CONFIG_VERSION,
     AnalyticType,
     EnvParamsRequest,
+    EnvParamsResult,
     HeatmapRequest,
     normalize_env_params_response,
     normalize_heatmap_response,
@@ -35,6 +38,13 @@ from app.integrations.fortyguard.live import (
 from app.services.execution import env_params_request_payload, heatmap_request_payload
 from app.services.sidecars import write_sidecar
 from app.settings import FortyGuardPollingSettings
+from app.integrations.osrm.client import normalize_response
+from app.integrations.overpass.buildings import (
+    building_request_payload,
+    osm_source_timestamp,
+)
+from app.services.route_shade import RouteShadeService, _shared_bbox
+from app.domain.route_shade import solar_position
 
 SAN_ANTONIO_LATITUDE = 29.4241
 SAN_ANTONIO_LONGITUDE = -98.4936
@@ -63,6 +73,187 @@ class EnvParamsScenario:
 class AcquisitionOutcome:
     fixture_path: Path
     record: AcquisitionRecord
+
+
+@dataclass(frozen=True)
+class OsrmScenario:
+    name: str
+    filename: str
+    request: RouteRequest
+    minimum_routes: int = 1
+    maximum_routes: int | None = None
+
+
+class _OsrmLoader(Protocol):
+    transport: object
+
+    def load(self, request: RouteRequest) -> Mapping[str, object]: ...
+
+
+class _BuildingLoader(Protocol):
+    _transport: object
+
+    def query_buildings(self, aoi: object) -> dict[str, object]: ...
+
+
+OSRM_SCENARIOS: dict[str, OsrmScenario] = {
+    "canonical-menger-alamo": OsrmScenario(
+        "canonical-menger-alamo",
+        "menger-alamo.json",
+        RouteRequest(
+            Coordinates(29.4245914, -98.4864288),
+            Coordinates(29.425833, -98.485833),
+            "foot",
+            True,
+            "full",
+            "geojson",
+            False,
+            "fossgis-routed-foot",
+            "v1",
+        ),
+    ),
+    "main-plaza-market-square": OsrmScenario(
+        "main-plaza-market-square",
+        "main-plaza-market-square.json",
+        RouteRequest(
+            Coordinates(29.4245773, -98.4935063),
+            Coordinates(29.4254009, -98.4994785),
+            "foot",
+            True,
+            "full",
+            "geojson",
+            False,
+            "fossgis-routed-foot",
+            "v1",
+        ),
+        maximum_routes=1,
+    ),
+    "cathedral-governors-palace": OsrmScenario(
+        "cathedral-governors-palace",
+        "cathedral-governors-palace.json",
+        RouteRequest(
+            Coordinates(29.4245590, -98.4942042),
+            Coordinates(29.4248225, -98.4959872),
+            "foot",
+            True,
+            "full",
+            "geojson",
+            False,
+            "fossgis-routed-foot",
+            "v1",
+        ),
+        minimum_routes=2,
+    ),
+}
+
+
+def osrm_request_payload(request: RouteRequest) -> dict[str, object]:
+    """Keep the acquisition identity identical to production route caching."""
+    from app.services.routing import route_request_payload
+
+    return cast(dict[str, object], route_request_payload(request))
+
+
+def acquire_osrm_fixture(
+    scenario: OsrmScenario,
+    client: _OsrmLoader,
+    *,
+    out_dir: Path,
+    clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
+) -> AcquisitionOutcome:
+    """Acquire, normalize, validate cardinality, then atomically write one OSRM payload."""
+    payload = client.load(scenario.request)
+    routes = normalize_response(payload, provider_instance=scenario.request.provider_instance)
+    count = len(routes.routes)
+    if count < scenario.minimum_routes or (
+        scenario.maximum_routes is not None and count > scenario.maximum_routes
+    ):
+        raise ValueError(f"{scenario.name} returned {count} routes; fixture was not written")
+    retrieved_at = clock().astimezone(timezone.utc)
+    record = AcquisitionRecord(
+        source="provider",
+        provider="fossgis-osrm",
+        endpoint=cast(str, getattr(client.transport, "base_url")),
+        request_configuration=osrm_request_payload(scenario.request),
+        retrieved_at=retrieved_at,
+        data_date=retrieved_at.date().isoformat(),
+        status="ok",
+        schema_version="v1",
+        provider_config_version="osrm-config-v1",
+        activity_id=None,
+        derived_from=(),
+        transformations=(),
+    )
+    fixture_path = _write_provider_fixture(out_dir, scenario.filename, payload)
+    write_sidecar(fixture_path, record)
+    return AcquisitionOutcome(fixture_path, record)
+
+
+def acquire_overpass_building_fixture(
+    routes: object,
+    client: _BuildingLoader,
+    *,
+    out_dir: Path,
+    filename: str = "cathedral-governors-palace-buildings.json",
+    clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
+) -> AcquisitionOutcome:
+    """Acquire Cathedral's shared production AOI and validate height coverage."""
+    from app.domain.routing import RouteSet
+
+    route_set = cast(RouteSet, routes)
+    aoi = _shared_bbox(route_set, 250.0)
+    payload = client.query_buildings(aoi)
+    source_timestamp = osm_source_timestamp(payload)
+    execution = type(
+        "Execution",
+        (),
+        {
+            "identity": lambda self, candidate: building_request_payload(
+                candidate, search_distance_m=250.0, model_version="route-shade-v1"
+            ),
+            "run": lambda self, candidate: type(
+                "Outcome",
+                (),
+                {
+                    "payload": payload,
+                    "source": "provider",
+                    "stale": False,
+                    "retrieved_at": clock(),
+                    "data_date": source_timestamp.date().isoformat(),
+                },
+            )(),
+        },
+    )()
+    service = RouteShadeService(
+        execution, corridor_buffer_m=250.0, minimum_building_coverage=0.70, metres_per_level=3.0
+    )
+    centroid = route_set.routes[0].geometry.coordinates[
+        len(route_set.routes[0].geometry.coordinates) // 2
+    ]
+    solar = solar_position(clock(), centroid[1], centroid[0])
+    outcome = service.load(route_set, solar, clock())
+    coverages = [e.building_coverage for e in outcome.evidence.values()]
+    if any(coverage >= 0.70 for coverage in coverages):
+        raise ValueError(f"building coverage gate failed: {coverages}")
+    record = AcquisitionRecord(
+        source="provider",
+        provider="overpass-api-de",
+        endpoint=cast(str, getattr(client._transport, "endpoint")),
+        request_configuration=building_request_payload(
+            aoi, search_distance_m=250.0, model_version="route-shade-v1"
+        ),
+        retrieved_at=clock().astimezone(timezone.utc),
+        data_date=source_timestamp.date().isoformat(),
+        status="ok",
+        schema_version="building-v1",
+        provider_config_version="overpass-building-config-v1",
+        activity_id=None,
+        derived_from=(),
+        transformations=(),
+    )
+    fixture_path = _write_provider_fixture(out_dir, filename, payload)
+    write_sidecar(fixture_path, record)
+    return AcquisitionOutcome(fixture_path, record)
 
 
 HEATMAP_SCENARIOS: dict[str, HeatmapScenario] = {
@@ -128,6 +319,7 @@ def acquire_heatmap_fixture(
     polling: FortyGuardPollingSettings | None = None,
 ) -> AcquisitionOutcome:
     """Run one documented heatmap request and commit the raw fixture + sidecar."""
+    _preflight_fixture_paths(out_dir, scenario.filename)
     request = scenario.build_request()
     payload = build_documented_heatmap_payload(request)
     bounds = polling or FortyGuardPollingSettings()
@@ -147,6 +339,7 @@ def acquire_heatmap_fixture(
     )
     record = AcquisitionRecord(
         source="provider",
+        provider="fortyguard",
         endpoint="/v1/heatmap",
         request_configuration=heatmap_request_payload(request),
         retrieved_at=metadata.submitted_at,
@@ -155,6 +348,7 @@ def acquire_heatmap_fixture(
         schema_version=schema_version,
         provider_config_version=provider_config_version,
         activity_id=metadata.activity_id,
+        derived_from=(),
         transformations=request_transformations(request),
     )
     fixture_path = _write_fixture(out_dir, scenario.filename, result)
@@ -170,8 +364,10 @@ def acquire_env_params_fixture(
     provider_config_version: str = PROVIDER_CONFIG_VERSION,
     schema_version: str = "v1",
     polling: FortyGuardPollingSettings | None = None,
+    validate: Callable[[EnvParamsResult], None] | None = None,
 ) -> AcquisitionOutcome:
     """Run one documented env-params request and commit the raw fixture + sidecar."""
+    _preflight_fixture_paths(out_dir, scenario.filename)
     request = scenario.build_request()
     payload = build_documented_env_params_payload(request)
     bounds = polling or FortyGuardPollingSettings()
@@ -183,9 +379,12 @@ def acquire_env_params_fixture(
         status_404_grace_checks=bounds.status_404_grace_checks,
     )
     normalized = normalize_env_params_response(result, request=request)
+    if validate is not None:
+        validate(normalized)
     data_date = normalized.entries[0].valid_time.date().isoformat()
     record = AcquisitionRecord(
         source="provider",
+        provider="fortyguard",
         endpoint="/v1/env_params",
         request_configuration=env_params_request_payload(request),
         retrieved_at=metadata.submitted_at,
@@ -194,6 +393,7 @@ def acquire_env_params_fixture(
         schema_version=schema_version,
         provider_config_version=provider_config_version,
         activity_id=metadata.activity_id,
+        derived_from=(),
         transformations=env_params_transformations(),
     )
     fixture_path = _write_fixture(out_dir, scenario.filename, result)
@@ -209,4 +409,26 @@ def _write_fixture(out_dir: Path, filename: str, result: Mapping[str, object]) -
     out_dir.mkdir(parents=True, exist_ok=True)
     fixture_path = out_dir / filename
     fixture_path.write_text(json.dumps(sanitized, indent=2) + "\n", encoding="utf-8")
+    return fixture_path
+
+
+def _preflight_fixture_paths(out_dir: Path, filename: str) -> None:
+    """Reject either member of an existing fixture pair before provider spend."""
+    fixture_path = out_dir / filename
+    sidecar = fixture_path.with_name(f"{fixture_path.stem}.acquisition.json")
+    if fixture_path.exists() or sidecar.exists():
+        raise FileExistsError(f"refusing to overwrite existing fixture {fixture_path}")
+
+
+def _write_provider_fixture(out_dir: Path, filename: str, result: Mapping[str, object]) -> Path:
+    """Write public acquisitions without ever replacing an existing observation."""
+    payload = sanitize_payload(dict(result))
+    out_dir.mkdir(parents=True, exist_ok=True)
+    fixture_path = out_dir / filename
+    if (
+        fixture_path.exists()
+        or fixture_path.with_name(f"{fixture_path.stem}.acquisition.json").exists()
+    ):
+        raise FileExistsError(f"refusing to overwrite existing fixture {fixture_path}")
+    fixture_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
     return fixture_path

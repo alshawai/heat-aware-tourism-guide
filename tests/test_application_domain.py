@@ -1,8 +1,15 @@
 from datetime import datetime, timezone
+from typing import Any
+
 import pytest
 
 from app.domain.analysis import extract_exposure, point_join_contract, polygon_join_contract
-from app.domain.provenance import AcquisitionRecord, CacheKey, Provenance
+from app.domain.provenance import (
+    AcquisitionRecord,
+    CacheKey,
+    Provenance,
+    UpstreamAcquisitionReference,
+)
 from app.domain.readiness import (
     EnrichmentOutcome,
     EnrichmentPlanner,
@@ -33,6 +40,7 @@ def test_cache_key_separates_provider_configuration_versions() -> None:
 def test_acquisition_record_round_trips_through_payload() -> None:
     record = AcquisitionRecord(
         source="provider",
+        provider="fortyguard",
         endpoint="/v1/heatmap",
         request_configuration={"analytic_type": "tcm", "latitude": 29.4241},
         retrieved_at=datetime(2026, 8, 23, 12, tzinfo=timezone.utc),
@@ -41,14 +49,18 @@ def test_acquisition_record_round_trips_through_payload() -> None:
         schema_version="v1",
         provider_config_version="fortyguard-config-v1",
         activity_id="activity-1",
+        derived_from=(
+            UpstreamAcquisitionReference("fixtures/acquired/input.json", "heat", "a" * 64),
+        ),
     )
     payload = record.to_payload()
     assert AcquisitionRecord.from_payload(payload) == record
 
 
 def test_acquisition_record_rejects_unknown_source_and_missing_identity() -> None:
-    base = {
+    base: dict[str, Any] = {
         "source": "synthesized",
+        "provider": "heat-aware-tourism-guide",
         "endpoint": "/v1/heatmap",
         "request_configuration": {"analytic_type": "tcm"},
         "retrieved_at": None,
@@ -57,16 +69,21 @@ def test_acquisition_record_rejects_unknown_source_and_missing_identity() -> Non
         "schema_version": "v1",
         "provider_config_version": None,
         "activity_id": None,
+        "derived_from": [],
+        "transformations": [],
     }
     with pytest.raises(ValueError, match="source"):
         AcquisitionRecord.from_payload({**base, "source": "guessed"})
     with pytest.raises(ValueError, match="endpoint"):
         AcquisitionRecord.from_payload({**base, "endpoint": ""})
+    with pytest.raises(ValueError, match="provider"):
+        AcquisitionRecord.from_payload({**base, "provider": " "})
 
 
 def test_synthesized_acquisition_record_has_no_fabricated_activity_or_time() -> None:
     record = AcquisitionRecord(
         source="synthesized",
+        provider="heat-aware-tourism-guide",
         endpoint="/v1/heatmap",
         request_configuration={"analytic_type": "tcm"},
         retrieved_at=None,
@@ -75,10 +92,66 @@ def test_synthesized_acquisition_record_has_no_fabricated_activity_or_time() -> 
         schema_version="v1",
         provider_config_version=None,
         activity_id=None,
+        derived_from=(),
     )
     assert record.activity_id is None
     assert record.retrieved_at is None
     assert record.to_payload()["activity_id"] is None
+
+
+def test_acquisition_record_enforces_source_specific_metadata() -> None:
+    values: dict[str, Any] = {
+        "source": "provider",
+        "provider": "fortyguard",
+        "endpoint": "/v1/heatmap",
+        "request_configuration": {},
+        "retrieved_at": datetime(2026, 8, 23, tzinfo=timezone.utc),
+        "data_date": "2026-08-23",
+        "status": "ok",
+        "schema_version": "v1",
+        "provider_config_version": "fortyguard-config-v1",
+        "activity_id": None,
+        "derived_from": (),
+    }
+    with pytest.raises(ValueError, match="retrieval time"):
+        AcquisitionRecord(**{**values, "retrieved_at": None})
+    with pytest.raises(ValueError, match="configuration version"):
+        AcquisitionRecord(**{**values, "provider_config_version": " "})
+    with pytest.raises(ValueError, match="synthesized"):
+        AcquisitionRecord(
+            **{
+                **values,
+                "source": "synthesized",
+                "provider": "heat-aware-tourism-guide",
+                "provider_config_version": None,
+            }
+        )
+
+
+def test_upstream_acquisition_reference_rejects_malformed_values() -> None:
+    invalid_values = [
+        ({"fixture": "/fixtures/input.json"}, "repository-relative"),
+        ({"fixture": "fixtures/../input.json"}, "traversal"),
+        ({"role": " "}, "role"),
+        ({"sha256": "A" * 64}, "lowercase"),
+        ({"sha256": "a" * 63}, "lowercase"),
+    ]
+    values = {"fixture": "fixtures/input.json", "role": "heat", "sha256": "a" * 64}
+    for overrides, message in invalid_values:
+        with pytest.raises(ValueError, match=message):
+            UpstreamAcquisitionReference(**{**values, **overrides})
+
+
+def test_upstream_acquisition_reference_parser_rejects_unknown_fields() -> None:
+    with pytest.raises(ValueError, match="invalid fields"):
+        UpstreamAcquisitionReference.from_payload(
+            {
+                "fixture": "fixtures/input.json",
+                "role": "heat",
+                "sha256": "a" * 64,
+                "sidecar": "unexpected",
+            }
+        )
 
 
 def test_stale_cache_provenance_is_explicit() -> None:

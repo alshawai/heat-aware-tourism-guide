@@ -1,0 +1,64 @@
+{
+  "source": "provider",
+  "provider": "fortyguard",
+  "endpoint": "/v1/heatmap",
+  "request_configuration": {
+    "analytic_type": "exceedance",
+    "latitude": 29.425,
+    "longitude": -98.486,
+    "start_date": "2024-07-15",
+    "forecast": false,
+    "threshold_celsius": 35.0,
+    "direction": "above",
+    "granularity": 80,
+    "request_scope": "canonical_district_anchor",
+    "analysis_aoi": {
+      "south": 29.421,
+      "west": -98.49,
+      "north": 29.429,
+      "east": -98.482
+    },
+    "declared_windows": [
+      {
+        "label": "night",
+        "start": "00:00",
+        "end": "05:00",
+        "timezone": "America/Chicago",
+        "interval": "[start,end)"
+      },
+      {
+        "label": "day",
+        "start": "10:00",
+        "end": "17:00",
+        "timezone": "America/Chicago",
+        "interval": "[start,end)"
+      }
+    ],
+    "timezone": "America/Chicago",
+    "temporal_basis": "date_level_tcm",
+    "provider_window_validated": false,
+    "caveat_code": "date_level_not_interval_maximum",
+    "metric_semantics": "date_level_hours_above_threshold"
+  },
+  "retrieved_at": "2026-08-30T15:07:32.791616+00:00",
+  "data_date": "2024-07-15",
+  "status": "ok",
+  "schema_version": "v1",
+  "provider_config_version": "fortyguard-config-v1",
+  "activity_id": "cdc618af-2cda-4d8b-9144-7a1554343f7d",
+  "derived_from": [],
+  "transformations": [
+    {
+      "name": "live_envelope_unwrapped",
+      "version": 1
+    },
+    {
+      "name": "point_to_aoi_expansion",
+      "version": 1
+    },
+    {
+      "name": "valid_time_from_request",
+      "version": 2
+    }
+  ]
+}

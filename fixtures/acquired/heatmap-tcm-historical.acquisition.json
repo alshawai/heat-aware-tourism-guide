@@ -1,5 +1,6 @@
 {
   "source": "provider",
+  "provider": "fortyguard",
   "endpoint": "/v1/heatmap",
   "request_configuration": {
     "analytic_type": "tcm",
@@ -17,6 +18,7 @@
   "schema_version": "v1",
   "provider_config_version": "fortyguard-config-v1",
   "activity_id": "86f0ecbd-ac3a-4ffa-83bf-3915e65c425f",
+  "derived_from": [],
   "transformations": [
     {
       "name": "live_envelope_unwrapped",

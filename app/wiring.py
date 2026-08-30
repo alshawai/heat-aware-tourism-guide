@@ -554,7 +554,15 @@ def create_production_app(
         )
     if trip_adapter is None:
         fixture_trip_adapter = FixtureTripAnalysisAdapter(
-            heatmap_fixture.parent / "trip-analysis.json"
+            tuple(
+                root / "fixtures" / "trips" / name
+                for name in (
+                    "menger-alamo.trip.json",
+                    "main-plaza-market-square.trip.json",
+                    "cathedral-governors-palace.trip.json",
+                    "briscoe-tower-unavailable.trip.json",
+                )
+            )
         )
         live_trip_adapter: TripAnalysisAdapter
         if execution is not None and env_params_execution is not None:

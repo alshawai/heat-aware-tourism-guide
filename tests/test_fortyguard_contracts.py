@@ -910,6 +910,37 @@ def test_client_submits_once_and_captures_sanitized_activity_metadata() -> None:
     assert metadata.request_fields == ("analytic_type",)
 
 
+def test_client_recovers_existing_activity_with_get_only_and_honest_metadata() -> None:
+    class Transport:
+        def __init__(self) -> None:
+            self.posts = 0
+            self.gets: list[str] = []
+
+        def post(self, endpoint: str, payload: object, api_key: str) -> dict[str, object]:
+            self.posts += 1
+            raise AssertionError("recovery must not POST")
+
+        def get(self, endpoint: str, api_key: str) -> dict[str, object]:
+            self.gets.append(endpoint)
+            if len(self.gets) == 1:
+                return {"status": "Processing"}
+            return {"status": "Completed", "result": {"ok": True}, "request_id": "request-1"}
+
+    recovered_at = datetime(2026, 8, 30, 15, tzinfo=timezone.utc)
+    transport = Transport()
+    result, metadata = FortyGuardClient(
+        transport, "secret", clock=lambda: recovered_at
+    ).poll_existing_activity("original-activity", sleep=lambda _: None, max_polls=2)
+
+    assert result == {"ok": True, "request_id": "request-1"}
+    assert transport.posts == 0
+    assert transport.gets == ["/v1/status/original-activity"] * 2
+    assert metadata.activity_id == "original-activity"
+    assert metadata.recovered_at == recovered_at
+    assert metadata.status_transitions == ("Processing", "Completed")
+    assert not hasattr(metadata, "submitted_at")
+
+
 def test_client_classifies_submit_errors_before_activity_lookup() -> None:
     class Transport:
         def post(self, endpoint: str, payload: object, api_key: str) -> dict[str, object]:

@@ -195,6 +195,46 @@ export type BestTimeResult = {
   temporal_evidence: TemporalEvidenceState;
 };
 
+export type RankedHotelResult = {
+  identity: string;
+  components: Record<HotelComponentName, number>;
+  score: number;
+  percentile: number;
+  tie_group: number;
+};
+
+export type OptionalEnrichment =
+  | { state: "available" | "not_requested"; code: null; reason: null }
+  | {
+      state: "unavailable";
+      code: "optional_provider_failure";
+      reason: string;
+    };
+
+export type HotelComponentTemporalMetadata = {
+  start: string;
+  end: string;
+  timezone: string;
+  interval: "[start,end)";
+  temporal_basis: string;
+  provider_window_validated: boolean;
+  caveat_code: string;
+};
+
+export type HotelRankingResult = {
+  ranked: RankedHotelResult[];
+  weights: Record<HotelComponentName, number>;
+  usable_count: number;
+  discovered_count: number;
+  provenance: ApiProvenance;
+  enrichment: OptionalEnrichment;
+  component_units: Record<HotelComponentName, "C" | "hours">;
+  component_temporal_metadata: Record<
+    "night" | "day",
+    HotelComponentTemporalMetadata
+  > | null;
+};
+
 export type TripAnalysisRequest = {
   mode: "curated" | "exploratory";
   origin_latitude: number;
@@ -277,13 +317,14 @@ export type RouteComparisonResult = {
 };
 
 export type TripAnalysisResponse = {
+  schema_version?: "trip-contract-v2";
   request_identity: string;
   mode: "curated" | "exploratory";
   execution_mode: ExecutionMode;
   state: "series_ready" | "success" | "degraded" | "unavailable" | "error";
-  environment: EnvironmentSeriesResult | null;
+  environment?: EnvironmentSeriesResult | null;
   best_time: BestTimeResult | null;
-  hotels: Record<string, unknown> | null;
+  hotels: HotelRankingResult | null;
   routes: RouteComparisonResult | null;
   unavailable: {
     reason: string;

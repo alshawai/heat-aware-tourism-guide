@@ -6,8 +6,9 @@ from urllib.request import Request, urlopen
 from urllib.error import HTTPError
 
 import pytest
+from fastapi.testclient import TestClient
 
-from app.api import create_fixture_server
+from app.api import create_app, create_fixture_server
 from app.services.trip_adapters import FixtureTripAnalysisAdapter
 
 pytestmark = pytest.mark.integration
@@ -79,14 +80,89 @@ def test_invalid_boolean_returns_client_error() -> None:
         thread.join(timeout=2)
 
 
-def test_place_search_returns_server_owned_places() -> None:
+def test_place_search_catalog_is_identical_across_server_implementations() -> None:
+    expected = {
+        "menger": {
+            "id": "menger-hotel",
+            "name": "Menger Hotel",
+            "context": "San Antonio, TX",
+            "latitude": 29.4245914,
+            "longitude": -98.4864288,
+        },
+        "alamo": {
+            "id": "the-alamo",
+            "name": "The Alamo",
+            "context": "San Antonio, TX",
+            "latitude": 29.425833,
+            "longitude": -98.485833,
+        },
+        "main": {
+            "id": "main-plaza",
+            "name": "Main Plaza",
+            "context": "San Antonio, TX",
+            "latitude": 29.4245773,
+            "longitude": -98.4935063,
+        },
+        "market": {
+            "id": "historic-market-square-el-mercado",
+            "name": "Historic Market Square (El Mercado)",
+            "context": "San Antonio, TX",
+            "latitude": 29.4254009,
+            "longitude": -98.4994785,
+        },
+        "CATHEDRAL": {
+            "id": "san-fernando-cathedral",
+            "name": "San Fernando Cathedral",
+            "context": "San Antonio, TX",
+            "latitude": 29.424559,
+            "longitude": -98.4942042,
+        },
+        "palace": {
+            "id": "spanish-governors-palace",
+            "name": "Spanish Governor's Palace",
+            "context": "San Antonio, TX",
+            "latitude": 29.4248225,
+            "longitude": -98.4959872,
+        },
+        "briscoe": {
+            "id": "briscoe-western-art-museum",
+            "name": "Briscoe Western Art Museum",
+            "context": "San Antonio, TX",
+            "latitude": 29.4228983,
+            "longitude": -98.4888465,
+        },
+        "tower": {
+            "id": "tower-of-the-americas",
+            "name": "Tower of the Americas",
+            "context": "San Antonio, TX",
+            "latitude": 29.4190825,
+            "longitude": -98.4835734,
+        },
+    }
     server = create_fixture_server(Path("fixtures/heatmap-historical.json"))
+    fastapi_client = TestClient(create_app(Path("fixtures/heatmap-historical.json")))
     thread = Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:
-        response = urlopen(f"http://127.0.0.1:{server.server_port}/api/places/search?q=alamo")
-        result = json.load(response)
-        assert [place["name"] for place in result["places"]] == ["The Alamo"]
+        for query, place in expected.items():
+            stdlib_response = urlopen(
+                f"http://127.0.0.1:{server.server_port}/api/places/search?q={query}"
+            )
+            stdlib_result = json.load(stdlib_response)
+            fastapi_result = fastapi_client.get("/api/places/search", params={"q": query}).json()
+
+            assert stdlib_result == fastapi_result == {"places": [place]}
+
+        stdlib_result = json.load(
+            urlopen(f"http://127.0.0.1:{server.server_port}/api/places/search?q=the")
+        )
+        fastapi_result = fastapi_client.get("/api/places/search", params={"q": "the"}).json()
+        assert stdlib_result == fastapi_result
+        assert [place["id"] for place in stdlib_result["places"]] == [
+            "the-alamo",
+            "san-fernando-cathedral",
+            "tower-of-the-americas",
+        ]
     finally:
         server.shutdown()
         server.server_close()
@@ -116,7 +192,7 @@ def test_non_object_json_body_returns_client_error() -> None:
 def test_trip_analysis_endpoint_returns_ranked_hotels_and_route_decision() -> None:
     server = create_fixture_server(
         Path("fixtures/heatmap-historical.json"),
-        trip_adapter=FixtureTripAnalysisAdapter(Path("fixtures/trip-analysis.json")),
+        trip_adapter=FixtureTripAnalysisAdapter(Path("fixtures/trips/menger-alamo.trip.json")),
     )
     thread = Thread(target=server.serve_forever, daemon=True)
     thread.start()
@@ -130,7 +206,7 @@ def test_trip_analysis_endpoint_returns_ranked_hotels_and_route_decision() -> No
                 "mode": "curated",
                 "landmark_name": "The Alamo",
                 "district_name": "Downtown San Antonio",
-                "date": "2026-08-23",
+                "date": "2024-07-15",
                 "start_hour": 8,
                 "end_hour": 20,
             }
@@ -144,17 +220,17 @@ def test_trip_analysis_endpoint_returns_ranked_hotels_and_route_decision() -> No
             )
         )
         result = json.load(response)
-        assert result["state"] == "success"
+        assert result["state"] == "degraded"
         assert result["execution_mode"] == "fixture"
-        assert len(result["best_time"]["hourly"]) == 3
+        assert len(result["best_time"]["hourly"]) == 1
         assert result["best_time"]["recommendation_hour"] == 8
         assert result["best_time"]["hourly"][0]["metric"]["unit"] == "C"
-        assert result["best_time"]["hourly"][0]["metric"]["label"] == "provider_tcm"
-        assert result["best_time"]["provenance"]["transformation_version"] == "trip-contract-v1"
+        assert result["best_time"]["hourly"][0]["metric"]["label"] == "noaa_heat_index"
+        assert result["best_time"]["temporal_evidence"] == "inconsistent"
         assert result["best_time"]["provenance"]["provider"] == "fortyguard"
-        assert result["routes"]["provenance"]["provider"] == "osrm_openstreetmap_and_fortyguard"
-        assert result["hotels"]["ranked"][0]["identity"] == "cooler"
-        assert result["routes"]["recommended_id"] == "shady"
+        assert result["routes"]["routing_provenance"]["provider"] == "fossgis-osrm"
+        assert len(result["hotels"]["ranked"]) == 6
+        assert result["routes"]["route_set_state"] == "single_route"
     finally:
         server.shutdown()
         server.server_close()
@@ -164,7 +240,7 @@ def test_trip_analysis_endpoint_returns_ranked_hotels_and_route_decision() -> No
 def test_trip_analysis_endpoint_returns_unavailable_for_unmatched_window() -> None:
     server = create_fixture_server(
         Path("fixtures/heatmap-historical.json"),
-        trip_adapter=FixtureTripAnalysisAdapter(Path("fixtures/trip-analysis.json")),
+        trip_adapter=FixtureTripAnalysisAdapter(Path("fixtures/trips/menger-alamo.trip.json")),
     )
     thread = Thread(target=server.serve_forever, daemon=True)
     thread.start()
@@ -178,7 +254,7 @@ def test_trip_analysis_endpoint_returns_unavailable_for_unmatched_window() -> No
                 "mode": "curated",
                 "landmark_name": "The Alamo",
                 "district_name": "Downtown San Antonio",
-                "date": "2026-08-23",
+                "date": "2024-07-15",
                 "start_hour": 9,
                 "end_hour": 20,
             }
@@ -204,7 +280,9 @@ def test_trip_analysis_endpoint_returns_unavailable_for_unmatched_window() -> No
 def test_trip_analysis_returns_explicit_unavailable_contract() -> None:
     server = create_fixture_server(
         Path("fixtures/heatmap-historical.json"),
-        trip_adapter=FixtureTripAnalysisAdapter(Path("fixtures/trip-analysis-unavailable.json")),
+        trip_adapter=FixtureTripAnalysisAdapter(
+            Path("fixtures/trips/briscoe-tower-unavailable.trip.json")
+        ),
     )
     thread = Thread(target=server.serve_forever, daemon=True)
     thread.start()
@@ -213,15 +291,15 @@ def test_trip_analysis_returns_explicit_unavailable_contract() -> None:
             {
                 "mode": "exploratory",
                 "execution_mode": "fixture",
-                "origin_latitude": 29.4245914,
-                "origin_longitude": -98.4864288,
-                "destination_latitude": 29.425833,
-                "destination_longitude": -98.485833,
-                "landmark_name": "The Alamo",
+                "origin_latitude": 29.4228983,
+                "origin_longitude": -98.4888465,
+                "destination_latitude": 29.4190825,
+                "destination_longitude": -98.4835734,
+                "landmark_name": "Tower of the Americas",
                 "district_name": "Downtown San Antonio",
-                "date": "2026-08-23",
-                "start_hour": 8,
-                "end_hour": 20,
+                "date": "2024-07-15",
+                "start_hour": 10,
+                "end_hour": 17,
             }
         ).encode()
         response = urlopen(
@@ -236,10 +314,7 @@ def test_trip_analysis_returns_explicit_unavailable_contract() -> None:
         assert result["state"] == "unavailable"
         assert result["mode"] == "exploratory"
         assert result["best_time"] is None
-        assert (
-            result["unavailable"]["reason"]
-            == "no matching fixture for the requested exploratory trip"
-        )
+        assert result["unavailable"]["code"] == "provider_data_missing"
     finally:
         server.shutdown()
         server.server_close()
@@ -249,7 +324,7 @@ def test_trip_analysis_returns_explicit_unavailable_contract() -> None:
 def test_trip_analysis_rejects_untrusted_metric_and_provenance_fields() -> None:
     server = create_fixture_server(
         Path("fixtures/heatmap-historical.json"),
-        trip_adapter=FixtureTripAnalysisAdapter(Path("fixtures/trip-analysis.json")),
+        trip_adapter=FixtureTripAnalysisAdapter(Path("fixtures/trips/menger-alamo.trip.json")),
     )
     thread = Thread(target=server.serve_forever, daemon=True)
     thread.start()
@@ -263,7 +338,7 @@ def test_trip_analysis_rejects_untrusted_metric_and_provenance_fields() -> None:
                 "mode": "curated",
                 "landmark_name": "The Alamo",
                 "district_name": "Downtown San Antonio",
-                "date": "2026-08-23",
+                "date": "2024-07-15",
                 "start_hour": 8,
                 "end_hour": 20,
                 "heat_metric": "heat_index_celsius",

@@ -1,0 +1,100 @@
+{
+  "activity_id": null,
+  "data_date": "2024-07-15",
+  "derived_from": [
+    {
+      "fixture": "fixtures/providers/osrm/cathedral-governors-palace.json",
+      "role": "routing",
+      "sha256": "aba78baeb0bb390741e0641a5828c377ca347d9deb2511360a85c9019f54a87f"
+    },
+    {
+      "fixture": "fixtures/providers/overpass/cathedral-governors-palace-buildings.json",
+      "role": "building_geometry",
+      "sha256": "e6176d2f673389a59e7d55624734a54b768a8f56f8baafe6fcbe31adb90b5d60"
+    },
+    {
+      "fixture": "fixtures/providers/fortyguard/canonical-district-anchor-date-tcm-2024-07-15.json",
+      "role": "hotel_night_and_day_tcm",
+      "sha256": "f440eeb83743303e8a99126d0e53f02ff1625f1875aa9c60b5092f96ed0257ca"
+    },
+    {
+      "fixture": "fixtures/providers/fortyguard/canonical-district-anchor-exceedance-above-35c-2024-07-15.json",
+      "role": "hotel_hot_hours",
+      "sha256": "4226735c20081617206c77672cd1b142f643c9fcfe0da5d8be455a0c5fca54b7"
+    },
+    {
+      "fixture": "fixtures/providers/fortyguard/canonical-district-anchor-persistence-above-35c-2024-07-15.json",
+      "role": "hotel_persistence",
+      "sha256": "8b9cb5fc1cd31151dac10fdf854a890468b714061f3f98c2902db496da4b50d4"
+    },
+    {
+      "fixture": "fixtures/hotel-heat-analysis.json",
+      "role": "base_hotel_discovery",
+      "sha256": "fde152a6c473fb6a38a6fe2928ccf4718a17d621e61f7d7c8da3d84d5a69e84b"
+    }
+  ],
+  "endpoint": "local:trip-product-snapshot",
+  "provider": "heat-aware-tourism-guide",
+  "provider_config_version": "trip-product-config-v1",
+  "request_configuration": {
+    "building_aoi": {
+      "east": -98.491604468,
+      "north": 29.427384596,
+      "south": 29.422431929,
+      "west": -98.498865419
+    },
+    "cautious": false,
+    "date": "2024-07-15",
+    "destination": {
+      "application_id": "spanish-governors-palace",
+      "authority": "OpenStreetMap/Nominatim selected object",
+      "coordinate_meaning": "Nominatim centroid of museum footprint",
+      "latitude": 29.4248225,
+      "longitude": -98.4959872,
+      "name": "Spanish Governor's Palace",
+      "osm_identity": "way/78601534"
+    },
+    "district_name": "Downtown San Antonio",
+    "end_hour": 17,
+    "generator_metadata": {
+      "computed_sections": ["solar_position", "modeled_building_shade"],
+      "demo_heat_purpose": "exercise ADR 0007; not a provider observation",
+      "provider_observations": [
+        "routing",
+        "building_geometry",
+        "hotel_components"
+      ],
+      "synthesized_sections": ["best_time_heat", "optional_enrichment_failure"]
+    },
+    "generator_version": "trip-product-snapshot-v1",
+    "hotel_aoi": {
+      "east": -98.482,
+      "north": 29.429,
+      "south": 29.421,
+      "west": -98.49
+    },
+    "landmark_name": "Spanish Governor's Palace",
+    "mode": "exploratory",
+    "origin": {
+      "application_id": "san-fernando-cathedral",
+      "authority": "OpenStreetMap/Nominatim selected object",
+      "coordinate_meaning": "Nominatim centroid of cathedral footprint",
+      "latitude": 29.424559,
+      "longitude": -98.4942042,
+      "name": "San Fernando Cathedral",
+      "osm_identity": "way/80647022"
+    },
+    "route_heat_aoi": null,
+    "start_hour": 10
+  },
+  "retrieved_at": null,
+  "schema_version": "trip-contract-v2",
+  "source": "synthesized",
+  "status": "ok",
+  "transformations": [
+    {
+      "name": "trip-product-snapshot",
+      "version": 1
+    }
+  ]
+}

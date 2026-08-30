@@ -1,5 +1,6 @@
 {
   "source": "provider",
+  "provider": "fortyguard",
   "endpoint": "/v1/env_params",
   "request_configuration": {
     "latitude": 29.4259,
@@ -14,5 +15,6 @@
   "schema_version": "v1",
   "provider_config_version": "fortyguard-config-v1",
   "activity_id": "0b592283-ef6f-4783-bacb-79ea59e7254a",
+  "derived_from": [],
   "transformations": []
 }
