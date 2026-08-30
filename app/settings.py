@@ -340,8 +340,7 @@ def _shade_from_env(merged: Mapping[str, str]) -> ShadeSettings:
         canonical_timezone=timezone_name,
         schema_version=merged.get("SHADE_BUILDING_SCHEMA_VERSION", "").strip() or "building-v1",
         provider_config_version=(
-            merged.get("SHADE_PROVIDER_CONFIG_VERSION", "").strip()
-            or "overpass-building-config-v1"
+            merged.get("SHADE_PROVIDER_CONFIG_VERSION", "").strip() or "overpass-building-config-v1"
         ),
         model_version=merged.get("SHADE_MODEL_VERSION", "").strip() or "route-shade-v1",
     )

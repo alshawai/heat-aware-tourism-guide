@@ -687,11 +687,13 @@ def _best_time(
     )
     recommendation_time = (
         datetime.fromisoformat(_string(best_payload["recommendation_time"], "recommendation_time"))
-        if best_payload.get("recommendation_time") is not None else None
+        if best_payload.get("recommendation_time") is not None
+        else None
     )
     recommendation_timezone = (
         _string(best_payload["recommendation_timezone"], "recommendation_timezone")
-        if best_payload.get("recommendation_timezone") is not None else None
+        if best_payload.get("recommendation_timezone") is not None
+        else None
     )
     recommendation_reason = _string(best_payload["recommendation_reason"], "recommendation_reason")
     if cautious:

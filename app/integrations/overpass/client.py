@@ -55,12 +55,10 @@ def build_hotel_query(aoi: BoundingBox) -> str:
 
 
 def build_building_query(aoi: BoundingBox) -> str:
-    bounds = ",".join(
-        format(value, ".12g") for value in (aoi.south, aoi.west, aoi.north, aoi.east)
-    )
+    bounds = ",".join(format(value, ".12g") for value in (aoi.south, aoi.west, aoi.north, aoi.east))
     return (
-        '[out:json][timeout:60];\n('
+        "[out:json][timeout:60];\n("
         f'way["building"]({bounds});relation["building"]({bounds});'
         f'way["building:part"]({bounds});relation["building:part"]({bounds});'
-        ');\nout body geom;'
+        ");\nout body geom;"
     )

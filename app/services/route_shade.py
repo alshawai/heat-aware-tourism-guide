@@ -41,10 +41,7 @@ class RouteShadeService:
     ) -> None:
         if not math.isfinite(corridor_buffer_m) or corridor_buffer_m <= 0:
             raise ValueError("shade corridor buffer must be positive and finite")
-        if (
-            not math.isfinite(minimum_building_coverage)
-            or not 0 <= minimum_building_coverage <= 1
-        ):
+        if not math.isfinite(minimum_building_coverage) or not 0 <= minimum_building_coverage <= 1:
             raise ValueError("minimum building coverage must be between zero and one")
         if not math.isfinite(metres_per_level) or metres_per_level <= 0:
             raise ValueError("metres per building level must be positive and finite")
@@ -61,9 +58,7 @@ class RouteShadeService:
     ) -> Mapping[str, RouteShadeEvidence]:
         if instant.tzinfo is None or instant.utcoffset() is None:
             raise ValueError("shade instant must be timezone-aware")
-        response = self._client.query_buildings(
-            _shared_bbox(routes, self._corridor_buffer_m)
-        )
+        response = self._client.query_buildings(_shared_bbox(routes, self._corridor_buffer_m))
         buildings, dropped_geometry_count = _normalize_buildings(
             response, metres_per_level=self._metres_per_level
         )
@@ -86,9 +81,7 @@ class RouteShadeService:
     ) -> RouteShadeEvidence:
         epsg = _local_epsg(route)
         corridor = _project(route, epsg).buffer(self._corridor_buffer_m)
-        projected = tuple(
-            (building, _project(building.geometry, epsg)) for building in buildings
-        )
+        projected = tuple((building, _project(building.geometry, epsg)) for building in buildings)
         relevant = tuple(
             (building, geometry)
             for building, geometry in projected

@@ -155,13 +155,19 @@ def decide_route_comparison(
                 shade_evidence=nighttime_evidence,
             )
             return _result(
-                options, route_set_state=route_set_state,
+                options,
+                route_set_state=route_set_state,
                 decision_state=RouteDecisionState.NIGHTTIME_COOLEST_RECOMMENDED,
                 reason="sun is below the horizon; the coolest returned route is recommended",
-                confidence=Confidence.SUFFICIENT, provenance=provenance,
-                routing_provenance=routing_provenance, heat_provenance=heat_provenance,
-                heat_status=HeatStatus.ELEVATED, corridor_heat_value=max(numeric_values),
-                lowest_heat_route_id=lowest, cautious=cautious, recommended_id=coolest.identity,
+                confidence=Confidence.SUFFICIENT,
+                provenance=provenance,
+                routing_provenance=routing_provenance,
+                heat_provenance=heat_provenance,
+                heat_status=HeatStatus.ELEVATED,
+                corridor_heat_value=max(numeric_values),
+                lowest_heat_route_id=lowest,
+                cautious=cautious,
+                recommended_id=coolest.identity,
             )
         shade_evidence = decision.shade_evidence
         if shade_evidence is not None:
@@ -193,15 +199,25 @@ def decide_route_comparison(
                     ),
                     shade_evidence=shade_evidence,
                 )
-                state = (RouteDecisionState.SHADE_ONLY_ROUTE_RECOMMENDED
-                         if len(routes) == 1 else RouteDecisionState.SHADE_SHADIEST_RECOMMENDED)
+                state = (
+                    RouteDecisionState.SHADE_ONLY_ROUTE_RECOMMENDED
+                    if len(routes) == 1
+                    else RouteDecisionState.SHADE_SHADIEST_RECOMMENDED
+                )
                 return _result(
-                    options, route_set_state=route_set_state, decision_state=state,
+                    options,
+                    route_set_state=route_set_state,
+                    decision_state=state,
                     reason="highest modeled OSM building shade among returned routes is recommended",
-                    confidence=Confidence.SUFFICIENT, provenance=provenance,
-                    routing_provenance=routing_provenance, heat_provenance=heat_provenance,
-                    heat_status=HeatStatus.ELEVATED, corridor_heat_value=max(numeric_values),
-                    lowest_heat_route_id=lowest, cautious=cautious, recommended_id=best.identity,
+                    confidence=Confidence.SUFFICIENT,
+                    provenance=provenance,
+                    routing_provenance=routing_provenance,
+                    heat_provenance=heat_provenance,
+                    heat_status=HeatStatus.ELEVATED,
+                    corridor_heat_value=max(numeric_values),
+                    lowest_heat_route_id=lowest,
+                    cautious=cautious,
+                    recommended_id=best.identity,
                 )
             options = _options(
                 routes,
@@ -212,14 +228,19 @@ def decide_route_comparison(
                 shade_evidence=shade_evidence,
             )
             return _result(
-                options, route_set_state=route_set_state,
+                options,
+                route_set_state=route_set_state,
                 decision_state=RouteDecisionState.INSUFFICIENT_SHADE_COMPARISON_REQUIRED,
                 reason="daytime building-shade evidence is insufficient; compare returned route trade-offs",
-                confidence=Confidence.INSUFFICIENT, provenance=provenance,
-                routing_provenance=routing_provenance, heat_provenance=heat_provenance,
-                heat_status=HeatStatus.ELEVATED, corridor_heat_value=max(numeric_values),
+                confidence=Confidence.INSUFFICIENT,
+                provenance=provenance,
+                routing_provenance=routing_provenance,
+                heat_provenance=heat_provenance,
+                heat_status=HeatStatus.ELEVATED,
+                corridor_heat_value=max(numeric_values),
                 fallback_reason="building-height coverage or solar evidence was insufficient",
-                lowest_heat_route_id=lowest, cautious=cautious,
+                lowest_heat_route_id=lowest,
+                cautious=cautious,
             )
         options = _options(
             routes,
@@ -315,7 +336,8 @@ def _options(
                 ),
                 shade_model_label=(
                     "modeled OSM building-shade estimate, not measured real-world shade"
-                    if shade else None
+                    if shade
+                    else None
                 ),
                 heat_interpretation=interpretation,
                 geometry=route.geometry.coordinates,

@@ -77,9 +77,7 @@ def _best_time(value: float = 32.0, *, exact: bool = False) -> BestTimeResult:
         hourly_coverage=1 / 24,
         heat_interpretation=classify_heat(value, metric=HeatMetricName.TCM),
         recommended_hour_tcm_celsius=value,
-        recommendation_time=(
-            datetime(2020, 8, 23, 9, tzinfo=timezone.utc) if exact else None
-        ),
+        recommendation_time=(datetime(2020, 8, 23, 9, tzinfo=timezone.utc) if exact else None),
         recommendation_timezone="America/Chicago" if exact else None,
         temporal_evidence=(
             TemporalEvidenceState.EXACT if exact else TemporalEvidenceState.UNAVAILABLE
@@ -117,9 +115,7 @@ def _service(
     route_loader: Callable[[RouteRequest], Mapping[str, object]],
     *,
     shared_loader: Callable[[SharedRouteHeatRequest], Mapping[str, object]] | None = None,
-    shade_loader: Callable[
-        [RouteSet, SolarPosition, datetime], Mapping[str, RouteShadeEvidence]
-    ]
+    shade_loader: Callable[[RouteSet, SolarPosition, datetime], Mapping[str, RouteShadeEvidence]]
     | None = None,
     solar_locator: Callable[[datetime, float, float], SolarPosition] | None = None,
 ) -> RouteAnalysisService:

@@ -50,15 +50,11 @@ def _evidence(*values: float | None, coverage: float = 0.8) -> tuple[RouteHeatEv
     )
 
 
-def _shade(
-    percent: float, coverage: float, *, sufficient: bool = True
-) -> RouteShadeEvidence:
+def _shade(percent: float, coverage: float, *, sufficient: bool = True) -> RouteShadeEvidence:
     return RouteShadeEvidence(
         modeled_shade_percent=percent,
         building_coverage=coverage,
-        confidence=(
-            ShadeConfidence.SUFFICIENT if sufficient else ShadeConfidence.INSUFFICIENT
-        ),
+        confidence=(ShadeConfidence.SUFFICIENT if sufficient else ShadeConfidence.INSUFFICIENT),
         explicit_area_fraction=coverage,
         inferred_levels_area_fraction=0.0,
         unknown_area_fraction=1.0 - coverage,
@@ -183,8 +179,7 @@ def test_sufficient_shade_recommends_shadiest_with_distance_tie_break() -> None:
         "highest modeled shade among returned routes"
     )
     assert all(
-        route.shade_confidence is ShadeConfidence.SUFFICIENT
-        for route in result.alternatives
+        route.shade_confidence is ShadeConfidence.SUFFICIENT for route in result.alternatives
     )
 
 
@@ -227,8 +222,7 @@ def test_nighttime_recommends_coolest_then_distance_and_marks_shade_not_applicab
     assert result.recommended_id == "route-1"
     assert [route.modeled_shade_percent for route in result.alternatives] == [0.0, 0.0]
     assert all(
-        route.shade_confidence is ShadeConfidence.NOT_APPLICABLE
-        for route in result.alternatives
+        route.shade_confidence is ShadeConfidence.NOT_APPLICABLE for route in result.alternatives
     )
 
 
