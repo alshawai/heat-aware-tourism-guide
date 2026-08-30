@@ -1,0 +1,56 @@
+# Keeps the free-tier demo awake so judges never hit a cold start.
+#
+# A Render free web service sleeps after 15 minutes without inbound traffic and
+# then takes ~1 minute to wake. Pinging /health every 5 minutes keeps it inside
+# that window so it stays warm. This is a best-effort layer: GitHub's scheduler
+# can delay `schedule` runs under load and only runs them on the default branch,
+# so pair it with an external uptime monitor (see docs/deployment.md) and rely
+# on the frontend "waking" state as the final safety net.
+#
+# This only touches the public fixture demo (ALLOW_LIVE=false, no secrets). It
+# does not deploy, and it never fails the run on a bad ping — a red X every five
+# minutes would be pure noise — it emits a warning instead. Set a repository
+# variable KEEP_WARM_URL to override the target; otherwise the default below is
+# used.
+name: Keep demo warm
+
+on:
+  schedule:
+    # Every 5 minutes — comfortably under the 15-minute idle sleep timer.
+    - cron: "*/5 * * * *"
+  workflow_dispatch: # Manual warm-up, e.g. immediately before a recording.
+
+permissions:
+  contents: read
+
+# Never let pings pile up if one run is slow while a sleeping instance wakes.
+concurrency:
+  group: keep-warm
+  cancel-in-progress: true
+
+jobs:
+  ping:
+    name: Ping /health
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Ping the demo health endpoint
+        env:
+          KEEP_WARM_URL: ${{ vars.KEEP_WARM_URL || 'https://heat-aware-tourism-guide-demo.onrender.com/health' }}
+        run: |
+          echo "Pinging $KEEP_WARM_URL"
+          # A sleeping instance holds the request while it wakes, so a single
+          # curl with a generous timeout usually rides out the ~1-minute wake.
+          # Retry a few times to cover transient 502/503/504 during startup.
+          for attempt in 1 2 3; do
+            code="$(curl --silent --show-error --output /dev/null \
+              --write-out '%{http_code}' --max-time 90 "$KEEP_WARM_URL" || echo 000)"
+            if [ "$code" = "200" ]; then
+              echo "Demo is awake (HTTP 200) on attempt $attempt."
+              exit 0
+            fi
+            echo "Attempt $attempt returned HTTP $code (waking or transient); retrying."
+            sleep 5
+          done
+          echo "::warning title=Keep-warm ping::$KEEP_WARM_URL did not return 200 after 3 attempts. The demo may be waking, redeploying, or down."
+          exit 0

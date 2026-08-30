@@ -391,7 +391,7 @@ export function TripSetupScreen() {
   async function checkHealth(signal?: AbortSignal) {
     setHealth({ status: "checking" });
     try {
-      const value = await dataClient.getHealth(signal);
+      const value = await dataClient.getHealth({ signal });
       setHealth({
         status: "available",
         deployment_profile: value.deployment_profile,
