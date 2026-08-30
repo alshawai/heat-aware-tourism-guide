@@ -1,4 +1,4 @@
-"""Bounded Overpass client for hotel queries."""
+"""Bounded Overpass client for hotel and route-building queries."""
 
 from __future__ import annotations
 
@@ -6,7 +6,10 @@ from time import sleep as default_sleep
 from typing import Callable, Protocol
 
 from app.domain.hotels import BoundingBox
+from app.integrations.overpass.buildings import build_building_query
 from app.integrations.overpass.errors import OverpassRateLimited
+
+__all__ = ["OverpassClient", "OverpassTransport", "build_building_query", "build_hotel_query"]
 
 
 class OverpassTransport(Protocol):
@@ -32,7 +35,13 @@ class OverpassClient:
         self._sleep = sleep
 
     def query(self, aoi: BoundingBox) -> dict[str, object]:
-        query = build_hotel_query(aoi)
+        return self._execute(build_hotel_query(aoi))
+
+    def query_buildings(self, aoi: BoundingBox) -> dict[str, object]:
+        """Fetch polygon geometry and height tags for one bounded route AOI."""
+        return self._execute(build_building_query(aoi))
+
+    def _execute(self, query: str) -> dict[str, object]:
         for attempt in range(1, self._max_attempts + 1):
             try:
                 return self._transport.execute(query)

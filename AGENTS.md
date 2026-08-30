@@ -1,3 +1,7 @@
+## Python environment
+
+Always use the repository's `.venv` directly for Python commands and tooling, for example `.venv/bin/python` and `.venv/bin/pytest`. Do not use `uv`.
+
 ## Agent skills
 
 ### Issue tracker

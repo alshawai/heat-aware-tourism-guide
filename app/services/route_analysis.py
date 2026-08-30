@@ -3,24 +3,34 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
+from typing import cast
 
-from shapely.geometry import shape
+from shapely.geometry import MultiLineString, shape
 
 from app.domain.contracts import (
     BestTimeResult,
     Confidence,
     Provenance,
     RouteComparisonResult,
+    RouteDecisionState,
+    TemporalEvidenceState,
     TripAnalysisRequest,
 )
+from app.domain.provenance import Transformation
 from app.domain.route_decision import RouteDecisionInput, decide_route_comparison
 from app.domain.route_heat import (
     SharedRouteHeatRequest,
     aggregate_shared_route_heat,
     build_shared_route_aoi,
 )
-from app.domain.routing import RouteRequest
+from app.domain.route_shade import (
+    SOLAR_MODEL_IDENTITY,
+    RouteShadeEvidence,
+    SolarPosition,
+    solar_position,
+)
+from app.domain.routing import RouteRequest, RouteSet
 from app.integrations.fortyguard.contracts import (
     AnalyticType,
     HeatmapRequest,
@@ -29,6 +39,7 @@ from app.integrations.fortyguard.contracts import (
 )
 from app.integrations.fortyguard.errors import ProviderError
 from app.integrations.fortyguard.live import LiveHeatmapPayload
+from app.services.route_shade import RouteShadeOutcome
 from app.services.routing import (
     RouteExecution,
     RouteOutcome,
@@ -39,6 +50,20 @@ from app.services.routing import (
 
 class SharedRouteHeatUnavailable(RuntimeError):
     """The shared corridor activity could not provide normalized heat evidence."""
+
+
+ShadeEvidence = Mapping[str, RouteShadeEvidence]
+ShadeEvidenceLoader = Callable[[RouteSet, SolarPosition, datetime], RouteShadeOutcome]
+SolarLocator = Callable[[datetime, float, float], SolarPosition]
+
+BUILDING_TRANSFORMATION_VERSION = "route-shade-building-normalization-v1"
+"""Overpass building normalization: geometry parsing, height classification, part merging."""
+
+SOLAR_TRANSFORMATIONS: tuple[Transformation, ...] = (
+    Transformation(name="local_instant_to_utc", version=1),
+    Transformation(name="apparent_solar_position", version=1),
+)
+"""The named steps between the local recommendation time and the modeled sun position."""
 
 
 class RouteAnalysisService:
@@ -63,6 +88,8 @@ class RouteAnalysisService:
             [SharedRouteHeatRequest], Mapping[str, object] | LiveHeatmapPayload
         ]
         | None = None,
+        shade_evidence_loader: ShadeEvidenceLoader | None = None,
+        solar_locator: SolarLocator = solar_position,
         clock: Callable[[], datetime] = lambda: datetime.now().astimezone(),
     ) -> None:
         self.route_execution = route_execution
@@ -78,6 +105,8 @@ class RouteAnalysisService:
         self.corridor_buffer_m = corridor_buffer_m
         self.corridor_granularity = corridor_granularity
         self.shared_heat_loader = shared_heat_loader
+        self.shade_evidence_loader = shade_evidence_loader
+        self.solar_locator = solar_locator
         self.clock = clock
 
     def analyze(
@@ -113,13 +142,13 @@ class RouteAnalysisService:
 
         if not outcome.routes.any_longer_than(self.representative_distance_m):
             heat_provenance = _landmark_heat_provenance(best_time.provenance)
-            return decide_route_comparison(
+            return self._decide(
                 RouteDecisionInput(
                     route_set=outcome.routes,
                     landmark_tcm_celsius=best_time.recommended_hour_tcm_celsius,
                 ),
-                cautious=request.cautious,
-                provenance=_decision_provenance(routing_provenance, heat_provenance),
+                request=request,
+                best_time=best_time,
                 routing_provenance=routing_provenance,
                 heat_provenance=heat_provenance,
             )
@@ -160,16 +189,101 @@ class RouteAnalysisService:
                 heat_provenance=None,
             )
         heat_provenance = _shared_heat_provenance(heatmap)
-        return decide_route_comparison(
+        return self._decide(
             RouteDecisionInput(
                 route_set=outcome.routes,
                 landmark_tcm_celsius=None,
                 heat_evidence=evidence,
             ),
-            cautious=request.cautious,
-            provenance=_decision_provenance(routing_provenance, heat_provenance),
+            request=request,
+            best_time=best_time,
             routing_provenance=routing_provenance,
             heat_provenance=heat_provenance,
+        )
+
+    def _decide(
+        self,
+        decision: RouteDecisionInput,
+        *,
+        request: TripAnalysisRequest,
+        best_time: BestTimeResult,
+        routing_provenance: Provenance,
+        heat_provenance: Provenance,
+    ) -> RouteComparisonResult:
+        provenance = _decision_provenance(routing_provenance, heat_provenance)
+        preliminary = decide_route_comparison(
+            decision,
+            cautious=request.cautious,
+            provenance=provenance,
+            routing_provenance=routing_provenance,
+            heat_provenance=heat_provenance,
+        )
+        if (
+            preliminary.decision_state is not RouteDecisionState.SHADE_REQUIRED
+            or self.shade_evidence_loader is None
+            or decision.route_set is None
+        ):
+            return preliminary
+        if (
+            best_time.temporal_evidence is not TemporalEvidenceState.EXACT
+            or best_time.recommendation_time is None
+        ):
+            return decide_route_comparison(
+                RouteDecisionInput(
+                    decision.route_set,
+                    decision.landmark_tcm_celsius,
+                    decision.heat_evidence,
+                    shade_evidence={},
+                ),
+                cautious=request.cautious,
+                provenance=provenance,
+                routing_provenance=routing_provenance,
+                heat_provenance=heat_provenance,
+            )
+
+        instant = best_time.recommendation_time
+        route_geometry = MultiLineString(
+            [route.geometry.coordinates for route in decision.route_set.routes]
+        )
+        centroid = route_geometry.centroid
+        solar = self.solar_locator(instant, centroid.y, centroid.x)
+        solar_provenance = _solar_provenance(
+            solar, instant, centroid.y, centroid.x, clock=self.clock
+        )
+        if solar.elevation_degrees <= 0:
+            return decide_route_comparison(
+                RouteDecisionInput(
+                    decision.route_set,
+                    decision.landmark_tcm_celsius,
+                    decision.heat_evidence,
+                    nighttime=True,
+                ),
+                cautious=request.cautious,
+                provenance=provenance,
+                routing_provenance=routing_provenance,
+                heat_provenance=heat_provenance,
+                solar_provenance=solar_provenance,
+            )
+
+        try:
+            shade = self.shade_evidence_loader(decision.route_set, solar, instant)
+        except (ConnectionError, OSError, RuntimeError, TimeoutError, ValueError):
+            shade = None
+        return decide_route_comparison(
+            RouteDecisionInput(
+                decision.route_set,
+                decision.landmark_tcm_celsius,
+                decision.heat_evidence,
+                shade_evidence={} if shade is None else shade.evidence,
+            ),
+            cautious=request.cautious,
+            provenance=provenance,
+            routing_provenance=routing_provenance,
+            heat_provenance=heat_provenance,
+            building_provenance=(
+                None if shade is None else _building_provenance(shade, clock=self.clock)
+            ),
+            solar_provenance=solar_provenance,
         )
 
     def _load_shared_heat(
@@ -295,6 +409,95 @@ def _shared_heat_provenance(heatmap: HeatmapResult) -> Provenance:
         fresh=not provider.stale,
         activity_id=provider.activity_id,
     )
+
+
+def _building_provenance(shade: RouteShadeOutcome, *, clock: Callable[[], datetime]) -> Provenance:
+    """Where the shared OSM building geometry came from, under the identity requested."""
+    coverage = min(
+        (item.building_coverage for item in shade.evidence.values()),
+        default=0.0,
+    )
+    configuration: dict[str, object] = dict(shade.request_identity)
+    configuration["metres_per_level"] = shade.metres_per_level
+    configuration["minimum_building_coverage"] = shade.minimum_building_coverage
+    configuration["dropped_geometry_count"] = shade.dropped_geometry_count
+    if shade.building is None:
+        return Provenance(
+            source="unavailable",
+            data_date=clock().date().isoformat(),
+            confidence=Confidence.INSUFFICIENT,
+            retrieved_at=clock().isoformat(),
+            transformation_version=BUILDING_TRANSFORMATION_VERSION,
+            provider="overpass",
+            response_status="unavailable",
+            request_configuration=configuration,
+            fresh=False,
+            coverage=coverage,
+            note=shade.unavailable_reason,
+        )
+    building = shade.building
+    replayed_without_retrieval_time = building.retrieved_at is None
+    return Provenance(
+        source=building.source,
+        data_date=building.data_date,
+        confidence=Confidence.SUFFICIENT,
+        retrieved_at=(
+            clock() if building.retrieved_at is None else building.retrieved_at
+        ).isoformat(),
+        transformation_version=BUILDING_TRANSFORMATION_VERSION,
+        provider="overpass",
+        response_status="completed",
+        request_configuration=configuration,
+        fresh=not building.stale,
+        coverage=coverage,
+        note=(
+            "replay time; the committed fixture records no provider retrieval time"
+            if replayed_without_retrieval_time
+            else building.reason
+        ),
+    )
+
+
+def _solar_provenance(
+    solar: SolarPosition,
+    instant: datetime,
+    latitude: float,
+    longitude: float,
+    *,
+    clock: Callable[[], datetime],
+) -> Provenance:
+    """The exact instant, place, and model behind one solar position (ADR 0007)."""
+    return Provenance(
+        source="computed",
+        data_date=instant.date().isoformat(),
+        confidence=Confidence.SUFFICIENT,
+        retrieved_at=clock().isoformat(),
+        transformation_version="route-solar-position-v1",
+        provider="astral",
+        response_status="completed",
+        request_configuration={
+            "instant": instant.isoformat(),
+            "timezone": _timezone_name(instant),
+            "utc_offset_seconds": int(cast(timedelta, instant.utcoffset()).total_seconds()),
+            "latitude": latitude,
+            "longitude": longitude,
+            "azimuth_degrees": solar.azimuth_degrees,
+            "elevation_degrees": solar.elevation_degrees,
+            "model_version": SOLAR_MODEL_IDENTITY,
+            "transformations": [
+                {"name": item.name, "version": item.version} for item in SOLAR_TRANSFORMATIONS
+            ],
+        },
+        fresh=True,
+    )
+
+
+def _timezone_name(instant: datetime) -> str:
+    """The named zone the instant carries, never a guess derived from its offset."""
+    key = getattr(instant.tzinfo, "key", None)
+    if isinstance(key, str) and key:
+        return key
+    return instant.tzname() or instant.strftime("%z")
 
 
 def _decision_provenance(routing: Provenance, heat: Provenance | None) -> Provenance:

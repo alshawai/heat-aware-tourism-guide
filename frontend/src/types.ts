@@ -166,6 +166,8 @@ export type HourlyConcernProfile = {
   primary_thermal_metric: "tcm" | "heat_index_celsius";
 };
 
+export type TemporalEvidenceState = "exact" | "inconsistent" | "unavailable";
+
 export type BestTimeResult = {
   hourly: Array<{
     hour: number;
@@ -188,6 +190,9 @@ export type BestTimeResult = {
   persistence_hours: number | null;
   framing_threshold_celsius: number | null;
   framing_direction: "above" | "below" | null;
+  recommendation_time: string | null;
+  recommendation_timezone: string | null;
+  temporal_evidence: TemporalEvidenceState;
 };
 
 export type TripAnalysisRequest = {
@@ -211,6 +216,10 @@ export type RouteSetState =
 export type RouteDecisionState =
   | "mild_shortest_recommended"
   | "shade_required"
+  | "shade_shadiest_recommended"
+  | "shade_only_route_recommended"
+  | "nighttime_coolest_recommended"
+  | "insufficient_shade_comparison_required"
   | "heat_unavailable"
   | "no_suitable_returned_route";
 
@@ -229,8 +238,16 @@ export type RouteOptionResult = {
   heat_source: RouteHeatSource | null;
   heat_interpretation: HeatInterpretation | null;
   modeled_shade_percent: number | null;
-  shade_confidence: "sufficient" | "insufficient" | null;
+  shade_confidence: "sufficient" | "insufficient" | "not_applicable" | null;
   building_coverage: number;
+  building_explicit_fraction: number;
+  building_inferred_levels_fraction: number;
+  building_unknown_fraction: number;
+  building_explicit_count: number;
+  building_inferred_levels_count: number;
+  building_unknown_count: number;
+  dropped_building_geometry_count: number;
+  shade_limitations: string[];
   recommended: boolean;
   recommendation_reason: string | null;
   shade_model_label: string | null;
@@ -253,6 +270,8 @@ export type RouteComparisonResult = {
   provenance: ApiProvenance;
   routing_provenance: ApiProvenance | null;
   heat_provenance: ApiProvenance | null;
+  building_provenance: ApiProvenance | null;
+  solar_provenance: ApiProvenance | null;
   fallback_reason: string | null;
   heat_interpretation: HeatInterpretation | null;
 };

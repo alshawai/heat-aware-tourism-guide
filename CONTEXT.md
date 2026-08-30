@@ -142,6 +142,28 @@ directly.
   elevated heat defers the final recommendation until modeled shade is
   available. Cautious guidance uses the same one-band-earlier policy as other
   heat decisions.
+- **Modeled building shade** — A deterministic OSM-based estimate of the
+  fraction of a returned route's length intersecting projected building-shadow
+  geometry at the exact recommended local timestamp while the sun is above the
+  horizon. It is not measured real-world shade and does not include trees,
+  awnings, clouds, or temporary obstructions.
+- **Building height quality** — The origin of a usable OSM building height:
+  `explicit` from a valid `height` tag, `inferred_levels` from valid
+  `building:levels` multiplied by the product approximation of 3 m per level,
+  or `unknown`. A valid explicit height takes precedence.
+- **Building-height coverage** — The area-weighted fraction of relevant OSM
+  building and `building:part` footprints in a returned route's analysis
+  corridor that have explicit or inferred heights. A route with no mapped
+  building footprints has zero coverage. The configurable 0.70 sufficiency
+  default is product policy, not an OSM or scientific standard.
+- **Nighttime route decision** — The final elevated-heat decision when solar
+  elevation is at or below the horizon. Building shade is zero and not
+  applicable; the coolest returned route by retained route TCM is recommended,
+  with distance used only to break equal-temperature ties.
+- **Insufficient shade comparison** — The explicit daytime state when modeled
+  building-shade evidence is weak or uncomputable. All returned alternatives
+  and available metrics remain visible, but the product makes no route
+  recommendation; the traveler compares the trade-offs.
 - **No suitable returned route** — The explicit state when the routing provider
   returns no valid pedestrian routes, or when every returned route lacks enough
   evidence for a recommendation. A single valid route is instead shown as the
@@ -160,6 +182,8 @@ directly.
 - ADR 0005 — best-time decision orchestration and retained route-gating evidence.
 - ADR 0006 — returned-route heat AOI, conservative per-route aggregation, and
   recommendation staging.
+- ADR 0007 — exact-time modeled shade, nighttime route decisions, and weak
+  shade-evidence behavior.
 - `docs/design/fortyguard-extraction.md` — extraction contract from issue #6.
 - Layout: `app/domain/` (pure contracts), `app/services/` (cache, execution,
   acquisition, sidecars, ledger store), `app/integrations/fortyguard/`

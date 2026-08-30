@@ -26,6 +26,9 @@ const successResponse = {
     persistence_hours: 2,
     framing_threshold_celsius: 35,
     framing_direction: "above",
+    recommendation_time: "2026-08-23T09:00:00-05:00",
+    recommendation_timezone: "America/Chicago",
+    temporal_evidence: "exact",
     environmental_concerns: [],
     provenance: {
       source: "fixture",
@@ -74,6 +77,200 @@ const successResponse = {
   },
   unavailable: null,
   degraded_reasons: null,
+};
+
+const routesProvenance = {
+  source: "fixture",
+  data_date: "2026-08-23",
+  confidence: "sufficient",
+  retrieved_at: "2026-08-24T00:00:00Z",
+  transformation_version: "osrm-route-normalization-v1",
+  provider: "osrm",
+  response_status: "completed",
+  request_configuration: {},
+  fresh: true,
+  coverage: 1,
+  note: null,
+  activity_id: null,
+};
+
+const solarProvenance = {
+  source: "astral",
+  data_date: "2026-08-23",
+  confidence: "sufficient",
+  retrieved_at: "2026-08-24T00:00:00Z",
+  transformation_version: "solar-position-v1",
+  provider: "astral",
+  response_status: "completed",
+  request_configuration: {},
+  fresh: true,
+  coverage: null,
+  note: null,
+  activity_id: null,
+};
+
+const buildingProvenance = {
+  source: "fixture",
+  data_date: "2026-08-29",
+  confidence: "sufficient",
+  retrieved_at: "2026-08-24T00:00:00Z",
+  transformation_version: "building-v1",
+  provider: "overpass",
+  response_status: "completed",
+  request_configuration: {},
+  fresh: false,
+  coverage: 1,
+  note: null,
+  activity_id: null,
+};
+
+const routeOption = (
+  identity: string,
+  {
+    distance = 900,
+    duration = 720,
+    heatValue = 38,
+    shadePercent = 60,
+    shadeConfidence = "sufficient",
+    buildingCoverage = 0.8,
+    explicitFraction = 0.6,
+    inferredFraction = 0.2,
+    unknownFraction = 0.2,
+    recommended = false,
+    recommendationReason = null,
+    limitations = [],
+  }: {
+    distance?: number;
+    duration?: number;
+    heatValue?: number;
+    shadePercent?: number;
+    shadeConfidence?: "sufficient" | "insufficient" | "not_applicable";
+    buildingCoverage?: number;
+    explicitFraction?: number;
+    inferredFraction?: number;
+    unknownFraction?: number;
+    recommended?: boolean;
+    recommendationReason?: string | null;
+    limitations?: string[];
+  } = {}
+) => ({
+  identity,
+  distance_m: distance,
+  duration_s: duration,
+  geometry: [
+    [-98.49, 29.42],
+    [-98.48, 29.43],
+  ],
+  heat_value: heatValue,
+  heat_unit: "C",
+  heat_metric: "tcm",
+  heat_status: "elevated",
+  heat_coverage: 1,
+  heat_source: "shared_corridor",
+  heat_interpretation: {
+    metric: "tcm",
+    value_celsius: heatValue,
+    band: "provider_higher",
+    band_label: "Higher provider temperature",
+    action_threshold_band: "provider_higher",
+    guidance_policy: "standard",
+    is_actual_heat_index: false,
+    noaa_heat_index_available: false,
+    action_required: true,
+    policy_applied: "standard_heat_guidance",
+  },
+  modeled_shade_percent: shadePercent,
+  shade_confidence: shadeConfidence,
+  building_coverage: buildingCoverage,
+  building_explicit_fraction: explicitFraction,
+  building_inferred_levels_fraction: inferredFraction,
+  building_unknown_fraction: unknownFraction,
+  building_explicit_count: 3,
+  building_inferred_levels_count: 1,
+  building_unknown_count: 1,
+  dropped_building_geometry_count: 0,
+  shade_limitations: limitations,
+  recommended,
+  recommendation_reason: recommendationReason,
+  shade_model_label:
+    "modeled OSM building-shade estimate, not measured real-world shade",
+});
+
+const shadiestRoutes = {
+  alternatives: [
+    routeOption("route-1", {
+      distance: 900,
+      shadePercent: 40,
+      recommended: false,
+    }),
+    routeOption("route-2", {
+      distance: 1200,
+      shadePercent: 75,
+      recommended: true,
+      recommendationReason: "highest modeled shade among returned routes",
+    }),
+  ],
+  recommended_id: "route-2",
+  lowest_heat_route_id: "route-1",
+  reason:
+    "highest modeled OSM building shade among returned routes is recommended",
+  heat_status: "elevated",
+  corridor_heat_value: 38,
+  heat_metric: "tcm",
+  heat_unit: "C",
+  coverage: 1,
+  confidence: "sufficient",
+  comparison_scope: "returned alternatives",
+  route_set_state: "alternatives_returned",
+  decision_state: "shade_shadiest_recommended",
+  provenance: routesProvenance,
+  routing_provenance: routesProvenance,
+  heat_provenance: routesProvenance,
+  building_provenance: buildingProvenance,
+  solar_provenance: solarProvenance,
+  fallback_reason: null,
+  heat_interpretation: {
+    metric: "tcm",
+    value_celsius: 38,
+    band: "provider_higher",
+    band_label: "Higher provider temperature",
+    action_threshold_band: "provider_higher",
+    guidance_policy: "standard",
+    is_actual_heat_index: false,
+    noaa_heat_index_available: false,
+    action_required: true,
+    policy_applied: "standard_heat_guidance",
+  },
+};
+
+const insufficientRoutes = {
+  ...shadiestRoutes,
+  recommended_id: null,
+  decision_state: "insufficient_shade_comparison_required",
+  confidence: "insufficient",
+  reason:
+    "daytime building-shade evidence is insufficient; compare returned route trade-offs",
+  fallback_reason:
+    "building-height coverage or solar evidence was insufficient",
+  alternatives: [
+    routeOption("route-1", {
+      shadePercent: 70,
+      shadeConfidence: "sufficient",
+      buildingCoverage: 0.8,
+      explicitFraction: 0.7,
+      inferredFraction: 0.1,
+      unknownFraction: 0.2,
+      limitations: ["building search is limited to 250 m around the route"],
+    }),
+    routeOption("route-2", {
+      shadePercent: 45,
+      shadeConfidence: "insufficient",
+      buildingCoverage: 0.5,
+      explicitFraction: 0.4,
+      inferredFraction: 0.1,
+      unknownFraction: 0.5,
+    }),
+  ],
 };
 
 function jsonResponse(body: unknown, status = 200) {
@@ -302,6 +499,90 @@ describe("curated Trip Setup", () => {
       screen.getByText("fixed temperature anchor; not a real 24-hour forecast")
     ).toBeInTheDocument();
     expect(screen.queryByText(/best time/i)).not.toBeInTheDocument();
+  });
+
+  it("presents recommended modeled route shade with quality evidence", async () => {
+    mockFetch(
+      jsonResponse({ status: "ok", mode: "fixture" }),
+      jsonResponse({ ...successResponse, routes: shadiestRoutes })
+    );
+    const user = userEvent.setup();
+
+    render(<App />);
+    await screen.findByText("Fixture replay");
+    await user.click(screen.getByRole("button", { name: "Analyze trip" }));
+
+    const comparison = await screen.findByRole("region", {
+      name: "Walking routes",
+    });
+    expect(
+      within(comparison).getByRole("heading", {
+        name: "Shadiest route recommended",
+      })
+    ).toBeInTheDocument();
+    expect(
+      within(comparison).getByText(/highest modeled OSM building shade/)
+    ).toBeInTheDocument();
+    expect(within(comparison).getAllByText("Recommended route")).toHaveLength(
+      1
+    );
+    expect(within(comparison).getAllByText("Alternative route")).toHaveLength(
+      1
+    );
+    expect(within(comparison).getByText("75%")).toBeInTheDocument();
+    expect(within(comparison).getByText("40%")).toBeInTheDocument();
+    expect(within(comparison).getAllByText("80%")).toHaveLength(2);
+    expect(within(comparison).getAllByText("sufficient")).toHaveLength(2);
+    expect(
+      within(comparison).getByText(/Modeled OSM building shade, not measured/)
+    ).toBeInTheDocument();
+    expect(within(comparison).getAllByText(/\d+\.\d{2} km/)).toHaveLength(2);
+  });
+
+  it("presents incomplete shade comparisons without a recommendation", async () => {
+    mockFetch(
+      jsonResponse({ status: "ok", mode: "fixture" }),
+      jsonResponse({
+        ...successResponse,
+        state: "degraded",
+        routes: insufficientRoutes,
+        degraded_reasons: {
+          routes: "Route comparison requires manual trade-off review.",
+        },
+      })
+    );
+    const user = userEvent.setup();
+
+    render(<App />);
+    await screen.findByText("Fixture replay");
+    await user.click(screen.getByRole("button", { name: "Analyze trip" }));
+
+    const comparison = await screen.findByRole("region", {
+      name: "Walking routes",
+    });
+    expect(
+      within(comparison).getByRole("heading", {
+        name: "Compare route trade-offs",
+      })
+    ).toBeInTheDocument();
+    expect(
+      within(comparison).getByText(
+        "No route is recommended because shade evidence is incomplete."
+      )
+    ).toBeInTheDocument();
+    expect(
+      within(comparison).queryByText("Recommended route")
+    ).not.toBeInTheDocument();
+    expect(within(comparison).getByText("insufficient")).toBeInTheDocument();
+    expect(
+      within(comparison).getByText(
+        "building search is limited to 250 m around the route"
+      )
+    ).toBeInTheDocument();
+    expect(within(comparison).getByText("Explicit 70%")).toBeInTheDocument();
+    expect(within(comparison).getAllByText("Inferred 10%")).toHaveLength(2);
+    expect(within(comparison).getByText("Unknown 20%")).toBeInTheDocument();
+    expect(within(comparison).getByText("Unknown 50%")).toBeInTheDocument();
   });
 
   it("announces busy state and disables setup controls", async () => {
