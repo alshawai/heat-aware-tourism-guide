@@ -13,7 +13,7 @@ from astral import Observer
 from astral.sun import azimuth as astral_azimuth
 from astral.sun import elevation as astral_elevation
 from pyproj import Transformer
-from shapely.geometry import LineString, shape
+from shapely.geometry import LineString, Polygon, shape
 from shapely.geometry.base import BaseGeometry
 from shapely.ops import transform, unary_union
 
@@ -224,9 +224,7 @@ def route_shade_percent(
             continue
         length = building.height_m / math.tan(math.radians(solar.elevation_degrees))
         radians = math.radians(solar.azimuth_degrees + 180)
-        dx, dy = length * math.sin(radians), length * math.cos(radians)
-        shifted = transform(lambda x, y, z=None: (x + dx, y + dy), footprint)
-        sweeps.append(footprint.union(shifted).convex_hull)
+        sweeps.append(_swept(footprint, length * math.sin(radians), length * math.cos(radians)))
     if not sweeps:
         return 0.0
     shadow = cast(BaseGeometry, unary_union(sweeps)).difference(
@@ -235,6 +233,26 @@ def route_shade_percent(
     covered = projected_route.intersection(shadow).length
     percentage = float(covered) / float(projected_route.length) * 100
     return max(0.0, min(100.0, percentage))
+
+
+def _swept(footprint: BaseGeometry, dx: float, dy: float) -> BaseGeometry:
+    """The exact region a footprint covers as it is translated by (dx, dy).
+
+    This is the Minkowski sum of the footprint with the translation segment: the
+    footprint, its translated copy, and one parallelogram per boundary edge. A
+    convex hull would be simpler but would wrongly fill courtyards and the
+    concave notches of L-shaped buildings with shadow.
+    """
+    shifted = transform(lambda x, y, z=None: (x + dx, y + dy), footprint)
+    walls: list[BaseGeometry] = []
+    for polygon in getattr(footprint, "geoms", (footprint,)):
+        for ring in (polygon.exterior, *polygon.interiors):
+            points = list(ring.coords)
+            walls.extend(
+                Polygon([start, end, (end[0] + dx, end[1] + dy), (start[0] + dx, start[1] + dy)])
+                for start, end in zip(points, points[1:])
+            )
+    return cast(BaseGeometry, unary_union([footprint, shifted, *walls]))
 
 
 def _utm(geometry: BaseGeometry) -> int:

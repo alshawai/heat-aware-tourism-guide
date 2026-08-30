@@ -157,6 +157,35 @@ def test_nighttime_has_zero_modeled_building_shade() -> None:
     assert route_shade_percent(route, (building,), SolarPosition(180.0, 0.0)) == 0.0
 
 
+def test_a_courtyard_casts_no_shadow_across_its_own_open_sky() -> None:
+    # A 100 m block around a 55 m courtyard; a 10 m wall throws 10 m of shadow at 45 deg.
+    building = BuildingFootprint(
+        "relation/1",
+        Polygon(
+            [
+                (-98.4900, 29.4200),
+                (-98.4890, 29.4200),
+                (-98.4890, 29.4209),
+                (-98.4900, 29.4209),
+            ],
+            [
+                [
+                    (-98.48975, 29.42020),
+                    (-98.48925, 29.42020),
+                    (-98.48925, 29.42070),
+                    (-98.48975, 29.42070),
+                ]
+            ],
+        ),
+        10.0,
+        BuildingHeightQuality.EXPLICIT,
+    )
+    route = LineString([(-98.48965, 29.42045), (-98.48935, 29.42045)])
+
+    # A convex hull over the swept footprint would wrongly report this route fully shaded.
+    assert route_shade_percent(route, (building,), SolarPosition(0.0, 45.0)) == 0.0
+
+
 def test_shadow_union_returns_a_bounded_finite_percentage() -> None:
     route = LineString([(-98.49, 29.42), (-98.489, 29.42)])
     building = BuildingFootprint(
