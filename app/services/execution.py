@@ -13,7 +13,7 @@ from datetime import datetime
 import json
 from pathlib import Path
 from typing import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from app.domain.provenance import AcquisitionRecord, CacheKey, Transformation
 from app.integrations.fortyguard.contracts import (
@@ -329,6 +329,7 @@ class EnvParamsOutcome:
     stale: bool = False
     retrieved_at: datetime | None = None
     data_date: str | None = None
+    response_metadata: dict[str, object] = field(default_factory=dict)
 
 
 class EnvParamsExecution:
@@ -375,6 +376,11 @@ class EnvParamsExecution:
             transformations = (
                 loaded.transformations if isinstance(loaded, LiveEnvParamsPayload) else ()
             )
+            response_metadata = (
+                dict(loaded.activity.response_metadata)
+                if isinstance(loaded, LiveEnvParamsPayload) and loaded.activity is not None
+                else {}
+            )
             result = normalize_env_params_response(payload, request=request)
         except (ConnectionError, OSError, ProviderError, TimeoutError, ValueError) as error:
             fallback = self._fallback(request, request_payload)
@@ -406,6 +412,7 @@ class EnvParamsExecution:
             transformations,
             retrieved_at=retrieved_at,
             data_date=data_date,
+            response_metadata=response_metadata,
         )
 
     def _fallback(
@@ -469,6 +476,7 @@ class EnvParamsExecution:
             stale=stale,
             retrieved_at=record.retrieved_at,
             data_date=record.data_date,
+            response_metadata=dict(record.response_metadata),
         )
 
 

@@ -1,0 +1,49 @@
+{
+  "activity_id": null,
+  "data_date": "2026-08-30",
+  "derived_from": [],
+  "endpoint": "https://routing.openstreetmap.de/routed-foot/route/v1",
+  "provider": "fossgis-osrm",
+  "provider_config_version": "osrm-config-v1",
+  "request_configuration": {
+    "alternatives": true,
+    "destination": {
+      "latitude": 29.4248225,
+      "longitude": -98.4959872
+    },
+    "geometries": "geojson",
+    "origin": {
+      "latitude": 29.424559,
+      "longitude": -98.4942042
+    },
+    "overview": "full",
+    "profile": "foot",
+    "provider_instance": "fossgis-routed-foot",
+    "request_version": "v1",
+    "steps": false
+  },
+  "response_metadata": {
+    "distance_unit": "m",
+    "duration_unit": "s",
+    "route_count": 2,
+    "waypoint_snaps": [
+      {
+        "distance": 15.43188282,
+        "hint": "vmQyhn_rb4g1AQAAGQEAAAAAAAAAAAAA93wUQiTmBkIAAAAAAAAAACkBAAAOAQAAAAAAAAAAAAATAAAADRkh-jr8wAEEGSH6r_vAAQAAHxEAAAAA",
+        "location": [-98.494195, 29.424698],
+        "name": "Trevino Street"
+      },
+      {
+        "distance": 28.04388099,
+        "hint": "Pcw_jmWqIZCXAAAAdgAAAMABAAC1AAAAqvdyQUr9O0FVPjNC3naRQXkAAABeAAAAZgEAAJEAAAATAAAA7BAh-rf8wAENEiH6t_zAAQIADwAAAAAA",
+        "location": [-98.496276, 29.424823],
+        "name": "Calder"
+      }
+    ]
+  },
+  "retrieved_at": "2026-08-30T14:25:41.027160+00:00",
+  "schema_version": "v1",
+  "source": "provider",
+  "status": "ok",
+  "transformations": []
+}

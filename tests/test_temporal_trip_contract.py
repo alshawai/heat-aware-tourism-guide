@@ -182,7 +182,9 @@ class TestTemporalTripApi:
         client = TestClient(
             create_app(
                 Path("fixtures/heatmap-historical.json"),
-                trip_adapter=FixtureTripAnalysisAdapter(Path("fixtures/trip-analysis.json")),
+                trip_adapter=FixtureTripAnalysisAdapter(
+                    Path("fixtures/trips/menger-alamo.trip.json")
+                ),
             )
         )
 

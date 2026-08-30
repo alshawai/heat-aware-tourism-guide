@@ -363,7 +363,7 @@ def test_production_wiring_uses_temporal_adapter_for_live_trip_requests(
     assert response.status_code == 200
     body: dict[str, Any] = response.json()
     assert body["state"] == "degraded"
-    assert body["environment"] is None
+    assert "environment" not in body
     assert body["best_time"]["recommendation_hour"] == 15
     assert body["best_time"]["recommended_hour_tcm_celsius"] == 39.4
 

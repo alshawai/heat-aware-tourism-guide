@@ -1,4 +1,4 @@
-# ADR 0008: Separated public fixture and protected live deployments
+# ADR 0009: Separated public fixture and protected live deployments
 
 Date: 2026-08-30
 Status: Accepted

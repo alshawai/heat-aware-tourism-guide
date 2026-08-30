@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from datetime import datetime
 import hashlib
 import json
+from pathlib import PurePosixPath
+import re
 from typing import Any
 
 
@@ -57,6 +59,49 @@ class CacheKey:
 
 _ACQUISITION_SOURCES = ("provider", "synthesized")
 _ACQUISITION_REPLAYABLE_STATUS = "ok"
+_SHA256_PATTERN = re.compile(r"[0-9a-f]{64}")
+
+
+@dataclass(frozen=True)
+class UpstreamAcquisitionReference:
+    """A content-addressed link to an upstream fixture acquisition."""
+
+    fixture: str
+    role: str
+    sha256: str
+    sidecar_sha256: str
+
+    def __post_init__(self) -> None:
+        path = PurePosixPath(self.fixture)
+        if not self.fixture or path.is_absolute() or path == PurePosixPath("."):
+            raise ValueError("upstream fixture path must be repository-relative")
+        if "\\" in self.fixture or ".." in path.parts:
+            raise ValueError("upstream fixture path must not contain traversal")
+        if not self.role.strip():
+            raise ValueError("upstream acquisition role is required")
+        if _SHA256_PATTERN.fullmatch(self.sha256) is None:
+            raise ValueError("upstream acquisition sha256 must be lowercase hexadecimal")
+        if _SHA256_PATTERN.fullmatch(self.sidecar_sha256) is None:
+            raise ValueError("upstream acquisition sidecar_sha256 must be lowercase hexadecimal")
+
+    def to_payload(self) -> dict[str, str]:
+        return {
+            "fixture": self.fixture,
+            "role": self.role,
+            "sha256": self.sha256,
+            "sidecar_sha256": self.sidecar_sha256,
+        }
+
+    @classmethod
+    def from_payload(cls, payload: dict[str, Any]) -> "UpstreamAcquisitionReference":
+        expected = {"fixture", "role", "sha256", "sidecar_sha256"}
+        if set(payload) != expected:
+            raise ValueError("upstream acquisition reference has invalid fields")
+        if not all(isinstance(payload[field], str) for field in expected):
+            raise ValueError("upstream acquisition reference fields must be strings")
+        return cls(
+            payload["fixture"], payload["role"], payload["sha256"], payload["sidecar_sha256"]
+        )
 
 
 @dataclass(frozen=True)
@@ -69,6 +114,7 @@ class AcquisitionRecord:
     """
 
     source: str
+    provider: str
     endpoint: str
     request_configuration: dict[str, Any]
     retrieved_at: datetime | None
@@ -77,19 +123,33 @@ class AcquisitionRecord:
     schema_version: str
     provider_config_version: str | None
     activity_id: str | None
+    derived_from: tuple[UpstreamAcquisitionReference, ...]
+    response_metadata: dict[str, Any]
     transformations: tuple[Transformation, ...] = ()
 
     def __post_init__(self) -> None:
         if self.source not in _ACQUISITION_SOURCES:
             raise ValueError("acquisition source must be provider or synthesized")
+        if not self.provider.strip():
+            raise ValueError("acquisition provider is required")
         if not self.endpoint.strip():
             raise ValueError("acquisition endpoint is required")
+        if self.source == "provider":
+            if self.retrieved_at is None:
+                raise ValueError("provider acquisitions require a retrieval time")
+            if not (self.provider_config_version or "").strip():
+                raise ValueError("provider acquisitions require a provider configuration version")
+        elif self.retrieved_at is not None or self.activity_id is not None:
+            raise ValueError("synthesized acquisitions cannot have retrieval times or activity IDs")
         if self.status == _ACQUISITION_REPLAYABLE_STATUS and not (self.data_date or "").strip():
             raise ValueError("replayable acquisitions require a data date")
         if not self.status.strip():
             raise ValueError("acquisition status is required")
         if not self.schema_version.strip():
             raise ValueError("acquisition schema version is required")
+        if not isinstance(self.response_metadata, dict):
+            raise ValueError("acquisition response_metadata must be an object")
+        _validate_json_object(self.response_metadata, "acquisition response_metadata")
 
     @property
     def replayable(self) -> bool:
@@ -98,6 +158,7 @@ class AcquisitionRecord:
     def to_payload(self) -> dict[str, Any]:
         return {
             "source": self.source,
+            "provider": self.provider,
             "endpoint": self.endpoint,
             "request_configuration": self.request_configuration,
             "retrieved_at": self.retrieved_at.isoformat()
@@ -108,29 +169,77 @@ class AcquisitionRecord:
             "schema_version": self.schema_version,
             "provider_config_version": self.provider_config_version,
             "activity_id": self.activity_id,
+            "derived_from": [reference.to_payload() for reference in self.derived_from],
             "transformations": [
                 {"name": t.name, "version": t.version} for t in self.transformations
             ],
+            "response_metadata": self.response_metadata,
         }
 
     @classmethod
     def from_payload(cls, payload: dict[str, Any]) -> "AcquisitionRecord":
-        retrieved_at = payload.get("retrieved_at")
-        transformations = payload.get("transformations") or []
+        expected = {
+            "source",
+            "provider",
+            "endpoint",
+            "request_configuration",
+            "retrieved_at",
+            "data_date",
+            "status",
+            "schema_version",
+            "provider_config_version",
+            "activity_id",
+            "derived_from",
+            "transformations",
+            "response_metadata",
+        }
+        if set(payload) != expected:
+            raise ValueError("acquisition record has invalid fields")
+        retrieved_at = payload["retrieved_at"]
+        if retrieved_at is not None and not isinstance(retrieved_at, str):
+            raise ValueError("acquisition retrieved_at must be an ISO 8601 string or null")
+        request_configuration = payload["request_configuration"]
+        if not isinstance(request_configuration, dict):
+            raise ValueError("acquisition request_configuration must be an object")
+        transformations = payload["transformations"]
+        derived_from = payload["derived_from"]
+        response_metadata = payload["response_metadata"]
+        if not isinstance(transformations, list):
+            raise ValueError("acquisition transformations must be an array")
+        if not isinstance(derived_from, list):
+            raise ValueError("acquisition derived_from must be an array")
+        if not isinstance(response_metadata, dict):
+            raise ValueError("acquisition response_metadata must be an object")
+        if not all(isinstance(item, dict) for item in derived_from):
+            raise ValueError("acquisition derived_from entries must be objects")
+        if not all(isinstance(item, dict) for item in transformations):
+            raise ValueError("acquisition transformation entries must be objects")
         return cls(
             source=payload["source"],
+            provider=payload["provider"],
             endpoint=payload["endpoint"],
-            request_configuration=dict(payload.get("request_configuration") or {}),
-            retrieved_at=datetime.fromisoformat(retrieved_at) if retrieved_at else None,
+            request_configuration=dict(request_configuration),
+            retrieved_at=datetime.fromisoformat(retrieved_at) if retrieved_at is not None else None,
             data_date=payload["data_date"],
             status=payload["status"],
             schema_version=payload["schema_version"],
             provider_config_version=payload.get("provider_config_version"),
             activity_id=payload.get("activity_id"),
+            derived_from=tuple(
+                UpstreamAcquisitionReference.from_payload(item) for item in derived_from
+            ),
             transformations=tuple(
                 Transformation(item["name"], item["version"]) for item in transformations
             ),
+            response_metadata=dict(response_metadata),
         )
+
+
+def _validate_json_object(value: dict[str, Any], field_name: str) -> None:
+    try:
+        json.dumps(value, allow_nan=False)
+    except (TypeError, ValueError) as error:
+        raise ValueError(f"{field_name} must contain JSON-safe values") from error
 
 
 @dataclass(frozen=True)
