@@ -47,8 +47,11 @@ import {
   INVALID_DATE_MESSAGE,
   isValidDate,
   lastHour,
+  LIVE_EARLIEST_DATE,
+  liveLatestDate,
   SAME_ENDPOINTS_MESSAGE,
   START_HOUR_OPTIONS,
+  validateLiveDate,
   validateTimeWindow,
 } from "./timeWindow";
 import { UnavailableNotice } from "./UnavailableNotice";
@@ -174,6 +177,9 @@ export function TripSetupScreen() {
   const effective = effectiveSetup(tripSetup, health);
   const fixtureMode =
     health.status === "available" && health.mode === "fixture";
+  // Live execution reaches only the provider's own span, so the date field is
+  // bounded and validated against it rather than against the calendar.
+  const liveMode = health.status === "available" && health.mode === "live";
   const fixtureScenario = fixtureMode
     ? fixtureScenarioFor(effective.origin, effective.destination)
     : undefined;
@@ -222,7 +228,13 @@ export function TripSetupScreen() {
 
   async function submit(event?: FormEvent) {
     event?.preventDefault();
-    const invalidDate = !isValidDate(effective.date);
+    // In live mode the calendar is not the constraint the provider is: a date
+    // outside its span cannot produce readings, so it must not be spendable.
+    const dateProblem = liveMode
+      ? validateLiveDate(effective.date)
+      : isValidDate(effective.date)
+        ? null
+        : INVALID_DATE_MESSAGE;
     const windowError = validateTimeWindow(
       effective.startHour,
       effective.endHour
@@ -233,7 +245,7 @@ export function TripSetupScreen() {
       effective.origin.latitude === effective.destination.latitude &&
       effective.origin.longitude === effective.destination.longitude;
 
-    setDateError(invalidDate ? INVALID_DATE_MESSAGE : "");
+    setDateError(dateProblem ?? "");
     // An out-of-order window is reported on both selects, because either one
     // can be the field the traveler wants to change.
     setStartError(
@@ -246,8 +258,8 @@ export function TripSetupScreen() {
     );
     setEndpointError(sameEndpoints ? SAME_ENDPOINTS_MESSAGE : "");
 
-    if (invalidDate || windowError || sameEndpoints) {
-      if (invalidDate) dateRef.current?.focus();
+    if (dateProblem || windowError || sameEndpoints) {
+      if (dateProblem) dateRef.current?.focus();
       else if (invalidOrder) startRef.current?.focus();
       else if (windowError) endRef.current?.focus();
       else document.getElementById("endpoint-origin")?.focus();
@@ -301,6 +313,8 @@ export function TripSetupScreen() {
                 id="trip-date"
                 type="date"
                 value={effective.date}
+                min={liveMode ? LIVE_EARLIEST_DATE : undefined}
+                max={liveMode ? liveLatestDate() : undefined}
                 disabled={busy || publicFixture}
                 aria-invalid={Boolean(dateError)}
                 aria-describedby={dateError ? "date-error" : undefined}
@@ -393,6 +407,14 @@ export function TripSetupScreen() {
               and hours follow the committed scenario. Another date returns the
               server&apos;s no-matching-fixture answer rather than invented
               data.
+            </p>
+          )}
+          {liveMode && (
+            <p className="fixture-facts" role="note">
+              Live readings run from {LIVE_EARLIEST_DATE} to tomorrow&apos;s
+              forecast ({liveLatestDate()}); anything past tomorrow has not been
+              measured or forecast yet. Each hour in the window is a separate
+              provider request, so a shorter window costs less.
             </p>
           )}
 

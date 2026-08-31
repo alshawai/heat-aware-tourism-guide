@@ -15,6 +15,7 @@ from app.domain.contracts import (
     ExecutionMode,
     ResultState,
     RouteDecisionState,
+    TemporalEvidenceState,
     TripAnalysisRequest,
     TripMode,
 )
@@ -23,7 +24,7 @@ from app.integrations.fortyguard.contracts import EnvParamsRequest, HeatmapReque
 from app.services.execution import EnvParamsExecution, HeatmapExecution
 from app.services.route_analysis import RouteAnalysisService
 from app.services.routing import RouteExecution
-from app.services.trip_adapters import TemporalTripAnalysisAdapter
+from app.services.trip_adapters import TemporalTripAnalysisAdapter, _publish
 from app.settings import AppSettings
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
@@ -267,6 +268,176 @@ def test_one_failing_hour_keeps_the_remaining_series_and_records_the_gap(tmp_pat
     assert response.best_time.provenance.note is not None
     assert "13:00" in response.best_time.provenance.note
     assert "13:00" in response.best_time.recommendation_reason
+
+
+def _shifted_hour_payload(hour: int, value: float) -> dict[str, object]:
+    """A single-hour response stamped in the provider's own offset, not ours.
+
+    Recorded provider behaviour: the acquired canonical scenario came back
+    stamped GMT-7 for a San Antonio request (America/Chicago, GMT-5 in August),
+    so the timestamp cannot confirm the requested local hour and
+    ``_best_time_result`` reads it as ``INCONSISTENT``. Live analyses hit this
+    routinely, so it must publish as a limitation rather than an error.
+    """
+    return {
+        "mode": "historical",
+        "features": [
+            {
+                "geometry": {"type": "Point", "coordinates": [-98.485833, 29.425833]},
+                "properties": {
+                    "id": f"tcm-{hour:02d}",
+                    "value": value,
+                    "unit": "C",
+                    "valid_time": f"2026-08-23T{hour:02d}:00:00-07:00",
+                },
+            }
+        ],
+    }
+
+
+def _shifted_adapter(tmp_path: Path, *, failing_hour: int | None = None) -> Any:
+    def load_heatmap(request: HeatmapRequest) -> Mapping[str, object]:
+        if request.analytic_type.value != "tcm":
+            return _framing_payload(1.0)
+        assert request.start_hour is not None
+        if request.start_hour == failing_hour:
+            raise ConnectionError(f"hour {failing_hour} unavailable")
+        return _shifted_hour_payload(request.start_hour, 30.0 + request.start_hour)
+
+    return TemporalTripAnalysisAdapter(
+        HeatmapExecution(fixture_path=tmp_path / "heatmap.json", live_loader=load_heatmap),
+        EnvParamsExecution(
+            fixture_path=tmp_path / "env.json",
+            live_loader=lambda request: _env_payload(),
+        ),
+    )
+
+
+def test_conflicting_provider_timezone_publishes_a_best_time_limitation(
+    tmp_path: Path,
+) -> None:
+    """The live "Bad Request": a timezone conflict is a limitation, not an error.
+
+    ``TripAnalysisResponse`` requires a reason for a present section whose own
+    fields show it is degraded, and ``INCONSISTENT`` temporal evidence is one of
+    those fields. Assembling the response without that reason raised
+    ``degraded reasons must match missing sections``, which ``app/api.py`` maps
+    to HTTP 400 — after every provider call in the window was already spent.
+    """
+    response = _shifted_adapter(tmp_path).analyze(_request(), ExecutionMode.LIVE)
+
+    assert response.state is ResultState.DEGRADED
+    assert response.best_time is not None
+    assert response.best_time.temporal_evidence is TemporalEvidenceState.INCONSISTENT
+    assert response.degraded_reasons is not None
+    assert "hour-only" in response.degraded_reasons["best_time"]
+    assert tuple(entry.hour for entry in response.best_time.hourly) == tuple(range(8, 20))
+
+
+def test_a_lost_hour_alone_is_not_a_best_time_limitation(tmp_path: Path) -> None:
+    """The same invariant from the other side: no reason for a whole section.
+
+    A complete decision over fewer hours is still whole, so the lost hour is
+    reported in the recommendation and the provenance only. Claiming a
+    ``best_time`` limitation here would raise the very same error.
+    """
+
+    def load_heatmap(request: HeatmapRequest) -> Mapping[str, object]:
+        if request.analytic_type.value != "tcm":
+            return _framing_payload(1.0)
+        assert request.start_hour is not None
+        if request.start_hour == 13:
+            raise ConnectionError("hour 13 unavailable")
+        return _hour_payload(request.start_hour, 30.0 + request.start_hour)
+
+    adapter = TemporalTripAnalysisAdapter(
+        HeatmapExecution(fixture_path=tmp_path / "heatmap.json", live_loader=load_heatmap),
+        EnvParamsExecution(
+            fixture_path=tmp_path / "env.json",
+            live_loader=lambda request: _env_payload(),
+        ),
+    )
+
+    response = adapter.analyze(_request(), ExecutionMode.LIVE)
+
+    assert response.state is ResultState.DEGRADED
+    assert response.best_time is not None
+    assert response.best_time.temporal_evidence is TemporalEvidenceState.EXACT
+    assert response.degraded_reasons is not None
+    assert "best_time" not in response.degraded_reasons
+    assert "13:00" in response.best_time.recommendation_reason
+
+
+def test_timezone_conflict_and_lost_hour_are_reported_in_one_reason(
+    tmp_path: Path,
+) -> None:
+    response = _shifted_adapter(tmp_path, failing_hour=13).analyze(_request(), ExecutionMode.LIVE)
+
+    assert response.degraded_reasons is not None
+    reason = response.degraded_reasons["best_time"]
+    assert "hour-only" in reason
+    assert "13:00" in reason
+    assert response.best_time is not None
+    assert 13 not in {entry.hour for entry in response.best_time.hourly}
+
+
+def test_a_response_the_contract_rejects_is_unavailable_not_a_bad_request(
+    tmp_path: Path,
+) -> None:
+    """Any future mismatch degrades legibly instead of billing for a 400."""
+    analyzed = _shifted_adapter(tmp_path).analyze(_request(), ExecutionMode.LIVE)
+    assert analyzed.best_time is not None
+
+    published = _publish(
+        _request(),
+        ExecutionMode.LIVE,
+        best_time=analyzed.best_time,
+        routes=None,
+        degraded_reasons={
+            "hotels": "hotel ranking is not implemented on the temporal live path",
+            "routes": "route comparison is not configured on the temporal live path",
+        },
+    )
+
+    assert published.state is ResultState.UNAVAILABLE
+    assert published.unavailable is not None
+    assert published.unavailable.code == "contract_violation"
+    assert published.unavailable.recoverable is True
+    assert "degraded reasons must match missing sections" in published.unavailable.reason
+
+
+def test_live_endpoint_answers_a_timezone_conflict_with_200(tmp_path: Path) -> None:
+    _copy_hotel_fixture(tmp_path)
+    client = TestClient(
+        create_app(
+            tmp_path / "heatmap.json",
+            allow_live=True,
+            trip_adapter=_shifted_adapter(tmp_path),
+        )
+    )
+
+    response = client.post(
+        "/api/trip/analyze",
+        json={
+            "origin_latitude": 29.4245914,
+            "origin_longitude": -98.4864288,
+            "destination_latitude": 29.425833,
+            "destination_longitude": -98.485833,
+            "mode": "curated",
+            "landmark_name": "The Alamo",
+            "district_name": "Downtown San Antonio",
+            "date": "2026-08-23",
+            "start_hour": 8,
+            "end_hour": 20,
+            "execution_mode": "live",
+        },
+    )
+
+    assert response.status_code == 200
+    body: dict[str, Any] = response.json()
+    assert body["state"] == "degraded"
+    assert "hour-only" in body["degraded_reasons"]["best_time"]
+    assert body["best_time"]["temporal_evidence"] == "inconsistent"
 
 
 def test_preflight_budget_guard_refuses_without_spending_a_call(tmp_path: Path) -> None:
