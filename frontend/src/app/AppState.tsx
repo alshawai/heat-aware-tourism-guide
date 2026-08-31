@@ -8,6 +8,8 @@ import {
   type ReactNode,
 } from "react";
 import { dataClient } from "../services/dataClient";
+import { CANONICAL_FIXTURE_SCENARIO } from "../features/trip/fixtureScenarios";
+import { todayIso } from "../features/trip/timeWindow";
 import type {
   HealthResponse,
   HotelRankResponse,
@@ -78,12 +80,25 @@ const DEFAULT_TRIP_SETUP: TripSetup = {
   origin: CANONICAL_ORIGIN,
   destination: CANONICAL_DESTINATION,
   // The date and window the canonical walk was acquired with, so a fixture run
-  // matches the committed scenario without the traveler having to know it.
-  date: "2024-07-15",
-  startHour: 8,
-  endHour: 20,
+  // matches the committed scenario without the traveler having to know it. Live
+  // execution needs the opposite prefill and gets it below, once the health
+  // probe has said which mode is actually running.
+  date: CANONICAL_FIXTURE_SCENARIO.date,
+  startHour: CANONICAL_FIXTURE_SCENARIO.startHour,
+  endHour: CANONICAL_FIXTURE_SCENARIO.endHour,
   cautious: false,
 };
+
+/** Whether the traveler has left the prefilled trip exactly as it arrived. */
+function isPrefilledSetup(setup: TripSetup): boolean {
+  return (
+    setup.date === DEFAULT_TRIP_SETUP.date &&
+    setup.startHour === DEFAULT_TRIP_SETUP.startHour &&
+    setup.endHour === DEFAULT_TRIP_SETUP.endHour &&
+    setup.cautious === DEFAULT_TRIP_SETUP.cautious &&
+    isCanonicalTrip(setup)
+  );
+}
 
 /**
  * The analysis the map, route cards, and route detail should render.
@@ -148,6 +163,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
           mode: value.mode,
           execution_capability: value.execution_capability,
         },
+        // Move the prefilled date to today once live execution is confirmed.
+        // The prefill has to serve fixture replay first, because
+        // `_fixture_matches` compares the date and only the acquired one can
+        // match. Live execution would answer that same date with readings from
+        // two years ago — an honest answer to a request no traveler meant — so
+        // live starts on today instead. Only an untouched prefill moves, and
+        // only while no analysis is on screen, so a chosen historical date
+        // survives a later re-check and no rendered result changes underneath.
+        tripSetup:
+          value.mode === "live" &&
+          current.tripResults === null &&
+          isPrefilledSetup(current.tripSetup)
+            ? { ...current.tripSetup, date: todayIso() }
+            : current.tripSetup,
       }));
     } catch (error) {
       if (error instanceof DOMException && error.name === "AbortError") return;

@@ -306,19 +306,17 @@ class TemporalTripAnalysisAdapter:
                 route_reason = _route_degradation_reason(routes)
 
         degraded_reasons = {"hotels": "hotel ranking is not implemented on the temporal live path"}
+        best_time_reason = _best_time_degradation_reason(best_time, hourly_failures)
+        if best_time_reason is not None:
+            degraded_reasons["best_time"] = best_time_reason
         if route_reason is not None:
             degraded_reasons["routes"] = route_reason
-        return _round_trip(
-            TripAnalysisResponse(
-                request_identity=_request_identity(request),
-                mode=request.mode,
-                execution_mode=execution_mode,
-                state=ResultState.DEGRADED,
-                best_time=best_time,
-                routes=routes,
-                degraded_reasons=degraded_reasons,
-            ),
+        return _publish(
             request,
+            execution_mode,
+            best_time=best_time,
+            routes=routes,
+            degraded_reasons=degraded_reasons,
         )
 
     def _budget_refusal(
@@ -417,6 +415,15 @@ class TemporalTripAnalysisAdapter:
 
 
 def _route_degradation_reason(routes: RouteComparisonResult) -> str | None:
+    """Name the route limitation, for every condition the contract can see.
+
+    ``TripAnalysisResponse`` requires a reason for each *present* section whose
+    own fields show it is degraded, and rejects a reason for a section that
+    reads as whole; a mismatch either way raises ``degraded reasons must match
+    missing sections``. The conditions below are therefore exactly the ones the
+    contract inspects for ``routes``: every listed decision state, a
+    single-route set, and insufficient confidence.
+    """
     if routes.decision_state is RouteDecisionState.SHADE_REQUIRED:
         return "route heat is elevated; shade analysis is required before recommendation"
     if routes.decision_state is RouteDecisionState.INSUFFICIENT_SHADE_COMPARISON_REQUIRED:
@@ -425,9 +432,45 @@ def _route_degradation_reason(routes: RouteComparisonResult) -> str | None:
         return "shared corridor heat is unavailable"
     if routes.decision_state is RouteDecisionState.NO_SUITABLE_RETURNED_ROUTE:
         return "no returned route has sufficient evidence for recommendation"
+    if routes.decision_state is RouteDecisionState.SHADE_SHADIEST_RECOMMENDED:
+        return "the shadiest route is recommended from modeled building shade, not measured shade"
+    if routes.decision_state is RouteDecisionState.SHADE_ONLY_ROUTE_RECOMMENDED:
+        return "only one route carries shade evidence, so the comparison is limited"
+    if routes.decision_state is RouteDecisionState.NIGHTTIME_COOLEST_RECOMMENDED:
+        return "shade does not apply after dark; the coolest corridor is recommended instead"
     if routes.route_set_state is RouteSetState.SINGLE_ROUTE:
         return "only one pedestrian route was returned; comparison is limited"
+    if routes.confidence is Confidence.INSUFFICIENT:
+        return "route evidence is insufficient for a confident recommendation"
     return None
+
+
+def _best_time_degradation_reason(
+    best_time: BestTimeResult, hourly_failures: Mapping[int, str]
+) -> str | None:
+    """Name the best-time limitation, matching the same contract conditions.
+
+    Partial hourly coverage is deliberately not a condition of its own: the
+    contract does not treat a complete decision over fewer hours as a degraded
+    section, so claiming one here would raise the very error this avoids. The
+    lost hours are already reported in ``recommendation_reason`` and in the
+    provenance's ``unavailable_hours``; they only join this reason when the
+    section is degraded for a reason the contract does recognise.
+    """
+    clauses: list[str] = []
+    if best_time.temporal_evidence is TemporalEvidenceState.INCONSISTENT:
+        clauses.append(
+            "provider timestamps do not line up with the requested local hours; "
+            "the recommendation is hour-only"
+        )
+    if best_time.provenance.confidence is Confidence.INSUFFICIENT:
+        clauses.append("supporting heat evidence is insufficient for a confident recommendation")
+    if not clauses:
+        return None
+    if hourly_failures:
+        missing = ", ".join(f"{hour:02d}:00" for hour in sorted(hourly_failures))
+        clauses.append(f"hourly coverage is partial ({missing} unavailable)")
+    return "; ".join(clauses)
 
 
 def _best_time_result(
@@ -726,6 +769,49 @@ def _round_trip(
     return decode_trip_analysis_v2(
         encode_trip_analysis_v2(response, envelope="snapshot"), request, ExecutionMode.LIVE
     )
+
+
+def _publish(
+    request: TripAnalysisRequest,
+    execution_mode: ExecutionMode,
+    *,
+    best_time: BestTimeResult | None,
+    routes: RouteComparisonResult | None,
+    degraded_reasons: dict[str, str],
+) -> TripAnalysisResponse:
+    """Build and round-trip a degraded live response, degrading rather than raising.
+
+    Both the ``TripAnalysisResponse`` invariants and the strict codec are
+    inside the guard: a response we cannot express is our defect, not a bad
+    request, and the provider calls behind it are already spent.
+    ``_error_response`` in ``app/api.py`` maps a ``ValueError`` here to HTTP 400
+    "Bad Request", which tells the traveler nothing and invites a retry that
+    spends the window again. The product already has a state for "the analysis
+    cannot be shown", so answer in it and name the contract as the cause.
+    """
+    try:
+        return _round_trip(
+            TripAnalysisResponse(
+                request_identity=_request_identity(request),
+                mode=request.mode,
+                execution_mode=execution_mode,
+                state=ResultState.DEGRADED,
+                best_time=best_time,
+                routes=routes,
+                degraded_reasons=degraded_reasons,
+            ),
+            request,
+        )
+    except (KeyError, TypeError, ValueError) as error:
+        return _round_trip(
+            _unavailable_response(
+                request,
+                execution_mode,
+                f"the analysis could not be published in the product contract: {error}",
+                code="contract_violation",
+            ),
+            request,
+        )
 
 
 class ModeDispatchTripAnalysisAdapter:
