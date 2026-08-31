@@ -407,6 +407,23 @@ const fixtureHealth = {
   execution_capability: "fixture-only",
 };
 
+const liveHealth = {
+  status: "ok",
+  deployment_profile: "protected-live",
+  mode: "live",
+  execution_capability: "fixture-and-live",
+};
+
+/**
+ * Local dates derived without the helpers under test, so a wrong helper cannot
+ * agree with a wrong assertion. `en-CA` formats as `YYYY-MM-DD`.
+ */
+function localDate(offsetDays = 0) {
+  return new Date(Date.now() + offsetDays * 86_400_000).toLocaleDateString(
+    "en-CA"
+  );
+}
+
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
@@ -603,6 +620,46 @@ describe("trip setup", () => {
     expect(await screen.findByText("Live data")).toBeInTheDocument();
     expect(date).toHaveValue("2026-09-01");
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("starts a live trip on today and bounds the date to the provider's span", async () => {
+    const fetchMock = mockFetch(jsonResponse(liveHealth));
+    const user = userEvent.setup();
+
+    await openSetup(user);
+
+    expect(screen.getByText("Live data")).toBeInTheDocument();
+    // The committed fixture date is the prefill fixture replay needs; live
+    // execution would answer it with readings from two years ago, so live mode
+    // starts on today.
+    const date = screen.getByLabelText("Date");
+    expect(date).toHaveValue(localDate());
+    expect(date).toHaveAttribute("min", "2019-01-01");
+    expect(date).toHaveAttribute("max", localDate(1));
+    expect(
+      screen.getByText(/Live readings run from 2019-01-01 to tomorrow/)
+    ).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("refuses a date live data cannot reach before spending an analysis", async () => {
+    const fetchMock = mockFetch(jsonResponse(liveHealth));
+    const user = userEvent.setup();
+
+    const analyze = await openSetup(user);
+    const date = screen.getByLabelText("Date");
+    await user.clear(date);
+    await user.type(date, localDate(10));
+    await user.click(analyze);
+
+    expect(
+      screen.getByText(
+        "Live readings reach only tomorrow's forecast. Choose today or tomorrow."
+      )
+    ).toBeInTheDocument();
+    // Only the health probe: an analysis the provider cannot serve is not spent.
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(date).toHaveFocus();
   });
 
   it("locks public fixture facts while keeping cautious guidance selectable", async () => {

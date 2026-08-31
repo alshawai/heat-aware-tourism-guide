@@ -93,3 +93,56 @@ export function validateTimeWindow(
 
 export const INVALID_DATE_MESSAGE = "Enter a valid date.";
 export const SAME_ENDPOINTS_MESSAGE = "Choose two different endpoints.";
+
+/**
+ * Live-mode date rules, mirrored from the provider adapter.
+ *
+ * `HeatmapRequest.__post_init__` (`app/integrations/fortyguard/contracts.py`)
+ * treats any date from today onwards as a forecast and rejects one past
+ * tomorrow outright, and `HISTORICAL_EARLIEST` in
+ * `app/integrations/fortyguard/live.py` is the documented historical floor. A
+ * date outside that span cannot produce readings, so it must not be spendable.
+ */
+export const LIVE_EARLIEST_DATE = "2019-01-01";
+
+function isoDate(value: Date): string {
+  return value.toISOString().slice(0, 10);
+}
+
+/** Today in the traveler's own timezone, which is the date they mean. */
+export function todayIso(reference: Date = new Date()): string {
+  const local = new Date(
+    reference.getTime() - reference.getTimezoneOffset() * 60_000
+  );
+  return isoDate(local);
+}
+
+/** The latest date live provider data reaches: tomorrow's forecast. */
+export function liveLatestDate(reference: Date = new Date()): string {
+  const local = new Date(
+    reference.getTime() - reference.getTimezoneOffset() * 60_000
+  );
+  local.setUTCDate(local.getUTCDate() + 1);
+  return isoDate(local);
+}
+
+/**
+ * Why a live analysis cannot be spent on this date, or `null` when it can.
+ *
+ * Fixture replay is not checked here: it answers only the dates its committed
+ * scenarios were acquired with, and the server's own refusal is the honest
+ * answer for anything else.
+ */
+export function validateLiveDate(
+  value: string,
+  reference: Date = new Date()
+): string | null {
+  if (!isValidDate(value)) return INVALID_DATE_MESSAGE;
+  if (value > liveLatestDate(reference)) {
+    return "Live readings reach only tomorrow's forecast. Choose today or tomorrow.";
+  }
+  if (value < LIVE_EARLIEST_DATE) {
+    return `Live readings start at ${LIVE_EARLIEST_DATE}.`;
+  }
+  return null;
+}
