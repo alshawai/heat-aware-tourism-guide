@@ -389,6 +389,30 @@ class TestMapTilesToRouteSegments:
             assert seg.value is None
             assert seg.tile_count == 0
 
+    def test_segments_retain_maximum_intersecting_value(self) -> None:
+        route = [(29.4250, -98.4860), (29.4251, -98.4859)]
+        shared_geometry = {
+            "type": "Polygon",
+            "coordinates": [
+                [
+                    [-98.487, 29.424],
+                    [-98.484, 29.424],
+                    [-98.484, 29.426],
+                    [-98.487, 29.426],
+                    [-98.487, 29.424],
+                ]
+            ],
+        }
+        tiles = [
+            {"geometry": shared_geometry, "properties": {"value": 31.0}},
+            {"geometry": shared_geometry, "properties": {"value": 39.0}},
+        ]
+
+        segment = map_tiles_to_route_segments(route, tiles)[0]
+
+        assert segment.value == 39.0
+        assert segment.tile_count == 2
+
     def test_rejects_single_point_route(self) -> None:
         with pytest.raises(ValueError, match="at least two"):
             map_tiles_to_route_segments([(29.42, -98.49)], [])

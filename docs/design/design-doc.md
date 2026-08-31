@@ -49,8 +49,8 @@ fixture-backed application that can be inspected and run.
 
 ## Geography And Demo
 
-San Antonio, Texas is the primary city. Austin, Texas is the fallback if San
-Antonio fails the live validation gates.
+San Antonio, Texas is the single product city. Austin appears only in historical
+provider-feasibility research and is not a runtime or demo fallback.
 
 The canonical scenario is:
 
@@ -406,10 +406,9 @@ server-side secrets, one worker and one instance, a persistent finite-budget
 ledger, and rollback procedures. A public user must never be able to consume
 the team's FortyGuard credits.
 
-The deployment must be smoke-tested before recording. The README retains a
-pending URL placeholder until actual provisioning; the local fixture flow is
-the fallback. Browser OSM tiles are allowed and do not participate in readiness
-checks.
+The deployment must be smoke-tested before recording. The public fixture URL is
+listed in the README and the local fixture flow is the deterministic fallback.
+Browser OSM tiles are allowed and do not participate in readiness checks.
 
 ## Team Ownership And Schedule
 

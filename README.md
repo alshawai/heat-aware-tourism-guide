@@ -8,8 +8,8 @@ urban-heat data, OSRM walking routes, and OpenStreetMap buildings behind one
 FastAPI service with a React/Vite map UI.
 
 **Status:** built for the FortyGuard '26 Hackathon. The core flows, fixture
-set, quality gates, and deployment are complete; final validation and the
-submission recording are the remaining work.
+set, quality gates, and release validation are complete; redeployment and the
+submission recording are the remaining delivery steps.
 
 **Public demo:** <https://heat-aware-tourism-guide-demo.onrender.com/>
 

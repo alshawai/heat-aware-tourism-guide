@@ -16,6 +16,13 @@ export default defineConfig({
     baseURL: origin,
     trace: "on-first-retry",
   },
+  projects: [
+    { name: "desktop", use: { viewport: { width: 1280, height: 720 } } },
+    {
+      name: "mobile",
+      use: { viewport: { width: 375, height: 812 }, isMobile: true },
+    },
+  ],
   webServer: {
     command: `.venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port ${port}`,
     cwd: "..",

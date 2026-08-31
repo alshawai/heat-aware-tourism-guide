@@ -30,14 +30,9 @@ The recording follows this exact sequence every time:
 sleeps after 15 minutes without traffic; allow about one minute for its
 first load, and warm it before recording.
 
-**Known hosted state at time of writing:** the hosted curated form pins the
-date `2026-08-23`, which does not match the committed fixture date
-`2024-07-15`, so the hosted curated submission currently returns the
-explicit `scenario_unavailable` state, and the hosted UI does not offer the
-alternate scenarios. Before recording against the hosted demo, correct the
-pinned date in `frontend/src/screens/TripSetupScreen.tsx`
-(`PUBLIC_FIXTURE_DATE`) and redeploy, or record the primary flow locally.
-The hotel ranking flow is date-independent and works hosted either way.
+**Hosted deployment:** the hosted curated form pins the committed fixture date
+`2024-07-15`. The hosted deployment is intentionally limited to the canonical
+public fixture; use the local fixture run for alternate and unavailable scenes.
 
 **Deterministic fallback — local fixture run:**
 

@@ -731,9 +731,9 @@ def map_tiles_to_route_segments(
 
     For each consecutive pair of route points, builds a small buffered segment
     corridor in a projected CRS, intersects it with each tile's geometry, and
-    computes an area-weighted average temperature/metric value.  Returns a list
-    of per-segment results that the consumer can use to compute corridor-level
-    summaries (e.g., "% of route above 35 °C").
+    retains the maximum intersecting temperature/metric value. Returns a list
+    of per-segment results that the consumer can use to compute conservative
+    corridor-level summaries (e.g., "% of route above 35 °C").
 
     This function lives in the adapter module (not ``analysis.py``) because it
     operates on the raw translated tile dictionaries from the provider response,
@@ -769,26 +769,26 @@ def map_tiles_to_route_segments(
         projected_segment = _project_to_utm(segment_line, crs).buffer(buffer_m)
 
         segment_area = projected_segment.area
-        weighted_sum = 0.0
         overlap_area = 0.0
         tile_count = 0
+        maximum_value: float | None = None
 
         for proj_tile_geom, tile_value in projected_tiles:
             intersection = projected_segment.intersection(proj_tile_geom)
             if intersection.area > 0:
-                weighted_sum += tile_value * intersection.area
                 overlap_area += intersection.area
                 tile_count += 1
+                maximum_value = (
+                    tile_value if maximum_value is None else max(maximum_value, tile_value)
+                )
 
         coverage = min(1.0, overlap_area / segment_area) if segment_area > 0 else 0.0
-        avg_value = weighted_sum / overlap_area if overlap_area > 0 else None
-
         segments.append(
             RouteSegmentHeat(
                 segment_index=i,
                 start=start_pt,
                 end=end_pt,
-                value=avg_value,
+                value=maximum_value,
                 coverage=coverage,
                 tile_count=tile_count,
             )

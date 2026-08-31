@@ -19,6 +19,16 @@ async function blockOffsiteRequests(page: Page) {
   });
 }
 
+async function expectNoHorizontalOverflow(page: Page) {
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => document.documentElement.scrollWidth <= window.innerWidth
+      )
+    )
+    .toBe(true);
+}
+
 function analyzeRequestBody(page: Page) {
   return page.waitForRequest(
     (request) =>
@@ -31,6 +41,7 @@ test("walks the whole trip flow from the welcome screen on fixtures", async ({
 }) => {
   await blockOffsiteRequests(page);
   await page.goto("/");
+  await expectNoHorizontalOverflow(page);
 
   await expect(
     page.getByRole("heading", {
@@ -101,6 +112,7 @@ test("walks the whole trip flow from the welcome screen on fixtures", async ({
   await expect(
     page.getByText("Trip analysis ready with limitations")
   ).toBeVisible();
+  await expectNoHorizontalOverflow(page);
   await expect(page.getByText("Produced by fixture replay.")).toBeVisible();
   // The acquired canonical scenario carries a provider timestamp that conflicts
   // with local time, so the recommendation is hour-only and says so.
@@ -139,6 +151,7 @@ test("walks the whole trip flow from the welcome screen on fixtures", async ({
   await expect(
     page.getByRole("heading", { level: 1, name: recommendedRoute })
   ).toBeVisible();
+  await expectNoHorizontalOverflow(page);
   await expect(
     page.getByText(/Turn-by-turn directions are not included/)
   ).toBeVisible();
@@ -201,6 +214,7 @@ for (const scenario of scenarios) {
   }) => {
     await blockOffsiteRequests(page);
     await page.goto("/trip/setup");
+    await expectNoHorizontalOverflow(page);
     await expect(
       page.getByText("Fixture replay", { exact: true })
     ).toBeVisible();
@@ -247,6 +261,7 @@ for (const scenario of scenarios) {
       await expect(
         page.getByText("Retry the analysis or edit the trip setup.")
       ).toBeVisible();
+      await expectNoHorizontalOverflow(page);
       return;
     }
 
@@ -260,6 +275,7 @@ for (const scenario of scenarios) {
       analysis.best_time.hourly.length
     );
     const routes = page.getByRole("region", { name: "Walking routes" });
+    await expectNoHorizontalOverflow(page);
 
     if (scenario.name === "Cathedral") {
       expect(analysis.routes).toMatchObject({
@@ -277,6 +293,7 @@ for (const scenario of scenarios) {
       await expect(
         page.locator(".leaflet-container path.leaflet-interactive")
       ).toHaveCount(2);
+      await expectNoHorizontalOverflow(page);
       return;
     }
 
@@ -319,5 +336,6 @@ for (const scenario of scenarios) {
       page.getByText("Trip analysis ready with limitations")
     ).toBeVisible();
     await expect(routes.getByText(/no alternatives to compare/i)).toBeVisible();
+    await expectNoHorizontalOverflow(page);
   });
 }

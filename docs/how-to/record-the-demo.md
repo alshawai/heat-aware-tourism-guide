@@ -20,17 +20,13 @@ Record locally when the hosted service is asleep, degraded, or has a bad
 frontend build; the committed fixtures make the two runs equivalent at the
 product level.
 
-### Known hosted-demo state at time of writing
+### Hosted-demo contract
 
-The hosted curated form pins a fixed request date (currently `2026-08-23`)
-while every committed trip fixture is dated `2024-07-15`. Until the pinned
-date is corrected to match the fixture, submitting the hosted curated trip
-returns the explicit `scenario_unavailable` state, and the hosted UI does not
-offer the alternate scenarios. Before recording against the hosted demo,
-either correct the pinned date in `frontend/src/screens/TripSetupScreen.tsx`
-(`PUBLIC_FIXTURE_DATE`) and redeploy, or record the primary flow locally
-(where the date field is editable — set it to `2024-07-15`). The hotel
-ranking flow is date-independent and works on the hosted demo either way.
+The hosted curated form and every committed trip fixture use `2024-07-15`.
+Deploy the revision being recorded and smoke-test the canonical UI before
+recording. The hosted UI intentionally exposes the canonical public fixture;
+record locally for the alternate-scenario and deliberate-unavailable scenes.
+The hotel ranking flow is date-independent.
 
 ## Prepare the environment
 

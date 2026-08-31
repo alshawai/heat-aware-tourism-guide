@@ -103,8 +103,8 @@ Live verification was performed against the production FortyGuard API (`https://
 
 Intersected the returned multi-tile grid back with the projected route corridor segments:
 
-- **Segment 0** (`(29.4259, -98.4861) -> (29.4250, -98.4858)`): `31.66 °C` weighted average, **`100.0%` coverage** (2 overlapping tiles).
-- **Segment 1** (`(29.4250, -98.4858) -> (29.4241, -98.4853)`): `31.70 °C` weighted average, **`42.8%` coverage** (1 overlapping tile).
+- **Segment 0** (`(29.4259, -98.4861) -> (29.4250, -98.4858)`): maximum intersecting tile value, **`100.0%` coverage** (2 overlapping tiles).
+- **Segment 1** (`(29.4250, -98.4858) -> (29.4241, -98.4853)`): maximum intersecting tile value, **`42.8%` coverage** (1 overlapping tile).
 
 ### 4. Spatial Grid Resolution & Coverage Findings
 
@@ -162,7 +162,7 @@ print("Provenance:", [t.name for t in result.transformations])
 
 ### 2. Area Heatmap Request (Route Bounding Box / Corridor)
 
-Use `LiveAreaHeatmapAdapter` with `use_bounding_box=True` when requesting heat across a route to ensure FortyGuard returns a complete rectangular grid covering 100% of all route segments:
+Use `LiveAreaHeatmapAdapter` with `use_bounding_box=True` when requesting a rectangular grid across a route. The observed validation request covered every segment, but callers must still inspect reported coverage rather than assume completeness:
 
 ```python
 from datetime import date
